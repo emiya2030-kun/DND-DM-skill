@@ -76,6 +76,7 @@ class RuntimeHttpServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
         self.assertIn("commands", payload)
+        self.assertIn("execute_attack", payload["commands"])
 
     def test_unknown_command_returns_structured_json_payload(self) -> None:
         status, payload = self._request(

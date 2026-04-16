@@ -2,11 +2,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from runtime.commands import COMMAND_HANDLERS
 from runtime.context import build_runtime_context
 from runtime.dispatcher import execute_runtime_command
 
 
 class RuntimeDispatcherTests(unittest.TestCase):
+    def test_command_handlers_include_execute_attack(self) -> None:
+        self.assertIn("execute_attack", COMMAND_HANDLERS)
+
     def test_unknown_command_returns_structured_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             context = build_runtime_context(data_dir=Path(tmp_dir))
