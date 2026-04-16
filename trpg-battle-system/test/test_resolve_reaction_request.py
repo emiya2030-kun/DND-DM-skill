@@ -104,6 +104,40 @@ def build_encounter() -> Encounter:
                 },
             }
         ],
+        pending_reaction_window={
+            "window_id": "rw_leave_reach_001",
+            "status": "waiting_reaction",
+            "trigger_event_id": "evt_leave_reach_001",
+            "trigger_type": "leave_reach",
+            "blocking": True,
+            "host_action_type": "move",
+            "host_action_id": "move_001",
+            "host_action_snapshot": {"phase": "before_leave_reach"},
+            "choice_groups": [
+                {
+                    "group_id": f"rg_{actor.entity_id}",
+                    "actor_entity_id": actor.entity_id,
+                    "ask_player": True,
+                    "status": "pending",
+                    "resource_pool": "reaction",
+                    "group_priority": 100,
+                    "trigger_sequence": 1,
+                    "relationship_rank": 1,
+                    "tie_break_key": actor.entity_id,
+                    "options": [
+                        {
+                            "option_id": "opt_opp_001",
+                            "reaction_type": "opportunity_attack",
+                            "template_type": "leave_reach_interrupt",
+                            "request_id": "react_001",
+                            "label": "Opportunity Attack",
+                            "status": "pending",
+                        }
+                    ],
+                }
+            ],
+            "resolved_group_ids": [],
+        },
     )
 
 
@@ -139,6 +173,7 @@ class ResolveReactionRequestTests(unittest.TestCase):
             self.assertEqual(updated.reaction_requests[0]["status"], "resolved")
             self.assertEqual(result["reaction_type"], "opportunity_attack")
             self.assertEqual(result["encounter_state"]["reaction_requests"][0]["status"], "resolved")
+            self.assertEqual(result["window_status"], "closed")
             encounter_repo.close()
             event_repo.close()
 
