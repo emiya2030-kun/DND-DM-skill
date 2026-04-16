@@ -102,6 +102,7 @@ class BeginMoveEncounterEntity:
             use_dash=use_dash,
             reactor_entity_id=str(request["actor_entity_id"]),
             request_payloads={str(request["actor_entity_id"]): dict(request.get("payload", {}))},
+            request_overrides={str(request["actor_entity_id"]): dict(request)},
         )
         window_result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
         if window_result["status"] != "waiting_reaction":
@@ -198,6 +199,7 @@ class BeginMoveEncounterEntity:
         use_dash: bool,
         reactor_entity_id: str,
         request_payloads: dict[str, dict[str, Any]],
+        request_overrides: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         return {
             "event_id": f"evt_leave_reach_{uuid4().hex[:12]}",
@@ -219,6 +221,7 @@ class BeginMoveEncounterEntity:
             "target_entity_id": mover.entity_id,
             "reactor_entity_id": reactor_entity_id,
             "request_payloads": request_payloads,
+            "request_overrides": request_overrides,
         }
 
     def _leaves_melee_reach(

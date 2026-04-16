@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from tools.models import Encounter
 from tools.services.combat.rules.reactions.collect_reaction_candidates import CollectReactionCandidates
@@ -32,6 +33,8 @@ class OpenReactionWindow:
         target_entity_id = trigger_event.get("target_entity_id")
         request_payloads = trigger_event.get("request_payloads")
         payload_map = request_payloads if isinstance(request_payloads, dict) else {}
+        request_overrides = trigger_event.get("request_overrides")
+        override_map = request_overrides if isinstance(request_overrides, dict) else {}
 
         host_snapshot = dict(trigger_event.get("host_action_snapshot", {}))
 
@@ -55,25 +58,37 @@ class OpenReactionWindow:
             )
             reaction_type = definition["reaction_type"]
             template_type = definition.get("template_type", "generic_reaction")
-            request_id = f"react_{actor_id}_{reaction_type}"
+            request_id = f"react_{uuid4().hex[:12]}"
+            override = override_map.get(actor_id)
+            payload = {}
+            if isinstance(override, dict) and isinstance(override.get("payload"), dict):
+                payload = dict(override["payload"])
+            elif actor_id in payload_map:
+                payload = dict(payload_map.get(actor_id, {}))
+            request_data = {
+                "request_id": request_id,
+                "status": "pending",
+                "reaction_type": reaction_type,
+                "template_type": template_type,
+                "trigger_type": trigger_type,
+                "trigger_event_id": trigger_event_id,
+                "actor_entity_id": actor_id,
+                "target_entity_id": target_entity_id,
+                "ask_player": True,
+                "auto_resolve": False,
+                "resource_cost": definition.get("resource_cost", {}),
+                "priority": 100,
+                "payload": payload,
+            }
+            if isinstance(override, dict):
+                for key, value in override.items():
+                    if key in {"request_id", "status", "payload"}:
+                        continue
+                    request_data[key] = value
             requests.append(
-                {
-                    "request_id": request_id,
-                    "status": "pending",
-                    "reaction_type": reaction_type,
-                    "template_type": template_type,
-                    "trigger_type": trigger_type,
-                    "trigger_event_id": trigger_event_id,
-                    "actor_entity_id": actor_id,
-                    "target_entity_id": target_entity_id,
-                    "ask_player": True,
-                    "auto_resolve": False,
-                    "resource_cost": definition.get("resource_cost", {}),
-                    "priority": 100,
-                    "payload": dict(payload_map.get(actor_id, {})),
-                }
+                request_data
             )
-            option_id = f"opt_{actor_id}_{reaction_type}"
+            option_id = f"opt_{request_id}"
             group["options"].append(
                 {
                     "option_id": option_id,

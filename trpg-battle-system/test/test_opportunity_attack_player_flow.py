@@ -189,6 +189,56 @@ class OpportunityAttackPlayerFlowTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_player_can_resolve_second_opportunity_attack_after_reaction_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_encounter())
+            begin_move, resolve_request, continue_move = self._build_services(encounter_repo, event_repo)
+
+            first_begin = begin_move.execute_with_state(
+                encounter_id="enc_opportunity_flow_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+            )
+            first_request_id = first_begin["reaction_requests"][0]["request_id"]
+            resolve_request.execute(
+                encounter_id="enc_opportunity_flow_test",
+                request_id=first_request_id,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [2]}],
+            )
+            continue_move.execute_with_state(encounter_id="enc_opportunity_flow_test")
+
+            updated = encounter_repo.get("enc_opportunity_flow_test")
+            assert updated is not None
+            updated.entities["ent_ally_eric_001"].action_economy["reaction_used"] = False
+            updated.entities["ent_enemy_orc_001"].position = {"x": 5, "y": 4}
+            updated.entities["ent_enemy_orc_001"].speed["remaining"] = 30
+            updated.current_entity_id = "ent_enemy_orc_001"
+            updated.turn_order = ["ent_enemy_orc_001", "ent_ally_eric_001"]
+            encounter_repo.save(updated)
+
+            second_begin = begin_move.execute_with_state(
+                encounter_id="enc_opportunity_flow_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+            )
+            second_request_id = second_begin["reaction_requests"][0]["request_id"]
+            self.assertNotEqual(first_request_id, second_request_id)
+
+            resolve_result = resolve_request.execute(
+                encounter_id="enc_opportunity_flow_test",
+                request_id=second_request_id,
+                final_total=16,
+                dice_rolls={"base_rolls": [11], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [2]}],
+            )
+            self.assertEqual(resolve_result["encounter_state"]["reaction_requests"][-1]["status"], "resolved")
+            encounter_repo.close()
+            event_repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

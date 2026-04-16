@@ -138,6 +138,7 @@ class ContinuePendingMovement:
             use_dash=bool(pending.get("use_dash")),
             reactor_entity_id=str(next_request["actor_entity_id"]),
             request_payloads={str(next_request["actor_entity_id"]): dict(next_request.get("payload", {}))},
+            request_overrides={str(next_request["actor_entity_id"]): dict(next_request)},
         )
         window_result = self.begin_move_helper.open_reaction_window.execute(
             encounter_id=encounter_id,

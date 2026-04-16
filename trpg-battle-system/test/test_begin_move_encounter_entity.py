@@ -91,6 +91,53 @@ def build_encounter_with_player_and_moving_enemy() -> Encounter:
     )
 
 
+def build_encounter_with_enemy_reactor_and_player_mover() -> Encounter:
+    reactor = build_entity(
+        "ent_enemy_guard_001",
+        name="Guard",
+        x=4,
+        y=4,
+        side="enemy",
+        controller="gm",
+        initiative=15,
+        weapons=[
+            {
+                "weapon_id": "shortsword",
+                "name": "Shortsword",
+                "attack_bonus": 4,
+                "damage": [{"formula": "1d6+2", "type": "piercing"}],
+                "range": {"normal": 5, "long": 5},
+                "properties": ["finesse"],
+            }
+        ],
+    )
+    mover = build_entity(
+        "ent_ally_lia_001",
+        name="Lia",
+        x=5,
+        y=4,
+        side="ally",
+        controller="player",
+        initiative=12,
+    )
+    return Encounter(
+        encounter_id="enc_begin_move_enemy_react_test",
+        name="Begin Move Enemy React Encounter",
+        status="active",
+        round=1,
+        current_entity_id=mover.entity_id,
+        turn_order=[mover.entity_id, reactor.entity_id],
+        entities={mover.entity_id: mover, reactor.entity_id: reactor},
+        map=EncounterMap(
+            map_id="map_begin_move_enemy_react_test",
+            name="Begin Move Enemy React Map",
+            description="A small combat room.",
+            width=12,
+            height=12,
+        ),
+    )
+
+
 class BeginMoveEncounterEntityTests(unittest.TestCase):
     def test_execute_rejects_non_current_turn_entity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -146,9 +193,40 @@ class BeginMoveEncounterEntityTests(unittest.TestCase):
             self.assertEqual(updated.reaction_requests[0]["reaction_type"], "opportunity_attack")
             self.assertEqual(updated.reaction_requests[0]["actor_entity_id"], "ent_ally_eric_001")
             self.assertEqual(updated.reaction_requests[0]["target_entity_id"], "ent_enemy_orc_001")
+            self.assertEqual(updated.reaction_requests[0]["actor_name"], "Eric")
+            self.assertEqual(updated.reaction_requests[0]["target_name"], "Orc")
+            self.assertEqual(updated.reaction_requests[0]["source_event_type"], "movement_trigger_check")
+            self.assertIsNone(updated.reaction_requests[0]["source_event_id"])
+            self.assertEqual(updated.reaction_requests[0]["payload"]["weapon_id"], "rapier")
             self.assertEqual(result["movement_status"], "waiting_reaction")
             self.assertEqual(result["reaction_requests"][0]["status"], "pending")
             self.assertEqual(result["encounter_state"]["pending_reaction_window"]["trigger_type"], "leave_reach")
+            repo.close()
+            event_repo.close()
+
+    def test_execute_keeps_non_player_reactor_request_auto_resolve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_encounter_with_enemy_reactor_and_player_mover())
+
+            service = BeginMoveEncounterEntity(repo, AppendEvent(event_repo))
+            result = service.execute_with_state(
+                encounter_id="enc_begin_move_enemy_react_test",
+                entity_id="ent_ally_lia_001",
+                target_position={"x": 8, "y": 4},
+            )
+
+            updated = repo.get("enc_begin_move_enemy_react_test")
+            assert updated is not None
+            self.assertEqual(result["movement_status"], "waiting_reaction")
+            self.assertFalse(updated.reaction_requests[0]["ask_player"])
+            self.assertTrue(updated.reaction_requests[0]["auto_resolve"])
+            self.assertEqual(updated.reaction_requests[0]["actor_name"], "Guard")
+            self.assertEqual(updated.reaction_requests[0]["target_name"], "Lia")
+            self.assertEqual(updated.reaction_requests[0]["source_event_type"], "movement_trigger_check")
+            self.assertIsNone(updated.reaction_requests[0]["source_event_id"])
+            self.assertEqual(updated.reaction_requests[0]["payload"]["weapon_id"], "shortsword")
             repo.close()
             event_repo.close()
 
