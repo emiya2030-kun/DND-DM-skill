@@ -142,6 +142,7 @@ class OpportunityAttackPlayerFlowTests(unittest.TestCase):
                 damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [2]}],
             )
             self.assertEqual(react_result["encounter_state"]["reaction_requests"][0]["status"], "resolved")
+            self.assertEqual(react_result["resolution_mode"], "append_followup_action")
 
             continue_result = continue_move.execute_with_state(encounter_id="enc_opportunity_flow_test")
             updated = encounter_repo.get("enc_opportunity_flow_test")

@@ -45,16 +45,51 @@ class ResolveReactionOption:
         pending_window = self._get_pending_window_or_raise(encounter, window_id)
         group = self._get_group_or_raise(pending_window, group_id)
         option = self._get_option_or_raise(group, option_id)
+        return self._execute_with_mapping(
+            encounter_id=encounter_id,
+            mapping={
+                "window_id": window_id,
+                "group_id": group_id,
+                "option_id": option_id,
+                "pending_window": pending_window,
+                "group": group,
+                "option": option,
+                "request_id": str(option["request_id"]),
+                "persist_window": True,
+            },
+            final_total=final_total,
+            dice_rolls=dice_rolls,
+            damage_rolls=damage_rolls,
+        )
+
+    def _execute_with_mapping(
+        self,
+        *,
+        encounter_id: str,
+        mapping: dict[str, Any],
+        final_total: int,
+        dice_rolls: dict[str, Any],
+        damage_rolls: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        encounter = self._get_encounter_or_raise(encounter_id)
+        if mapping.get("persist_window", True):
+            pending_window = self._get_pending_window_or_raise(encounter, mapping["window_id"])
+            group = self._get_group_or_raise(pending_window, mapping["group_id"])
+            option = self._get_option_or_raise(group, mapping["option_id"])
+        else:
+            pending_window = mapping["pending_window"]
+            group = mapping["group"]
+            option = mapping["option"]
+        request_id = mapping["request_id"]
         if option.get("status") != "pending":
             raise ValueError("reaction_option_not_pending")
 
-        request_id = str(option["request_id"])
         request = self._get_pending_request_or_raise(encounter, request_id)
         reaction_type = str(request.get("reaction_type") or option.get("reaction_type"))
 
         resolution = self._resolve_by_type(
             reaction_type=reaction_type,
-            encounter_id=encounter_id,
+            encounter_id=encounter.encounter_id,
             request=request,
             final_total=final_total,
             dice_rolls=dice_rolls,
@@ -67,21 +102,32 @@ class ResolveReactionOption:
         reaction_result = resolution.get("reaction_result")
 
         encounter = self._get_encounter_or_raise(encounter_id)
-        pending_window = self._get_pending_window_or_raise(encounter, window_id)
-        group = self._get_group_or_raise(pending_window, group_id)
-        option = self._get_option_or_raise(group, option_id)
         request = self._get_pending_request_or_raise(encounter, request_id)
+        if mapping.get("persist_window", True):
+            pending_window = self._get_pending_window_or_raise(encounter, mapping["window_id"])
+            group = self._get_group_or_raise(pending_window, mapping["group_id"])
+            option = self._get_option_or_raise(group, mapping["option_id"])
 
         request["status"] = "resolved"
         group["status"] = "resolved"
         option["status"] = "resolved"
-        if group_id not in pending_window.get("resolved_group_ids", []):
-            pending_window.setdefault("resolved_group_ids", []).append(group_id)
+        if mapping.get("persist_window", True):
+            if mapping["group_id"] not in pending_window.get("resolved_group_ids", []):
+                pending_window.setdefault("resolved_group_ids", []).append(mapping["group_id"])
 
-        self._decline_other_options(encounter, group, option_id)
-        self._decline_other_groups_for_actor(encounter, pending_window, group_id, group.get("actor_entity_id"))
+        self._decline_other_options(encounter, group, mapping["option_id"])
+        self._decline_other_groups_for_actor(
+            encounter,
+            pending_window,
+            mapping["group_id"],
+            group.get("actor_entity_id"),
+        )
 
-        window_result = self.close_reaction_window.execute(encounter=encounter)
+        if mapping.get("persist_window", True):
+            window_result = self.close_reaction_window.execute(encounter=encounter)
+        else:
+            self.encounter_repository.save(encounter)
+            window_result = {"window_status": "closed", "pending_reaction_window": None}
 
         event = self.append_event.execute(
             encounter_id=encounter_id,
@@ -100,9 +146,9 @@ class ResolveReactionOption:
             "encounter_id": encounter_id,
             "request_id": request_id,
             "reaction_type": reaction_type,
-            "window_id": window_id,
-            "group_id": group_id,
-            "option_id": option_id,
+            "window_id": mapping["window_id"],
+            "group_id": mapping["group_id"],
+            "option_id": mapping["option_id"],
             "window_status": window_result["window_status"],
             "resolution_mode": resolution_mode,
             "reaction_result": reaction_result,
@@ -110,6 +156,74 @@ class ResolveReactionOption:
             "event_id": event.event_id,
             "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
         }
+
+    def _execute_compat_request(
+        self,
+        *,
+        encounter_id: str,
+        request_id: str,
+        final_total: int,
+        dice_rolls: dict[str, Any],
+        damage_rolls: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        encounter = self._get_encounter_or_raise(encounter_id)
+        request = self._get_pending_request_or_raise(encounter, request_id)
+        reaction_type = request.get("reaction_type")
+        window_id = f"compat_window_{request_id}"
+        group_id = f"compat_group_{request.get('actor_entity_id')}"
+        option_id = f"compat_option_{request_id}"
+        pending_window = {
+            "window_id": window_id,
+            "status": "waiting_reaction",
+            "trigger_event_id": request.get("trigger_event_id"),
+            "trigger_type": request.get("trigger_type"),
+            "blocking": True,
+            "host_action_type": None,
+            "host_action_id": None,
+            "host_action_snapshot": {},
+            "choice_groups": [
+                {
+                    "group_id": group_id,
+                    "actor_entity_id": request.get("actor_entity_id"),
+                    "ask_player": bool(request.get("ask_player", True)),
+                    "status": "pending",
+                    "resource_pool": "reaction",
+                    "group_priority": 100,
+                    "trigger_sequence": 1,
+                    "relationship_rank": 1,
+                    "tie_break_key": request.get("actor_entity_id"),
+                    "options": [
+                        {
+                            "option_id": option_id,
+                            "reaction_type": reaction_type,
+                            "template_type": request.get("template_type"),
+                            "request_id": request_id,
+                            "label": reaction_type,
+                            "status": "pending",
+                        }
+                    ],
+                }
+            ],
+            "resolved_group_ids": [],
+        }
+        group = pending_window["choice_groups"][0]
+        option = group["options"][0]
+        return self._execute_with_mapping(
+            encounter_id=encounter_id,
+            mapping={
+                "window_id": window_id,
+                "group_id": group_id,
+                "option_id": option_id,
+                "pending_window": pending_window,
+                "group": group,
+                "option": option,
+                "request_id": request_id,
+                "persist_window": False,
+            },
+            final_total=final_total,
+            dice_rolls=dice_rolls,
+            damage_rolls=damage_rolls,
+        )
 
     def _resolve_by_type(
         self,

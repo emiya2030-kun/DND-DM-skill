@@ -34,7 +34,15 @@ class ResolveReactionRequest:
         request = self._get_pending_request_or_raise(encounter, request_id)
         mapping = self._find_option_mapping(encounter, request_id)
         if mapping is None:
-            raise ValueError("reaction_option_not_found")
+            if isinstance(encounter.pending_reaction_window, dict):
+                raise ValueError("reaction_option_not_found")
+            return self.resolve_option._execute_compat_request(
+                encounter_id=encounter_id,
+                request_id=request_id,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+                damage_rolls=damage_rolls,
+            )
 
         return self.resolve_option.execute(
             encounter_id=encounter_id,
