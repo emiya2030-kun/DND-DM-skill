@@ -60,6 +60,34 @@ REACTION_DEFINITIONS = {
             "short_label": "Shield",
         },
     },
+    "absorb_elements": {
+        "reaction_type": "absorb_elements",
+        "template_type": "post_hit_damage_modifier",
+        "name": "Absorb Elements",
+        "trigger_type": "attack_declared",
+        "resource_cost": {"reaction": True, "spell_slot": {"level": 3, "allow_higher_slot": False}},
+        "timing": {
+            "window_phase": "before_hit_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_target_of_trigger",
+            "actor_can_cast_reaction_spell",
+            "actor_has_absorb_elements",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_absorb_elements_reaction"},
+        "ui": {
+            "prompt": "Use Absorb Elements?",
+            "short_label": "Absorb Elements",
+        },
+    },
     "counterspell": {
         "reaction_type": "counterspell",
         "template_type": "cast_interrupt_contest",
