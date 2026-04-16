@@ -41,12 +41,21 @@ class OpenReactionWindow:
         for index, candidate in enumerate(candidates, start=1):
             actor_id = str(candidate["actor_entity_id"])
             definition = dict(candidate["reaction_definition"])
+            override = override_map.get(actor_id)
+            ask_player = True
+            auto_resolve = False
+            if isinstance(override, dict):
+                if "ask_player" in override:
+                    ask_player = bool(override["ask_player"])
+                if "auto_resolve" in override:
+                    auto_resolve = bool(override["auto_resolve"])
             group = groups_by_actor.setdefault(
                 actor_id,
                 {
                     "group_id": f"rg_{actor_id}",
                     "actor_entity_id": actor_id,
-                    "ask_player": True,
+                    "ask_player": ask_player,
+                    "auto_resolve": auto_resolve,
                     "status": "pending",
                     "resource_pool": "reaction",
                     "group_priority": 100,
@@ -59,7 +68,6 @@ class OpenReactionWindow:
             reaction_type = definition["reaction_type"]
             template_type = definition.get("template_type", "generic_reaction")
             request_id = f"react_{uuid4().hex[:12]}"
-            override = override_map.get(actor_id)
             payload = {}
             if isinstance(override, dict) and isinstance(override.get("payload"), dict):
                 payload = dict(override["payload"])

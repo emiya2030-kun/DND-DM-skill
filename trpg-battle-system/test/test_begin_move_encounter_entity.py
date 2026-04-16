@@ -222,6 +222,7 @@ class BeginMoveEncounterEntityTests(unittest.TestCase):
             self.assertEqual(result["movement_status"], "waiting_reaction")
             self.assertFalse(updated.reaction_requests[0]["ask_player"])
             self.assertTrue(updated.reaction_requests[0]["auto_resolve"])
+            self.assertFalse(updated.pending_reaction_window["choice_groups"][0]["ask_player"])
             self.assertEqual(updated.reaction_requests[0]["actor_name"], "Guard")
             self.assertEqual(updated.reaction_requests[0]["target_name"], "Lia")
             self.assertEqual(updated.reaction_requests[0]["source_event_type"], "movement_trigger_check")
