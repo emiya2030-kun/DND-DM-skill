@@ -1,5 +1,6 @@
 """服务层测试：覆盖本地 encounter 管理和回合推进行为。"""
 
+import json
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import Encounter, EncounterEntity, EncounterMap
-from tools.repositories import EncounterRepository
+from tools.repositories import EncounterRepository, EntityDefinitionRepository
 from tools.services import EncounterService
 
 
@@ -60,7 +61,185 @@ def build_encounter() -> Encounter:
     )
 
 
+def write_entity_definitions(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "entity_definitions": {
+                    "pc_miren": {
+                        "entity_def_id": "pc_miren",
+                        "name": "米伦",
+                        "side": "ally",
+                        "category": "pc",
+                        "controller": "player",
+                        "ac": 14,
+                        "speed": {"walk": 30, "remaining": 30},
+                        "hp": {"current": 22, "max": 22, "temp": 0},
+                        "initiative": 0,
+                        "size": "medium",
+                        "ability_scores": {"dex": 16},
+                        "ability_mods": {"dex": 3},
+                        "proficiency_bonus": 3,
+                        "save_proficiencies": ["wis", "int"],
+                        "skill_modifiers": {"arcana": 6},
+                        "conditions": [],
+                        "resources": {"spell_slots": {"1": 4, "2": 3, "3": 2}},
+                        "action_economy": {},
+                        "combat_flags": {},
+                        "turn_effects": [],
+                        "weapons": [{"weapon_id": "dagger", "name": "匕首"}],
+                        "spells": [{"spell_id": "fireball", "name": "火球术"}],
+                        "resistances": [],
+                        "immunities": [],
+                        "vulnerabilities": [],
+                        "notes": [],
+                    },
+                    "monster_sabur": {
+                        "entity_def_id": "monster_sabur",
+                        "name": "萨布尔",
+                        "side": "enemy",
+                        "category": "monster",
+                        "controller": "gm",
+                        "ac": 15,
+                        "speed": {"walk": 30, "remaining": 30},
+                        "hp": {"current": 45, "max": 45, "temp": 0},
+                        "initiative": 0,
+                        "size": "medium",
+                        "ability_scores": {"dex": 12},
+                        "ability_mods": {"dex": 1},
+                        "proficiency_bonus": 2,
+                        "save_proficiencies": [],
+                        "skill_modifiers": {},
+                        "conditions": [],
+                        "resources": {},
+                        "action_economy": {},
+                        "combat_flags": {},
+                        "turn_effects": [],
+                        "weapons": [{"weapon_id": "warhammer", "name": "战锤"}],
+                        "spells": [],
+                        "resistances": [],
+                        "immunities": [],
+                        "vulnerabilities": [],
+                        "notes": [],
+                    },
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 class EncounterServiceTests(unittest.TestCase):
+    def test_initialize_encounter_replaces_map_and_entities_and_resets_runtime_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            definition_path = Path(tmp_dir) / "entity_definitions.json"
+            write_entity_definitions(definition_path)
+            service = EncounterService(repo, EntityDefinitionRepository(definition_path))
+            encounter = build_encounter()
+            encounter.reaction_requests = [{"request_id": "req_old"}]
+            encounter.pending_movement = {"entity_id": "ent_ally_eric_001"}
+            encounter.round = 3
+            service.create_encounter(encounter)
+
+            initialized = service.initialize_encounter(
+                encounter.encounter_id,
+                map_setup={
+                    "map_id": "map_new",
+                    "name": "New Battle Map",
+                    "description": "Fresh battle map",
+                    "width": 12,
+                    "height": 12,
+                    "terrain": [{"terrain_id": "wall_1", "type": "wall", "x": 3, "y": 3}],
+                    "zones": [{"zone_id": "zone_fire", "type": "hazard_area", "cells": [[6, 6]]}],
+                    "auras": [],
+                    "remains": [],
+                    "battlemap_details": [{"title": "北侧高台", "content": "战场已重置"}],
+                },
+                entity_setups=[
+                    {
+                        "entity_instance_id": "ent_pc_miren",
+                        "template_ref": {
+                            "source_type": "pc",
+                            "template_id": "pc_miren",
+                        },
+                        "runtime_overrides": {
+                            "position": {"x": 4, "y": 6},
+                            "hp": {"current": 18, "temp": 2},
+                            "notes": ["从上一幕追击而来"],
+                        },
+                    },
+                    {
+                        "entity_instance_id": "ent_enemy_sabur",
+                        "template_ref": {
+                            "source_type": "monster",
+                            "template_id": "monster_sabur",
+                        },
+                        "runtime_overrides": {
+                            "position": {"x": 8, "y": 6},
+                            "hp": {"current": 30},
+                            "conditions": ["poisoned"],
+                        },
+                    },
+                ],
+            )
+
+            self.assertEqual(initialized.map.map_id, "map_new")
+            self.assertEqual(set(initialized.entities.keys()), {"ent_pc_miren", "ent_enemy_sabur"})
+            self.assertEqual(initialized.entities["ent_pc_miren"].entity_def_id, "pc_miren")
+            self.assertEqual(initialized.entities["ent_pc_miren"].hp["current"], 18)
+            self.assertEqual(initialized.entities["ent_pc_miren"].hp["max"], 22)
+            self.assertEqual(initialized.entities["ent_pc_miren"].hp["temp"], 2)
+            self.assertEqual(initialized.entities["ent_enemy_sabur"].conditions, ["poisoned"])
+            self.assertEqual(initialized.turn_order, [])
+            self.assertIsNone(initialized.current_entity_id)
+            self.assertEqual(initialized.round, 1)
+            self.assertEqual(initialized.reaction_requests, [])
+            self.assertIsNone(initialized.pending_movement)
+            repo.close()
+
+    def test_initialize_encounter_with_state_returns_full_encounter_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            definition_path = Path(tmp_dir) / "entity_definitions.json"
+            write_entity_definitions(definition_path)
+            service = EncounterService(repo, EntityDefinitionRepository(definition_path))
+            encounter = build_encounter()
+            service.create_encounter(encounter)
+
+            result = service.initialize_encounter_with_state(
+                encounter.encounter_id,
+                map_setup={
+                    "map_id": "map_initialized",
+                    "name": "Initialized Map",
+                    "description": "State projection test",
+                    "width": 10,
+                    "height": 10,
+                    "terrain": [],
+                    "zones": [],
+                    "auras": [],
+                    "remains": [],
+                    "battlemap_details": [],
+                },
+                entity_setups=[
+                    {
+                        "entity_instance_id": "ent_pc_miren",
+                        "template_ref": {"source_type": "pc", "template_id": "pc_miren"},
+                        "runtime_overrides": {
+                            "position": {"x": 2, "y": 2},
+                        },
+                    }
+                ],
+            )
+
+            self.assertEqual(result["encounter_id"], encounter.encounter_id)
+            self.assertEqual(result["status"], "initialized")
+            self.assertEqual(result["initialized_entities"], ["ent_pc_miren"])
+            self.assertEqual(result["map_summary"]["width"], 10)
+            self.assertIsNone(result["encounter_state"]["current_turn_entity"])
+            repo.close()
+
     def test_entity_defaults_size_to_medium(self) -> None:
         """测试 EncounterEntity 默认体型为 medium，并可序列化。"""
         entity = build_entity("ent_size_default", name="Scout", x=2, y=3)

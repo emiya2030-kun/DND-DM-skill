@@ -32,6 +32,7 @@ from tools.services.encounter.begin_move_encounter_entity import BeginMoveEncoun
 from tools.services.encounter.continue_pending_movement import ContinuePendingMovement
 from tools.services.encounter.manage_encounter_entities import EncounterService
 from tools.services.encounter.move_encounter_entity import MoveEncounterEntity
+from tools.services.encounter.roll_initiative_and_start_encounter import RollInitiativeAndStartEncounter
 from tools.services.encounter.resolve_forced_movement import ResolveForcedMovement
 from tools.services.encounter.turns import AdvanceTurn, EndTurn, StartTurn
 
@@ -44,5 +45,6 @@ __all__ = [
     "EncounterService",
     "GetEncounterState",
     "MoveEncounterEntity",
+    "RollInitiativeAndStartEncounter",
     "ResolveForcedMovement",
 ]

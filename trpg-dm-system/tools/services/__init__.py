@@ -80,6 +80,7 @@ from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.encounter.manage_encounter_entities import EncounterService
 from tools.services.encounter.begin_move_encounter_entity import BeginMoveEncounterEntity
 from tools.services.encounter.continue_pending_movement import ContinuePendingMovement
+from tools.services.encounter.roll_initiative_and_start_encounter import RollInitiativeAndStartEncounter
 from tools.services.encounter.resolve_forced_movement import ResolveForcedMovement
 from tools.services.encounter.turns import AdvanceTurn, EndTurn, StartTurn
 from tools.services.encounter.get_encounter_state import GetEncounterState
@@ -107,6 +108,7 @@ __all__ = [
     "ResolveForcedMovement",
     "EndTurn",
     "StartTurn",
+    "RollInitiativeAndStartEncounter",
     "EncounterService",
     "GetEncounterState",
     "MoveEncounterEntity",

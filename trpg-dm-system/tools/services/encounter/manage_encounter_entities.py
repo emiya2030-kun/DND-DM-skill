@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from typing import Any
+
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
+from tools.models.map import EncounterMap
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.repositories.entity_definition_repository import EntityDefinitionRepository
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns import AdvanceTurn, EndTurn, StartTurn
 
@@ -10,8 +15,13 @@ from tools.services.encounter.turns import AdvanceTurn, EndTurn, StartTurn
 class EncounterService:
     """本地 encounter 管理服务，负责实体维护和回合推进。"""
 
-    def __init__(self, repository: EncounterRepository):
+    def __init__(
+        self,
+        repository: EncounterRepository,
+        entity_definition_repository: EntityDefinitionRepository | None = None,
+    ):
         self.repository = repository
+        self.entity_definition_repository = entity_definition_repository or EntityDefinitionRepository()
 
     def create_encounter(self, encounter: Encounter) -> Encounter:
         """创建并保存一场新的 encounter。"""
@@ -20,6 +30,70 @@ class EncounterService:
     def create_encounter_with_state(self, encounter: Encounter) -> dict[str, object]:
         saved = self.create_encounter(encounter)
         return self._build_state_response(saved.encounter_id)
+
+    def initialize_encounter(
+        self,
+        encounter_id: str,
+        *,
+        map_setup: dict[str, Any],
+        entity_setups: list[dict[str, Any]],
+    ) -> Encounter:
+        encounter = self._get_encounter_or_raise(encounter_id)
+
+        encounter.map = EncounterMap(
+            map_id=str(map_setup["map_id"]),
+            name=str(map_setup["name"]),
+            description=str(map_setup.get("description", "")),
+            width=int(map_setup["width"]),
+            height=int(map_setup["height"]),
+            grid_size_feet=int(map_setup.get("grid_size_feet", 5)),
+            terrain=list(map_setup.get("terrain", [])),
+            auras=list(map_setup.get("auras", [])),
+            zones=list(map_setup.get("zones", [])),
+            remains=list(map_setup.get("remains", [])),
+        )
+
+        initialized_entities: dict[str, EncounterEntity] = {}
+        for entity_setup in entity_setups:
+            entity = self._build_entity_from_template(entity_setup)
+            self._validate_position_within_map(encounter, entity.position["x"], entity.position["y"])
+            initialized_entities[entity.entity_id] = entity
+
+        encounter.entities = initialized_entities
+        encounter.turn_order = []
+        encounter.current_entity_id = None
+        encounter.round = 1
+        encounter.reaction_requests = []
+        encounter.pending_movement = None
+        encounter.spell_instances = []
+        encounter.encounter_notes = list(map_setup.get("battlemap_details", []))
+
+        return self.repository.save(encounter)
+
+    def initialize_encounter_with_state(
+        self,
+        encounter_id: str,
+        *,
+        map_setup: dict[str, Any],
+        entity_setups: list[dict[str, Any]],
+    ) -> dict[str, object]:
+        updated = self.initialize_encounter(
+            encounter_id,
+            map_setup=map_setup,
+            entity_setups=entity_setups,
+        )
+        return {
+            "encounter_id": updated.encounter_id,
+            "status": "initialized",
+            "initialized_entities": list(updated.entities.keys()),
+            "map_summary": {
+                "map_id": updated.map.map_id,
+                "name": updated.map.name,
+                "width": updated.map.width,
+                "height": updated.map.height,
+            },
+            "encounter_state": GetEncounterState(self.repository).execute(updated.encounter_id),
+        }
 
     def get_encounter(self, encounter_id: str) -> Encounter:
         """读取 encounter，不存在时直接抛错，方便上层少写空值判断。"""
@@ -236,3 +310,41 @@ class EncounterService:
             "encounter_id": encounter_id,
             "encounter_state": GetEncounterState(self.repository).execute(encounter_id),
         }
+
+    def _build_entity_from_template(self, entity_setup: dict[str, Any]) -> EncounterEntity:
+        template_ref = entity_setup.get("template_ref")
+        if not isinstance(template_ref, dict):
+            raise ValueError("entity_setup.template_ref must be a dict")
+
+        template_id = template_ref.get("template_id")
+        if not isinstance(template_id, str) or not template_id.strip():
+            raise ValueError("template_ref.template_id must be a non-empty string")
+
+        template = self.entity_definition_repository.get(template_id)
+        if template is None:
+            raise ValueError(f"entity template '{template_id}' not found")
+
+        runtime_overrides = entity_setup.get("runtime_overrides", {})
+        if not isinstance(runtime_overrides, dict):
+            raise ValueError("entity_setup.runtime_overrides must be a dict")
+
+        payload = deepcopy(template)
+        payload["entity_id"] = str(entity_setup["entity_instance_id"])
+        payload["entity_def_id"] = str(template.get("entity_def_id") or template_id)
+
+        source_ref = payload.get("source_ref")
+        if not isinstance(source_ref, dict):
+            source_ref = {}
+        source_ref["source_type"] = template_ref.get("source_type")
+        source_ref["template_id"] = template_id
+        payload["source_ref"] = source_ref
+
+        self._deep_merge(payload, runtime_overrides)
+        return EncounterEntity.from_dict(payload)
+
+    def _deep_merge(self, base: dict[str, Any], overrides: dict[str, Any]) -> None:
+        for key, value in overrides.items():
+            if isinstance(value, dict) and isinstance(base.get(key), dict):
+                self._deep_merge(base[key], value)
+            else:
+                base[key] = deepcopy(value)
