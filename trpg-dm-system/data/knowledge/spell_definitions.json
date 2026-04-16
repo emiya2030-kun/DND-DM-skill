@@ -1,0 +1,545 @@
+{
+  "schema_version": 1,
+  "spell_definitions": {
+    "fireball": {
+      "id": "fireball",
+      "name": "Fireball",
+      "level": 3,
+      "save_ability": "dex",
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "火球术",
+        "name_en": "Fireball",
+        "rules_text_zh": "明亮的闪光从你的指间飞驰向施法距离内你指定的一点，并随着一声低吼迸成一片烈焰。目标点周围半径20尺球状区域内的每个生物必须进行一次敏捷豁免。豁免失败者将受到8d6点火焰伤害，豁免成功则伤害减半。区域内所有未被着装或携带的可燃物件会开始燃烧。升环施法。使用的法术位每比三环高一环，此伤害就增加1d6。",
+        "rules_text_en": "A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a Dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one. Unattended flammable objects in the area ignite."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师"],
+        "classes_en": ["Sorcerer", "Wizard"]
+      },
+      "base": {
+        "level": 3,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "150 feet",
+        "range_zh": "150尺",
+        "components": ["V", "S", "M"],
+        "components_zh": ["V", "S", "M（一颗蝙蝠粪和硫磺搓成的小球）"],
+        "material_component_detail": "A tiny ball of bat guano and sulfur.",
+        "material_component_detail_zh": "一颗蝙蝠粪和硫磺搓成的小球",
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a Dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one. Unattended flammable objects in the area ignite."
+      },
+      "targeting": {
+        "type": "area_sphere",
+        "range_feet": 150,
+        "radius_feet": 20,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "area_template": {
+        "shape": "sphere",
+        "radius_feet": 20,
+        "render_mode": "circle_overlay",
+        "persistence": "instant"
+      },
+      "resolution": {
+        "mode": "save",
+        "save_ability": "dex",
+        "save_dc_mode": "caster_spell_dc",
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_failed_save": {
+          "damage_parts": [
+            {
+              "source": "spell:fireball:failed:part_0",
+              "formula": "8d6",
+              "damage_type": "fire"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        },
+        "on_successful_save": {
+          "damage_parts_mode": "same_as_failed",
+          "damage_multiplier": 0.5,
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": {
+          "base_slot_level": 3,
+          "additional_damage_parts": [
+            {
+              "source": "spell:fireball:slot_scaling",
+              "formula_per_extra_level": "1d6",
+              "damage_type": "fire"
+            }
+          ]
+        }
+      },
+      "special_rules": {
+        "ignites_unattended_flammable_objects": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [
+          {
+            "source": "spell:fireball:failed:part_0",
+            "formula": "8d6",
+            "damage_type": "fire"
+          }
+        ],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts_mode": "same_as_failed",
+        "damage_multiplier": 0.5,
+        "conditions": [],
+        "note": null
+      }
+    },
+    "hold_person": {
+      "id": "hold_person",
+      "name": "Hold Person",
+      "level": 2,
+      "save_ability": "wis",
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "定身类人",
+        "name_en": "Hold Person",
+        "rules_text_zh": "指定施法距离内一个你能看见的类人生物。该目标必须进行一次感知豁免，豁免失败则其在法术持续时间内陷入麻痹状态。目标在其每回合结束时可以重新进行这次豁免，豁免成功则终止其身上该法术的效应。升环施法。使用三环或更高法术位施展该法术时，你使用的法术位每比二环高一环，就可以额外指定一个类人作为目标。",
+        "rules_text_en": "Choose a humanoid that you can see within range. The target must succeed on a Wisdom saving throw or have the Paralyzed condition for the duration. At the end of each of its turns, the target repeats the save, ending the spell on itself on a success."
+      },
+      "usage_contexts": ["combat", "exploration", "social"],
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["吟游诗人", "牧师", "德鲁伊", "术士", "魔契师", "法师"],
+        "classes_en": ["Bard", "Cleric", "Druid", "Sorcerer", "Warlock", "Wizard"]
+      },
+      "base": {
+        "level": 2,
+        "school": "enchantment",
+        "school_zh": "惑控",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "60 feet",
+        "range_zh": "60尺",
+        "components": ["V", "S", "M"],
+        "components_zh": ["V", "S", "M（一片直的小铁片）"],
+        "material_component_detail": "A small, straight piece of iron.",
+        "material_component_detail_zh": "一片直的小铁片",
+        "duration": "concentration_up_to_1_minute",
+        "duration_zh": "专注，至多1分钟",
+        "concentration": true,
+        "description": "Choose a humanoid that you can see within range. The target must succeed on a Wisdom saving throw or have the Paralyzed condition for the duration. At the end of each of its turns, the target repeats the save, ending the spell on itself on a success."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 60,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["humanoid"]
+      },
+      "resolution": {
+        "mode": "save",
+        "save_ability": "wis",
+        "save_dc_mode": "caster_spell_dc",
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_failed_save": {
+          "damage_parts": [],
+          "apply_conditions": ["paralyzed"],
+          "apply_turn_effects": [
+            {
+              "effect_template_id": "hold_person_repeat_save"
+            }
+          ],
+          "note": null
+        },
+        "on_successful_save": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {
+        "hold_person_repeat_save": {
+          "name": "Hold Person Ongoing Save",
+          "trigger": "end_of_turn",
+          "save": {
+            "ability": "wis",
+            "dc_mode": "caster_spell_dc",
+            "on_success_remove_effect": true
+          },
+          "on_trigger": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "on_save_success": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": ["paralyzed"]
+          },
+          "on_save_failure": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "remove_after_trigger": false
+        }
+      },
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": {
+          "base_slot_level": 2,
+          "additional_targets_per_extra_level": 1,
+          "target_restriction": "humanoid"
+        }
+      },
+      "special_rules": {
+        "repeating_save_timing": "end_of_turn",
+        "repeating_save_ends_spell_on_success": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": ["paralyzed"],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      }
+    },
+    "hex": {
+      "id": "hex",
+      "name": "Hex",
+      "level": 1,
+      "save_ability": null,
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "脆弱诅咒",
+        "name_en": "Hex",
+        "rules_text_zh": "你对施法距离内一个你能看见的一个生物施加诅咒。直到法术终止前，你对命中该目标的任意攻击都将额外造成1d6点暗蚀伤害。此外，你在施展该法术时选择一项属性，使该目标进行所选属性的属性检定时具有劣势。如果目标在法术终止前HP降至0，则你可以在法术终止前后续的某一回合中使用一个附赠动作诅咒另一个生物。升环施法。使用二环法术位施展该法术时，其专注可以维持至多4小时。使用三环或四环法术位施展该法术时，其专注可以维持至多8小时。使用环阶5+的法术位施展该法术时，其专注可以维持至多24小时。",
+        "rules_text_en": "You place a curse on a creature that you can see within range. Until the spell ends, you deal an extra 1d6 necrotic damage to the target whenever you hit it with an attack. Also choose one ability when you cast the spell. The target has disadvantage on ability checks made with the chosen ability. If the target drops to 0 hit points before this spell ends, you can use a bonus action on a later turn to curse a new creature."
+      },
+      "usage_contexts": ["combat", "exploration", "social"],
+      "runtime_support": {
+        "in_encounter": "partially_implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["魔契师"],
+        "classes_en": ["Warlock"]
+      },
+      "base": {
+        "level": 1,
+        "school": "enchantment",
+        "school_zh": "惑控",
+        "casting_time": "1 bonus action",
+        "casting_time_zh": "附赠动作",
+        "range": "90 feet",
+        "range_zh": "90尺",
+        "components": ["V", "S", "M"],
+        "components_zh": ["V", "S", "M（一只风干的蝾螈眼）"],
+        "material_component_detail": "The petrified eye of a newt.",
+        "material_component_detail_zh": "一只风干的蝾螈眼",
+        "duration": "concentration_up_to_1_hour",
+        "duration_zh": "专注，至多1小时",
+        "concentration": true,
+        "description": "You place a curse on a creature that you can see within range. Until the spell ends, you deal an extra 1d6 necrotic damage to the target whenever you hit it with an attack. Also choose one ability when you cast the spell. The target has disadvantage on ability checks made with the chosen ability. If the target drops to 0 hit points before this spell ends, you can use a bonus action on a later turn to curse a new creature."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 90,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "no_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "bonus_action"
+      },
+      "on_cast": {
+        "on_resolve": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [
+            {
+              "effect_template_id": "hex_mark"
+            }
+          ],
+          "note": "Choose one ability when you cast the spell. The target has disadvantage on ability checks made with the chosen ability."
+        }
+      },
+      "effect_templates": {
+        "hex_mark": {
+          "name": "Hex Curse",
+          "trigger": "end_of_turn",
+          "save": null,
+          "on_trigger": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "on_save_success": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "on_save_failure": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "remove_after_trigger": false,
+          "attack_bonus_damage_parts": [
+            {
+              "source": "spell:hex:bonus_damage",
+              "formula": "1d6",
+              "damage_type": "necrotic"
+            }
+          ]
+        }
+      },
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_duration_bonus": [
+          {"slot_level": 2, "duration": "concentration_up_to_4_hours", "duration_zh": "专注，至多4小时"},
+          {"slot_level": 3, "duration": "concentration_up_to_8_hours", "duration_zh": "专注，至多8小时"},
+          {"slot_level": 4, "duration": "concentration_up_to_8_hours", "duration_zh": "专注，至多8小时"},
+          {"slot_level": 5, "duration": "concentration_up_to_24_hours", "duration_zh": "专注，至多24小时"}
+        ]
+      },
+      "special_rules": {
+        "select_ability_on_cast": true,
+        "ability_check_disadvantage_on_target": true,
+        "retarget_on_target_drop_to_zero": {
+          "enabled": true,
+          "activation": "bonus_action",
+          "requires_concentration_to_continue": true,
+          "implementation_status": "template_only"
+        }
+      }
+    },
+    "hunters_mark": {
+      "id": "hunters_mark",
+      "name": "Hunter's Mark",
+      "level": 1,
+      "save_ability": null,
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "猎人印记",
+        "name_en": "Hunter's Mark",
+        "rules_text_zh": "你神秘地标记一个施法距离内你能看见的生物作为你的猎物。直到法术终止前，你每回合第一次以武器攻击命中被标记目标时，目标将额外受到1d6点力场伤害。如果目标在法术终止前HP降至0，则你可以在后续某一回合中使用一个附赠动作将印记转移到你能看见的另一个生物身上。",
+        "rules_text_en": "You mystically mark one creature you can see within range as your quarry. Until the spell ends, the first time each turn you hit the marked target with a weapon attack, it takes an extra 1d6 Force damage. If the target drops to 0 hit points before this spell ends, you can take a bonus action on a later turn to mark a new creature you can see."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "partially_implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["游侠"],
+        "classes_en": ["Ranger"]
+      },
+      "base": {
+        "level": 1,
+        "school": "divination",
+        "school_zh": "预言",
+        "casting_time": "1 bonus action",
+        "casting_time_zh": "附赠动作",
+        "range": "90 feet",
+        "range_zh": "90尺",
+        "components": ["V"],
+        "components_zh": ["V"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "concentration_up_to_1_hour",
+        "duration_zh": "专注，至多1小时",
+        "concentration": true,
+        "description": "You mystically mark one creature you can see within range as your quarry. Until the spell ends, the first time each turn you hit the marked target with a weapon attack, it takes an extra 1d6 Force damage. If the target drops to 0 hit points before this spell ends, you can take a bonus action on a later turn to mark a new creature you can see."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 90,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "no_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "bonus_action"
+      },
+      "on_cast": {
+        "on_resolve": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [
+            {
+              "effect_template_id": "hunters_mark"
+            }
+          ],
+          "note": "Until the spell ends, the first time each turn you hit the marked target with a weapon attack, it takes an extra 1d6 Force damage."
+        }
+      },
+      "effect_templates": {
+        "hunters_mark": {
+          "name": "Hunter's Mark",
+          "trigger": "end_of_turn",
+          "save": null,
+          "on_trigger": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "on_save_success": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "on_save_failure": {
+            "damage_parts": [],
+            "apply_conditions": [],
+            "remove_conditions": []
+          },
+          "remove_after_trigger": false,
+          "attack_bonus_damage_parts": [
+            {
+              "source": "spell:hunters_mark:bonus_damage",
+              "formula": "1d6",
+              "damage_type": "force"
+            }
+          ]
+        }
+      },
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_duration_bonus": [
+          {"slot_level": 2, "duration": "concentration_up_to_4_hours", "duration_zh": "专注，至多4小时"},
+          {"slot_level": 3, "duration": "concentration_up_to_8_hours", "duration_zh": "专注，至多8小时"},
+          {"slot_level": 4, "duration": "concentration_up_to_8_hours", "duration_zh": "专注，至多8小时"},
+          {"slot_level": 5, "duration": "concentration_up_to_24_hours", "duration_zh": "专注，至多24小时"}
+        ]
+      },
+      "special_rules": {
+        "retarget_on_target_drop_to_zero": {
+          "enabled": true,
+          "activation": "bonus_action",
+          "requires_concentration_to_continue": true,
+          "implementation_status": "partially_implemented"
+        }
+      }
+    },
+    "eldritch_blast": {
+      "id": "eldritch_blast",
+      "name": "Eldritch Blast",
+      "level": 0,
+      "save_ability": null,
+      "requires_attack_roll": true,
+      "localization": {
+        "name_zh": "魔能爆",
+        "name_en": "Eldritch Blast",
+        "rules_text_zh": "你释放一道咆哮的裂隙能量射线。进行一次远程法术攻击，命中时造成1d10力场伤害。你达到更高等级时会发射更多射线。",
+        "rules_text_en": "You hurl a beam of crackling energy. Make a ranged spell attack; on a hit, the target takes 1d10 force damage. The spell creates more than one beam when you reach higher levels."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["魔契师"],
+        "classes_en": ["Warlock"]
+      },
+      "base": {
+        "level": 0,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "120 feet",
+        "range_zh": "120尺",
+        "components": ["V", "S"],
+        "components_zh": ["V", "S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "You hurl a beam of crackling energy. Make a ranged spell attack; on a hit, the target takes 1d10 force damage."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 120,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "attack_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_hit": {
+          "damage_parts": [
+            {
+              "source": "spell:eldritch_blast:on_hit:part_0",
+              "formula": "1d10",
+              "damage_type": "force"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        },
+        "on_miss": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": [
+          {"caster_level": 1, "beam_count": 1},
+          {"caster_level": 5, "beam_count": 2},
+          {"caster_level": 11, "beam_count": 3},
+          {"caster_level": 17, "beam_count": 4}
+        ],
+        "slot_level_bonus": null
+      },
+      "special_rules": {}
+    }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "zone_definitions": {
+    "fire_burn_area": {
+      "id": "fire_burn_area",
+      "name": "火焰灼域",
+      "type": "hazard_area",
+      "note": "炽焰翻涌，踏入或停留都会被灼伤。",
+      "runtime": {
+        "movement_modifier": {
+          "treat_as_difficult_terrain": true
+        },
+        "triggers": [
+          {
+            "timing": "enter",
+            "on_trigger": {
+              "damage_parts": [
+                {
+                  "source": "zone_fire_enter",
+                  "formula": "1d6",
+                  "type": "fire"
+                }
+              ],
+              "apply_conditions": [],
+              "remove_conditions": []
+            }
+          },
+          {
+            "timing": "end_of_turn_inside",
+            "save": {
+              "ability": "dex",
+              "dc": 14
+            },
+            "on_trigger": {
+              "damage_parts": [],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_success": {
+              "damage_parts": [
+                {
+                  "source": "zone_fire_end_success",
+                  "formula": "1d6",
+                  "type": "fire"
+                }
+              ],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_failure": {
+              "damage_parts": [
+                {
+                  "source": "zone_fire_end_failure",
+                  "formula": "2d6",
+                  "type": "fire"
+                }
+              ],
+              "apply_conditions": [],
+              "remove_conditions": []
+            }
+          }
+        ]
+      },
+      "localization": {
+        "zh_cn": {
+          "name": "火焰灼域",
+          "note": "炽焰翻涌，踏入或停留都会被灼伤。"
+        },
+        "en_us": {
+          "name": "Burning Fire Zone",
+          "note": "Flames surge through the area and scorch creatures that enter or remain inside."
+        }
+      }
+    },
+    "poison_mist_area": {
+      "id": "poison_mist_area",
+      "name": "毒雾区",
+      "type": "hazard_area",
+      "note": "毒雾会侵入肺部，让停留者中毒。",
+      "runtime": {
+        "triggers": [
+          {
+            "timing": "start_of_turn_inside",
+            "save": {
+              "ability": "con",
+              "dc": 13
+            },
+            "on_trigger": {
+              "damage_parts": [],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_success": {
+              "damage_parts": [],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_failure": {
+              "damage_parts": [],
+              "apply_conditions": ["poisoned"],
+              "remove_conditions": []
+            }
+          }
+        ]
+      },
+      "localization": {
+        "zh_cn": {
+          "name": "毒雾区",
+          "note": "毒雾会侵入肺部，让停留者中毒。"
+        },
+        "en_us": {
+          "name": "Poison Mist Area",
+          "note": "The poisonous mist seeps into the lungs and poisons creatures that remain inside."
+        }
+      }
+    },
+    "frost_slow_area": {
+      "id": "frost_slow_area",
+      "name": "冰霜缓滞区",
+      "type": "hazard_area",
+      "note": "结霜地面会拖慢脚步，站不稳的人还会滑倒。",
+      "runtime": {
+        "movement_modifier": {
+          "treat_as_difficult_terrain": true
+        },
+        "triggers": [
+          {
+            "timing": "enter",
+            "save": {
+              "ability": "dex",
+              "dc": 12
+            },
+            "on_trigger": {
+              "damage_parts": [],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_success": {
+              "damage_parts": [],
+              "apply_conditions": [],
+              "remove_conditions": []
+            },
+            "on_save_failure": {
+              "damage_parts": [],
+              "apply_conditions": ["prone"],
+              "remove_conditions": []
+            }
+          }
+        ]
+      },
+      "localization": {
+        "zh_cn": {
+          "name": "冰霜缓滞区",
+          "note": "结霜地面会拖慢脚步，站不稳的人还会滑倒。"
+        },
+        "en_us": {
+          "name": "Frost Slow Area",
+          "note": "Frozen ground hinders movement and can knock the unwary prone."
+        }
+      }
+    }
+  }
+}

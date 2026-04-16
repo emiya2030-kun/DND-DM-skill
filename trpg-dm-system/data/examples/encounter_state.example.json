@@ -1,0 +1,361 @@
+{
+  "encounter_id": "enc_day1_iron_duster",
+  "name": "Iron Duster Ambush",
+  "status": "active",
+  "round": 1,
+  "current_entity_id": "ent_ally_eric_001",
+  "turn_order": [
+    "ent_ally_eric_001",
+    "ent_enemy_iron_duster_001",
+    "ent_enemy_hellhound_001"
+  ],
+  "entities": {
+    "ent_ally_eric_001": {
+      "entity_id": "ent_ally_eric_001",
+      "entity_def_id": "pc_eric_lv5",
+      "source_ref": {
+        "character_id": "pc_eric_001"
+      },
+      "name": "Eric",
+      "side": "ally",
+      "category": "pc",
+      "controller": "player",
+      "position": {
+        "x": 15,
+        "y": 19
+      },
+      "hp": {
+        "current": 80,
+        "max": 80,
+        "temp": 0
+      },
+      "ac": 16,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "initiative": 17,
+      "ability_scores": {
+        "str": 10,
+        "dex": 18,
+        "con": 12,
+        "int": 14,
+        "wis": 10,
+        "cha": 16
+      },
+      "ability_mods": {
+        "str": 0,
+        "dex": 4,
+        "con": 1,
+        "int": 2,
+        "wis": 0,
+        "cha": 3
+      },
+      "proficiency_bonus": 3,
+      "save_proficiencies": [
+        "wis",
+        "cha"
+      ],
+      "skill_modifiers": {
+        "arcana": 5,
+        "deception": 6,
+        "stealth": 7
+      },
+      "conditions": [],
+      "resources": {
+        "spell_slots": {
+          "1": {
+            "max": 4,
+            "remaining": 2
+          },
+          "2": {
+            "max": 3,
+            "remaining": 1
+          }
+        },
+        "feature_uses": {
+          "eldritch_invocation": {
+            "max": 3,
+            "remaining": 3
+          }
+        }
+      },
+      "action_economy": {
+        "action_used": false,
+        "bonus_action_used": false,
+        "reaction_used": false,
+        "free_interaction_used": false
+      },
+      "combat_flags": {
+        "is_active": true,
+        "is_defeated": false,
+        "is_concentrating": false
+      },
+      "weapons": [
+        {
+          "weapon_id": "wpn_infernal_rapier",
+          "name": "Infernal Rapier",
+          "attack_bonus": 7,
+          "damage": [
+            {
+              "formula": "1d8+4",
+              "type": "slashing"
+            },
+            {
+              "formula": "1d8",
+              "type": "fire"
+            }
+          ],
+          "properties": [
+            "finesse",
+            "magic"
+          ],
+          "range": {
+            "normal": 5,
+            "long": 5
+          }
+        }
+      ],
+      "spells": [
+        {
+          "spell_id": "eldritch_blast",
+          "name": "Eldritch Blast",
+          "level": 0,
+          "requires_attack_roll": true,
+          "attack_bonus": 7,
+          "damage": [
+            {
+              "formula": "1d10",
+              "type": "force"
+            }
+          ],
+          "range_feet": 120
+        }
+      ],
+      "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "ent_enemy_iron_duster_001": {
+      "entity_id": "ent_enemy_iron_duster_001",
+      "entity_def_id": "monster_iron_duster",
+      "source_ref": {
+        "monster_id": "iron_duster"
+      },
+      "name": "Iron Duster",
+      "side": "enemy",
+      "category": "monster",
+      "controller": "gm",
+      "position": {
+        "x": 18,
+        "y": 19
+      },
+      "hp": {
+        "current": 45,
+        "max": 45,
+        "temp": 0
+      },
+      "ac": 16,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "initiative": 12,
+      "ability_scores": {
+        "str": 14,
+        "dex": 12,
+        "con": 14,
+        "int": 3,
+        "wis": 10,
+        "cha": 5
+      },
+      "ability_mods": {
+        "str": 2,
+        "dex": 1,
+        "con": 2,
+        "int": -4,
+        "wis": 0,
+        "cha": -3
+      },
+      "proficiency_bonus": 2,
+      "save_proficiencies": [],
+      "skill_modifiers": {},
+      "conditions": [],
+      "resources": {
+        "spell_slots": {},
+        "feature_uses": {}
+      },
+      "action_economy": {
+        "action_used": false,
+        "bonus_action_used": false,
+        "reaction_used": false,
+        "free_interaction_used": false
+      },
+      "combat_flags": {
+        "is_active": false,
+        "is_defeated": false,
+        "is_concentrating": false
+      },
+      "weapons": [
+        {
+          "weapon_id": "claw",
+          "name": "Metal Claw",
+          "attack_bonus": 5,
+          "damage": [
+            {
+              "formula": "2d6+2",
+              "type": "slashing"
+            }
+          ],
+          "properties": [],
+          "range": {
+            "normal": 5,
+            "long": 5
+          }
+        }
+      ],
+      "spells": [],
+      "resistances": [
+        "poison"
+      ],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": [
+        {
+          "note_id": "note_hex_001",
+          "text": "Has disadvantage on Strength checks due to Hex."
+        }
+      ]
+    },
+    "ent_enemy_hellhound_001": {
+      "entity_id": "ent_enemy_hellhound_001",
+      "entity_def_id": "monster_soulfire_hellhound",
+      "source_ref": {
+        "monster_id": "soulfire_hellhound"
+      },
+      "name": "Soulfire Hellhound",
+      "side": "enemy",
+      "category": "monster",
+      "controller": "gm",
+      "position": {
+        "x": 20,
+        "y": 16
+      },
+      "hp": {
+        "current": 37,
+        "max": 37,
+        "temp": 0
+      },
+      "ac": 14,
+      "speed": {
+        "walk": 40,
+        "remaining": 40
+      },
+      "initiative": 10,
+      "ability_scores": {
+        "str": 15,
+        "dex": 14,
+        "con": 13,
+        "int": 6,
+        "wis": 12,
+        "cha": 8
+      },
+      "ability_mods": {
+        "str": 2,
+        "dex": 2,
+        "con": 1,
+        "int": -2,
+        "wis": 1,
+        "cha": -1
+      },
+      "proficiency_bonus": 2,
+      "save_proficiencies": [],
+      "skill_modifiers": {
+        "perception": 3
+      },
+      "conditions": [],
+      "resources": {
+        "spell_slots": {},
+        "feature_uses": {}
+      },
+      "action_economy": {
+        "action_used": false,
+        "bonus_action_used": false,
+        "reaction_used": false,
+        "free_interaction_used": false
+      },
+      "combat_flags": {
+        "is_active": false,
+        "is_defeated": false,
+        "is_concentrating": false
+      },
+      "weapons": [
+        {
+          "weapon_id": "bite",
+          "name": "Bite",
+          "attack_bonus": 5,
+          "damage": [
+            {
+              "formula": "1d8+3",
+              "type": "piercing"
+            },
+            {
+              "formula": "1d6",
+              "type": "fire"
+            }
+          ],
+          "properties": [],
+          "range": {
+            "normal": 5,
+            "long": 5
+          }
+        }
+      ],
+      "spells": [],
+      "resistances": [
+        "fire"
+      ],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    }
+  },
+  "map": {
+    "map_id": "map_factory_floor_01",
+    "name": "Factory Floor",
+    "description": "A metal floor with narrow walkways and furnace vents.",
+    "width": 30,
+    "height": 30,
+    "grid_size_feet": 5,
+    "terrain": [
+      {
+        "terrain_id": "ter_wall_001",
+        "type": "wall",
+        "x": 10,
+        "y": 8,
+        "blocks_movement": true,
+        "blocks_los": true
+      },
+      {
+        "terrain_id": "ter_hazard_001",
+        "type": "hazard",
+        "x": 17,
+        "y": 18,
+        "blocks_movement": false,
+        "blocks_los": false
+      }
+    ],
+    "auras": [],
+    "zones": []
+  },
+  "encounter_notes": [
+    {
+      "note_id": "enc_note_001",
+      "entity_id": "ent_enemy_iron_duster_001",
+      "note": "Iron Duster has disadvantage on Strength checks and saving throws due to Hex."
+    }
+  ],
+  "created_at": "2026-04-13T12:00:00+09:00",
+  "updated_at": "2026-04-13T12:00:00+09:00"
+}
