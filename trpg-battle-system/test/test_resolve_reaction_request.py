@@ -174,6 +174,7 @@ class ResolveReactionRequestTests(unittest.TestCase):
             self.assertEqual(result["reaction_type"], "opportunity_attack")
             self.assertEqual(result["encounter_state"]["reaction_requests"][0]["status"], "resolved")
             self.assertEqual(result["window_status"], "closed")
+            self.assertEqual(result["resolution_mode"], "append_followup_action")
             encounter_repo.close()
             event_repo.close()
 

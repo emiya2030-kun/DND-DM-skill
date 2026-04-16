@@ -52,7 +52,7 @@ class ResolveReactionOption:
         request = self._get_pending_request_or_raise(encounter, request_id)
         reaction_type = str(request.get("reaction_type") or option.get("reaction_type"))
 
-        attack_result = self._resolve_by_type(
+        resolution = self._resolve_by_type(
             reaction_type=reaction_type,
             encounter_id=encounter_id,
             request=request,
@@ -60,6 +60,11 @@ class ResolveReactionOption:
             dice_rolls=dice_rolls,
             damage_rolls=damage_rolls,
         )
+
+        resolution_mode = resolution.get("resolution_mode")
+        if not resolution_mode:
+            raise ValueError("reaction_resolution_missing")
+        reaction_result = resolution.get("reaction_result")
 
         encounter = self._get_encounter_or_raise(encounter_id)
         pending_window = self._get_pending_window_or_raise(encounter, window_id)
@@ -99,7 +104,9 @@ class ResolveReactionOption:
             "group_id": group_id,
             "option_id": option_id,
             "window_status": window_result["window_status"],
-            "attack_result": attack_result,
+            "resolution_mode": resolution_mode,
+            "reaction_result": reaction_result,
+            "attack_result": reaction_result,
             "event_id": event.event_id,
             "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
         }

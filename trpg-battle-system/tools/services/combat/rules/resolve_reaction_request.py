@@ -34,8 +34,7 @@ class ResolveReactionRequest:
         request = self._get_pending_request_or_raise(encounter, request_id)
         mapping = self._find_option_mapping(encounter, request_id)
         if mapping is None:
-            mapping = self._create_compat_window(encounter, request)
-            self.encounter_repository.save(encounter)
+            raise ValueError("reaction_option_not_found")
 
         return self.resolve_option.execute(
             encounter_id=encounter_id,
@@ -74,45 +73,3 @@ class ResolveReactionRequest:
                         "option_id": str(option.get("option_id")),
                     }
         return None
-
-    def _create_compat_window(self, encounter: Encounter, request: dict[str, Any]) -> dict[str, str]:
-        actor_entity_id = str(request.get("actor_entity_id"))
-        request_id = str(request.get("request_id"))
-        window_id = f"rw_compat_{request_id}"
-        group_id = f"rg_{actor_entity_id}"
-        option_id = f"opt_{request_id}"
-        encounter.pending_reaction_window = {
-            "window_id": window_id,
-            "status": "waiting_reaction",
-            "trigger_event_id": request.get("trigger_event_id"),
-            "trigger_type": request.get("trigger_type"),
-            "blocking": True,
-            "host_action_type": None,
-            "host_action_id": None,
-            "host_action_snapshot": {},
-            "choice_groups": [
-                {
-                    "group_id": group_id,
-                    "actor_entity_id": actor_entity_id,
-                    "ask_player": bool(request.get("ask_player", True)),
-                    "status": "pending",
-                    "resource_pool": "reaction",
-                    "group_priority": 100,
-                    "trigger_sequence": 1,
-                    "relationship_rank": 1,
-                    "tie_break_key": actor_entity_id,
-                    "options": [
-                        {
-                            "option_id": option_id,
-                            "reaction_type": request.get("reaction_type"),
-                            "template_type": request.get("template_type"),
-                            "request_id": request_id,
-                            "label": request.get("reaction_type"),
-                            "status": "pending",
-                        }
-                    ],
-                }
-            ],
-            "resolved_group_ids": [],
-        }
-        return {"window_id": window_id, "group_id": group_id, "option_id": option_id}

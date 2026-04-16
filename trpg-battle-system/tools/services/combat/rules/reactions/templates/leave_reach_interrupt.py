@@ -22,7 +22,7 @@ class LeaveReachInterrupt:
         dice_rolls: dict[str, Any] | None,
         damage_rolls: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
-        return self.execute_attack.execute(
+        attack_result = self.execute_attack.execute(
             encounter_id=encounter_id,
             actor_id=actor_entity_id,
             target_id=target_entity_id,
@@ -34,3 +34,8 @@ class LeaveReachInterrupt:
             consume_reaction=True,
             allow_out_of_turn_actor=True,
         )
+        return {
+            "resolution_mode": "append_followup_action",
+            "reaction_result": attack_result,
+            "host_action_post_check": {"required": True, "check": "can_movement_continue"},
+        }

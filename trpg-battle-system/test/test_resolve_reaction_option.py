@@ -257,6 +257,7 @@ class ResolveReactionOptionTests(unittest.TestCase):
             self.assertEqual(updated.reaction_requests[1]["status"], "declined")
             self.assertEqual(result["reaction_type"], "opportunity_attack")
             self.assertEqual(result["window_status"], "waiting_reaction")
+            self.assertEqual(result["resolution_mode"], "append_followup_action")
             self.assertEqual(result["window_id"], "rw_leave_reach_001")
             self.assertIn("event_id", result)
             self.assertIn("attack_result", result)
@@ -284,6 +285,7 @@ class ResolveReactionOptionTests(unittest.TestCase):
             assert updated is not None
             self.assertIsNone(updated.pending_reaction_window)
             self.assertEqual(result["window_status"], "closed")
+            self.assertEqual(result["resolution_mode"], "append_followup_action")
             encounter_repo.close()
             event_repo.close()
 
