@@ -57,4 +57,35 @@ class CollectReactionCandidates:
                 for definition in definitions
             ]
 
+        if trigger_type == "spell_declared":
+            caster_id = trigger_event.get("caster_entity_id")
+            if not isinstance(caster_id, str):
+                return []
+            caster = encounter.entities.get(caster_id)
+            if caster is None:
+                return []
+
+            actor_ids: list[str] = []
+            for entity in encounter.entities.values():
+                if entity.entity_id == caster.entity_id:
+                    continue
+                if entity.side == caster.side:
+                    continue
+                action_economy = entity.action_economy if isinstance(entity.action_economy, dict) else {}
+                if "reaction_used" not in action_economy:
+                    continue
+                if bool(action_economy.get("reaction_used")):
+                    continue
+                actor_ids.append(entity.entity_id)
+            if not actor_ids:
+                return []
+            return [
+                {
+                    "actor_entity_id": actor_id,
+                    "reaction_definition": definition,
+                }
+                for actor_id in actor_ids
+                for definition in definitions
+            ]
+
         return []

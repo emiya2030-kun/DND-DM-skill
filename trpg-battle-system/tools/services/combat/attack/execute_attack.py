@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from tools.models.roll_result import RollResult
@@ -18,6 +18,10 @@ from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.resolve_forced_movement import ResolveForcedMovement
 
+if TYPE_CHECKING:
+    from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+    from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
 
 class ExecuteAttack:
     """把一次完整武器攻击流程收口成一个统一入口。"""
@@ -30,6 +34,8 @@ class ExecuteAttack:
         attack_roll_result: AttackRollResult,
         update_hp: UpdateHp | None = None,
         resolve_damage_parts: ResolveDamageParts | None = None,
+        open_reaction_window: "OpenReactionWindow" | None = None,
+        definition_repository: "ReactionDefinitionRepository" | None = None,
     ):
         self.attack_roll_request = attack_roll_request
         self.attack_roll_result = attack_roll_result
@@ -42,6 +48,13 @@ class ExecuteAttack:
             self.attack_roll_request.encounter_repository,
             self.attack_roll_result.append_event,
         )
+        if open_reaction_window is None:
+            from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+            from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
+            definition_repository = definition_repository or ReactionDefinitionRepository()
+            open_reaction_window = OpenReactionWindow(self.attack_roll_request.encounter_repository, definition_repository)
+        self.open_reaction_window = open_reaction_window
         self._validate_repository_dependencies()
 
     def execute(
@@ -120,6 +133,38 @@ class ExecuteAttack:
             final_total=final_total,
             dice_rolls=dice_rolls,
         )
+
+        if not consume_reaction:
+            attack_id = f"atk_{uuid4().hex[:12]}"
+            trigger_event = {
+                "event_id": f"evt_attack_declared_{uuid4().hex[:12]}",
+                "trigger_type": "attack_declared",
+                "host_action_type": "attack",
+                "host_action_id": attack_id,
+                "host_action_snapshot": {
+                    "attack_id": attack_id,
+                    "actor_entity_id": request.actor_entity_id,
+                    "target_entity_id": request.target_entity_id,
+                    "weapon_id": weapon_id,
+                    "attack_mode": normalized_attack_mode,
+                    "grip_mode": grip_mode or "default",
+                    "attack_total": resolved_attack_roll["final_total"],
+                    "target_ac_before_reaction": request.context["target_ac"],
+                    "vantage": request.context["vantage"],
+                    "phase": "before_hit_locked",
+                },
+                "target_entity_id": request.target_entity_id,
+            }
+            window_result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
+            if window_result["status"] == "waiting_reaction":
+                return {
+                    "status": "waiting_reaction",
+                    "pending_reaction_window": window_result["pending_reaction_window"],
+                    "reaction_requests": window_result["reaction_requests"],
+                    "encounter_state": GetEncounterState(self.attack_roll_request.encounter_repository).execute(
+                        encounter_id
+                    ),
+                }
 
         roll_result = RollResult(
             request_id=request.request_id,

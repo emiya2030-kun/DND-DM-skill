@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
@@ -17,6 +18,10 @@ from tools.services.combat.shared.turn_actor_guard import (
     resolve_current_turn_actor_or_raise,
 )
 
+if TYPE_CHECKING:
+    from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+    from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
 
 class EncounterCastSpell:
     """声明一次施法，并在需要时扣除法术位。"""
@@ -27,11 +32,20 @@ class EncounterCastSpell:
         append_event: AppendEvent,
         spell_definition_repository: SpellDefinitionRepository | None = None,
         zone_definition_repository: ZoneDefinitionRepository | None = None,
+        open_reaction_window: "OpenReactionWindow" | None = None,
+        reaction_definition_repository: "ReactionDefinitionRepository" | None = None,
     ):
         self.encounter_repository = encounter_repository
         self.append_event = append_event
         self.spell_definition_repository = spell_definition_repository or SpellDefinitionRepository()
         self.zone_definition_repository = zone_definition_repository or ZoneDefinitionRepository()
+        if open_reaction_window is None:
+            from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+            from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
+            reaction_definition_repository = reaction_definition_repository or ReactionDefinitionRepository()
+            open_reaction_window = OpenReactionWindow(encounter_repository, reaction_definition_repository)
+        self.open_reaction_window = open_reaction_window
 
     def execute(
         self,
@@ -74,6 +88,37 @@ class EncounterCastSpell:
         slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
+        spell_action_id = f"spell_{uuid4().hex[:12]}"
+        trigger_event = {
+            "event_id": f"evt_spell_declared_{uuid4().hex[:12]}",
+            "trigger_type": "spell_declared",
+            "host_action_type": "spell_cast",
+            "host_action_id": spell_action_id,
+            "host_action_snapshot": {
+                "spell_action_id": spell_action_id,
+                "caster_entity_id": caster.entity_id,
+                "spell_id": resolved_spell_id,
+                "spell_level": spell_level,
+                "cast_level": resolved_cast_level,
+                "target_ids": list(resolved_target_ids),
+                "target_point": target_point,
+                "action_cost": action_cost,
+                "phase": "before_spell_resolves",
+            },
+            "caster_entity_id": caster.entity_id,
+            "target_entity_id": caster.entity_id,
+        }
+        window_result = self.open_reaction_window.execute(
+            encounter_id=encounter_id,
+            trigger_event=trigger_event,
+        )
+        if window_result["status"] == "waiting_reaction":
+            return {
+                "status": "waiting_reaction",
+                "pending_reaction_window": window_result["pending_reaction_window"],
+                "reaction_requests": window_result["reaction_requests"],
+                "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
+            }
         turn_effect_updates: list[dict[str, Any]] = []
         spell_instance: dict[str, Any] | None = None
         if apply_no_roll_immediate_effects:
