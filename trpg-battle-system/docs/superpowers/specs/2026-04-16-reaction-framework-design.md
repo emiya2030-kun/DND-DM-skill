@@ -53,11 +53,11 @@
 2. 模板层：定义 reaction 如何影响宿主动作
 3. 具体能力层：实现某个具体 reaction 的规则细节
 
-同时引入一层静态知识库：
+同时引入一层静态 definition 读取层：
 
 - `ReactionDefinitionRepository`
 
-用于统一读取 reaction definition。
+但它不落到全局知识库 JSON，而是只读取 reaction 目录内的本地 definition 模块。
 
 ---
 
@@ -632,16 +632,16 @@ reaction 追加一个新的独立动作或结算。
 
 ---
 
-## 静态定义仓库
+## 静态定义读取层
 
-本次设计明确引入 reaction 定义仓库。
+本次设计明确引入 reaction 定义读取层，但不写入全局知识库。
 
 ### 文件位置
 
-- `data/knowledge/reaction_definitions.json`
 - `tools/repositories/reaction_definition_repository.py`
+- `tools/services/combat/rules/reactions/reaction_definitions.py`
 
-### 仓库职责
+### 读取层职责
 
 - 按 `reaction_type` 读取 definition
 - 按 `trigger_type` 枚举 definition
@@ -649,7 +649,7 @@ reaction 追加一个新的独立动作或结算。
 
 ### 与运行态的边界
 
-静态仓库存：
+静态 definition 模块存：
 
 - 某个 reaction 属于哪个模板
 - 监听什么 trigger
@@ -665,10 +665,25 @@ reaction 追加一个新的独立动作或结算。
 
 结论：
 
-- definition repository 只存规则定义
+- definition repository 只负责读取 reaction 目录内的本地规则定义
 - encounter 只存当前战斗现场
 
 ---
+
+### 为什么不用知识库 JSON
+
+原因：
+
+- reaction 定义与 resolver、模板、宿主动作恢复边界强绑定
+- 第一版还会频繁调整 schema
+- 放进全局知识库会让 reaction 规则和战斗代码边界变远，修改成本更高
+
+因此第一版约束为：
+
+- reaction definition 只放在 reaction 代码目录
+- 由 `ReactionDefinitionRepository` 从本地 Python definition 模块读取
+
+后续如果 reaction 数量大幅增长，再评估是否抽成外部数据文件。
 
 ## `reaction_definition` 结构
 
@@ -808,7 +823,7 @@ reaction 追加一个新的独立动作或结算。
 ### 阶段 2
 
 - 建 `ReactionDefinitionRepository`
-- 建 `reaction_definitions.json`
+- 建 `reaction_definitions.py`
 - 先录入：
   - `opportunity_attack`
   - `shield`
