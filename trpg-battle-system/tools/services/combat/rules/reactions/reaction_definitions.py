@@ -1,0 +1,94 @@
+"""Static reaction definitions used by the combat rules framework."""
+
+REACTION_DEFINITIONS = {
+    "opportunity_attack": {
+        "reaction_type": "opportunity_attack",
+        "template_type": "leave_reach_interrupt",
+        "name": "Opportunity Attack",
+        "trigger_type": "leave_reach",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "leave_reach_interrupt",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "hostile_reachable",
+            "requires_visible_source": True,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_enemy_of_trigger_mover",
+            "actor_has_melee_attack",
+            "actor_can_attack",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_opportunity_attack_reaction"},
+        "ui": {
+            "prompt": "Make an opportunity attack?",
+            "short_label": "Opportunity Attack",
+        },
+    },
+    "shield": {
+        "reaction_type": "shield",
+        "template_type": "targeted_defense_rewrite",
+        "name": "Shield",
+        "trigger_type": "attack_declared",
+        "resource_cost": {
+            "reaction": True,
+            "spell_slot": {"level": 1, "allow_higher_slot": True},
+        },
+        "timing": {
+            "window_phase": "before_attack_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_target_of_trigger",
+            "actor_can_cast_reaction_spell",
+            "actor_has_spell_shield",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_shield_reaction"},
+        "ui": {
+            "prompt": "Cast Shield?",
+            "short_label": "Shield",
+        },
+    },
+    "counterspell": {
+        "reaction_type": "counterspell",
+        "template_type": "cast_interrupt_contest",
+        "name": "Counterspell",
+        "trigger_type": "spell_declared",
+        "resource_cost": {
+            "reaction": True,
+            "spell_slot": {"level": 3, "allow_higher_slot": True},
+        },
+        "timing": {
+            "window_phase": "before_spell_resolution",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "hostile_spellcaster",
+            "requires_visible_source": True,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_can_see_trigger_caster",
+            "actor_can_cast_reaction_spell",
+            "actor_has_spell_counterspell",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_counterspell_reaction"},
+        "ui": {
+            "prompt": "Counterspell the spell?",
+            "short_label": "Counterspell",
+        },
+    },
+}
