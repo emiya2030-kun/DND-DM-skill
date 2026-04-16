@@ -138,11 +138,17 @@ class BeginMoveEncounterEntityTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 5, "y": 4})
             self.assertEqual(updated.pending_movement["status"], "waiting_reaction")
             self.assertEqual(updated.pending_movement["current_position"], {"x": 5, "y": 4})
+            self.assertEqual(updated.pending_reaction_window["trigger_type"], "leave_reach")
+            self.assertEqual(
+                updated.pending_reaction_window["choice_groups"][0]["options"][0]["reaction_type"],
+                "opportunity_attack",
+            )
             self.assertEqual(updated.reaction_requests[0]["reaction_type"], "opportunity_attack")
             self.assertEqual(updated.reaction_requests[0]["actor_entity_id"], "ent_ally_eric_001")
             self.assertEqual(updated.reaction_requests[0]["target_entity_id"], "ent_enemy_orc_001")
             self.assertEqual(result["movement_status"], "waiting_reaction")
             self.assertEqual(result["reaction_requests"][0]["status"], "pending")
+            self.assertEqual(result["encounter_state"]["pending_reaction_window"]["trigger_type"], "leave_reach")
             repo.close()
             event_repo.close()
 

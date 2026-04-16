@@ -56,7 +56,12 @@ def build_melee_weapon(weapon_id: str, name: str) -> dict:
     }
 
 
-def build_waiting_reaction_encounter(*, second_reactor: bool = False, mover_hp: int = 20, request_status: str = "pending") -> Encounter:
+def build_waiting_reaction_encounter(
+    *,
+    second_reactor: bool = False,
+    mover_hp: int = 20,
+    request_status: str = "pending",
+) -> Encounter:
     eric = build_entity(
         "ent_ally_eric_001",
         name="Eric",
@@ -101,6 +106,43 @@ def build_waiting_reaction_encounter(*, second_reactor: bool = False, mover_hp: 
         else [{"x": 6, "y": 4}, {"x": 7, "y": 4}, {"x": 8, "y": 4}]
     )
 
+    pending_window = None
+    if request_status == "pending":
+        pending_window = {
+            "window_id": "rw_leave_reach_001",
+            "status": "waiting_reaction",
+            "trigger_event_id": "evt_leave_reach_001",
+            "trigger_type": "leave_reach",
+            "blocking": True,
+            "host_action_type": "movement",
+            "host_action_id": "move_001",
+            "host_action_snapshot": {"phase": "after_step_before_continue"},
+            "choice_groups": [
+                {
+                    "group_id": "rg_ent_ally_eric_001",
+                    "actor_entity_id": eric.entity_id,
+                    "ask_player": True,
+                    "status": "pending",
+                    "resource_pool": "reaction",
+                    "group_priority": 100,
+                    "trigger_sequence": 1,
+                    "relationship_rank": 1,
+                    "tie_break_key": eric.entity_id,
+                    "options": [
+                        {
+                            "option_id": "opt_ent_ally_eric_001_opportunity_attack",
+                            "reaction_type": "opportunity_attack",
+                            "template_type": "leave_reach_interrupt",
+                            "request_id": "react_001",
+                            "label": "Opportunity Attack",
+                            "status": "pending",
+                        }
+                    ],
+                }
+            ],
+            "resolved_group_ids": [],
+        }
+
     return Encounter(
         encounter_id="enc_continue_move_test",
         name="Continue Move Test Encounter",
@@ -138,6 +180,7 @@ def build_waiting_reaction_encounter(*, second_reactor: bool = False, mover_hp: 
                 },
             }
         ],
+        pending_reaction_window=pending_window,
         pending_movement={
             "movement_id": "move_001",
             "entity_id": mover.entity_id,
@@ -154,7 +197,7 @@ def build_waiting_reaction_encounter(*, second_reactor: bool = False, mover_hp: 
 
 
 class ContinuePendingMovementTests(unittest.TestCase):
-    def test_execute_expires_pending_request_and_finishes_move_when_player_skips_reaction(self) -> None:
+    def test_execute_declines_pending_request_and_finishes_move_when_player_skips_reaction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             event_repo = EventRepository(Path(tmp_dir) / "events.json")
@@ -167,7 +210,8 @@ class ContinuePendingMovementTests(unittest.TestCase):
             updated = repo.get("enc_continue_move_test")
             assert updated is not None
             self.assertIsNone(updated.pending_movement)
-            self.assertEqual(updated.reaction_requests[0]["status"], "expired")
+            self.assertIsNone(updated.pending_reaction_window)
+            self.assertEqual(updated.reaction_requests[0]["status"], "declined")
             self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 8, "y": 4})
             self.assertEqual(result["movement_status"], "completed")
             repo.close()
@@ -185,13 +229,14 @@ class ContinuePendingMovementTests(unittest.TestCase):
 
             updated = repo.get("enc_continue_move_test")
             assert updated is not None
-            self.assertEqual(updated.reaction_requests[0]["status"], "expired")
+            self.assertEqual(updated.reaction_requests[0]["status"], "declined")
             self.assertEqual(len(updated.reaction_requests), 2)
             self.assertEqual(updated.reaction_requests[1]["status"], "pending")
             self.assertEqual(updated.reaction_requests[1]["actor_entity_id"], "ent_ally_nora_001")
             self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 9, "y": 4})
             self.assertEqual(updated.pending_movement["status"], "waiting_reaction")
             self.assertEqual(updated.pending_movement["current_position"], {"x": 9, "y": 4})
+            self.assertEqual(updated.pending_reaction_window["trigger_type"], "leave_reach")
             self.assertEqual(result["movement_status"], "waiting_reaction")
             repo.close()
             event_repo.close()

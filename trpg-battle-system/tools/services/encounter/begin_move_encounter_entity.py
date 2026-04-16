@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from tools.models.encounter import Encounter
@@ -22,13 +22,30 @@ from tools.services.encounter.movement_rules import (
 )
 from tools.services.events.append_event import AppendEvent
 
+if TYPE_CHECKING:
+    from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+    from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
 
 class BeginMoveEncounterEntity:
     """开启一次可能被反应中断的移动流程。"""
 
-    def __init__(self, repository: EncounterRepository, append_event: AppendEvent | None = None):
+    def __init__(
+        self,
+        repository: EncounterRepository,
+        append_event: AppendEvent | None = None,
+        open_reaction_window: "OpenReactionWindow" | None = None,
+        definition_repository: "ReactionDefinitionRepository" | None = None,
+    ):
         self.repository = repository
         self.append_event = append_event
+        if open_reaction_window is None:
+            from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+            from tools.services.combat.rules.reactions.open_reaction_window import OpenReactionWindow
+
+            definition_repository = definition_repository or ReactionDefinitionRepository()
+            open_reaction_window = OpenReactionWindow(repository, definition_repository)
+        self.open_reaction_window = open_reaction_window
 
     def execute_with_state(
         self,
@@ -73,9 +90,39 @@ class BeginMoveEncounterEntity:
         mover.position = dict(first_trigger["trigger_position"])
         self._apply_movement_progress(mover, int(first_trigger["feet_spent_before_trigger"]), use_dash, count_movement)
         request = first_trigger["request"]
-        encounter.reaction_requests.append(request)
+        pending_movement_id = f"move_{uuid4().hex[:12]}"
+        trigger_event = self._build_leave_reach_trigger_event(
+            movement_id=pending_movement_id,
+            mover=mover,
+            start_position=start_position,
+            trigger_position=dict(first_trigger["trigger_position"]),
+            target_position={"x": target_position["x"], "y": target_position["y"]},
+            remaining_path=first_trigger["remaining_path"],
+            count_movement=count_movement,
+            use_dash=use_dash,
+            reactor_entity_id=str(request["actor_entity_id"]),
+            request_payloads={str(request["actor_entity_id"]): dict(request.get("payload", {}))},
+        )
+        window_result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
+        if window_result["status"] != "waiting_reaction":
+            mover.position = {"x": target_position["x"], "y": target_position["y"]}
+            remaining_cost = max(0, result.feet_cost - int(first_trigger["feet_spent_before_trigger"]))
+            self._apply_movement_progress(mover, remaining_cost, use_dash, count_movement)
+            self.repository.save(encounter)
+            return {
+                "encounter_id": encounter_id,
+                "entity_id": entity_id,
+                "movement_status": "completed",
+                "reaction_requests": [],
+                "encounter_state": GetEncounterState(self.repository).execute(encounter_id),
+            }
+        encounter.pending_reaction_window = window_result["pending_reaction_window"]
+        encounter.reaction_requests.extend(window_result["reaction_requests"])
+        request_id = None
+        if window_result["reaction_requests"]:
+            request_id = window_result["reaction_requests"][0].get("request_id")
         encounter.pending_movement = {
-            "movement_id": f"move_{uuid4().hex[:12]}",
+            "movement_id": pending_movement_id,
             "entity_id": mover.entity_id,
             "start_position": start_position,
             "target_position": {"x": target_position["x"], "y": target_position["y"]},
@@ -84,14 +131,14 @@ class BeginMoveEncounterEntity:
             "count_movement": count_movement,
             "use_dash": use_dash,
             "status": "waiting_reaction",
-            "waiting_request_id": request["request_id"],
+            "waiting_request_id": request_id,
         }
         self.repository.save(encounter)
         return {
             "encounter_id": encounter_id,
             "entity_id": entity_id,
             "movement_status": "waiting_reaction",
-            "reaction_requests": [request],
+            "reaction_requests": window_result["reaction_requests"],
             "encounter_state": GetEncounterState(self.repository).execute(encounter_id),
         }
 
@@ -137,6 +184,42 @@ class BeginMoveEncounterEntity:
             feet_spent_before_trigger += step.feet_cost
             current_anchor = dict(next_anchor)
         return None
+
+    def _build_leave_reach_trigger_event(
+        self,
+        *,
+        movement_id: str,
+        mover: EncounterEntity,
+        start_position: dict[str, int],
+        trigger_position: dict[str, int],
+        target_position: dict[str, int],
+        remaining_path: list[dict[str, int]],
+        count_movement: bool,
+        use_dash: bool,
+        reactor_entity_id: str,
+        request_payloads: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "event_id": f"evt_leave_reach_{uuid4().hex[:12]}",
+            "trigger_type": "leave_reach",
+            "host_action_type": "movement",
+            "host_action_id": movement_id,
+            "host_action_snapshot": {
+                "movement_id": movement_id,
+                "entity_id": mover.entity_id,
+                "start_position": start_position,
+                "current_position": dict(trigger_position),
+                "target_position": target_position,
+                "remaining_path": remaining_path,
+                "count_movement": count_movement,
+                "use_dash": use_dash,
+                "phase": "after_step_before_continue",
+            },
+            "trigger_mover_id": mover.entity_id,
+            "target_entity_id": mover.entity_id,
+            "reactor_entity_id": reactor_entity_id,
+            "request_payloads": request_payloads,
+        }
 
     def _leaves_melee_reach(
         self,

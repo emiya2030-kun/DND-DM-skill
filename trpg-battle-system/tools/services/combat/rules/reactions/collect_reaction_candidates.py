@@ -36,4 +36,25 @@ class CollectReactionCandidates:
                 for definition in definitions
             ]
 
+        if trigger_type == "leave_reach":
+            actor_ids: list[str] = []
+            reactor_id = trigger_event.get("reactor_entity_id")
+            if isinstance(reactor_id, str):
+                actor_ids.append(reactor_id)
+            for key in ("reactor_entity_ids", "candidate_actor_ids"):
+                raw_ids = trigger_event.get(key)
+                if isinstance(raw_ids, list):
+                    actor_ids.extend(str(item) for item in raw_ids)
+            actor_ids = [actor_id for actor_id in dict.fromkeys(actor_ids) if actor_id in encounter.entities]
+            if not actor_ids:
+                return []
+            return [
+                {
+                    "actor_entity_id": actor_id,
+                    "reaction_definition": definition,
+                }
+                for actor_id in actor_ids
+                for definition in definitions
+            ]
+
         return []

@@ -30,6 +30,8 @@ class OpenReactionWindow:
         trigger_type = str(trigger_event.get("trigger_type"))
         trigger_event_id = trigger_event.get("event_id")
         target_entity_id = trigger_event.get("target_entity_id")
+        request_payloads = trigger_event.get("request_payloads")
+        payload_map = request_payloads if isinstance(request_payloads, dict) else {}
 
         host_snapshot = dict(trigger_event.get("host_action_snapshot", {}))
 
@@ -68,7 +70,7 @@ class OpenReactionWindow:
                     "auto_resolve": False,
                     "resource_cost": definition.get("resource_cost", {}),
                     "priority": 100,
-                    "payload": {},
+                    "payload": dict(payload_map.get(actor_id, {})),
                 }
             )
             option_id = f"opt_{actor_id}_{reaction_type}"
