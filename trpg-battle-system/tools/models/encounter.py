@@ -28,6 +28,7 @@ class Encounter:
     encounter_notes: list[dict[str, Any]] = field(default_factory=list)
     spell_instances: list[dict[str, Any]] = field(default_factory=list)
     reaction_requests: list[dict[str, Any]] = field(default_factory=list)
+    pending_reaction_window: dict[str, Any] | None = None
     pending_movement: dict[str, Any] | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -52,6 +53,8 @@ class Encounter:
             raise ValueError("spell_instances must be a list")
         if not isinstance(self.reaction_requests, list):
             raise ValueError("reaction_requests must be a list")
+        if self.pending_reaction_window is not None and not isinstance(self.pending_reaction_window, dict):
+            raise ValueError("pending_reaction_window must be a dict or None")
         if self.pending_movement is not None and not isinstance(self.pending_movement, dict):
             raise ValueError("pending_movement must be a dict or None")
 
@@ -104,6 +107,7 @@ class Encounter:
             "encounter_notes": self.encounter_notes,
             "spell_instances": self.spell_instances,
             "reaction_requests": self.reaction_requests,
+            "pending_reaction_window": self.pending_reaction_window,
             "pending_movement": self.pending_movement,
             "created_at": self.created_at,
             "updated_at": self.updated_at,

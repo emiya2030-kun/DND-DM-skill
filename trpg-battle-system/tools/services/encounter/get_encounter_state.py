@@ -61,6 +61,7 @@ class GetEncounterState:
             ),
             "map_notes": self.map_notes_service.execute(encounter),
             "reaction_requests": self._build_reaction_requests(encounter),
+            "pending_reaction_window": self._build_pending_reaction_window(encounter),
             "pending_movement": self._build_pending_movement(encounter),
             "spell_area_overlays": spell_area_overlays,
             "recent_activity": recent_activity,
@@ -244,6 +245,23 @@ class GetEncounterState:
             "use_dash": bool(pending.get("use_dash", False)),
             "status": pending.get("status"),
             "waiting_request_id": pending.get("waiting_request_id"),
+        }
+
+    def _build_pending_reaction_window(self, encounter: Encounter) -> dict[str, Any] | None:
+        pending = encounter.pending_reaction_window
+        if not isinstance(pending, dict):
+            return None
+        return {
+            "window_id": pending.get("window_id"),
+            "status": pending.get("status"),
+            "trigger_event_id": pending.get("trigger_event_id"),
+            "trigger_type": pending.get("trigger_type"),
+            "blocking": pending.get("blocking"),
+            "host_action_type": pending.get("host_action_type"),
+            "host_action_id": pending.get("host_action_id"),
+            "host_action_snapshot": pending.get("host_action_snapshot", {}),
+            "choice_groups": pending.get("choice_groups", []),
+            "resolved_group_ids": pending.get("resolved_group_ids", []),
         }
 
     def _build_spell_area_overlays(self, encounter: Encounter) -> list[dict[str, Any]]:

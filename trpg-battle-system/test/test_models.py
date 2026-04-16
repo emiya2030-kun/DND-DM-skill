@@ -170,6 +170,80 @@ class EncounterModelTests(unittest.TestCase):
         self.assertEqual(roundtrip.reaction_requests[0]["request_id"], "react_001")
         self.assertEqual(roundtrip.pending_movement["movement_id"], "move_001")
 
+    def test_encounter_accepts_pending_reaction_window_and_serializes_it(self) -> None:
+        entity = build_entity()
+        encounter = Encounter(
+            encounter_id="enc_reaction_window_test",
+            name="Reaction Window Test",
+            status="active",
+            round=1,
+            current_entity_id=entity.entity_id,
+            turn_order=[entity.entity_id],
+            entities={entity.entity_id: entity},
+            map=build_map(),
+            encounter_notes=[],
+            reaction_requests=[
+                {
+                    "request_id": "react_001",
+                    "status": "pending",
+                    "reaction_type": "shield",
+                    "template_type": "targeted_defense_rewrite",
+                }
+            ],
+            pending_reaction_window={
+                "window_id": "rw_001",
+                "status": "waiting_reaction",
+                "trigger_type": "attack_declared",
+                "host_action_type": "attack",
+                "host_action_id": "atk_001",
+                "host_action_snapshot": {"phase": "before_hit_locked"},
+                "choice_groups": [],
+                "resolved_group_ids": [],
+            },
+        )
+
+        payload = encounter.to_dict()
+
+        self.assertEqual(payload["pending_reaction_window"]["window_id"], "rw_001")
+        self.assertEqual(payload["reaction_requests"][0]["template_type"], "targeted_defense_rewrite")
+
+    def test_encounter_accepts_pending_reaction_window_and_serializes_it(self) -> None:
+        entity = build_entity()
+        encounter = Encounter(
+            encounter_id="enc_reaction_window_test",
+            name="Reaction Window Test",
+            status="active",
+            round=1,
+            current_entity_id=entity.entity_id,
+            turn_order=[entity.entity_id],
+            entities={entity.entity_id: entity},
+            map=build_map(),
+            encounter_notes=[],
+            reaction_requests=[
+                {
+                    "request_id": "react_001",
+                    "status": "pending",
+                    "reaction_type": "shield",
+                    "template_type": "targeted_defense_rewrite",
+                }
+            ],
+            pending_reaction_window={
+                "window_id": "rw_001",
+                "status": "waiting_reaction",
+                "trigger_type": "attack_declared",
+                "host_action_type": "attack",
+                "host_action_id": "atk_001",
+                "host_action_snapshot": {"phase": "before_hit_locked"},
+                "choice_groups": [],
+                "resolved_group_ids": [],
+            },
+        )
+
+        payload = encounter.to_dict()
+
+        self.assertEqual(payload["pending_reaction_window"]["window_id"], "rw_001")
+        self.assertEqual(payload["reaction_requests"][0]["template_type"], "targeted_defense_rewrite")
+
     def test_entity_roundtrip_preserves_turn_effects(self) -> None:
         entity = build_entity()
         entity.turn_effects = [

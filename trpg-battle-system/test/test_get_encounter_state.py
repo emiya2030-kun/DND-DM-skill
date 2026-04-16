@@ -751,6 +751,62 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(state["pending_movement"]["waiting_request_id"], "react_001")
             repo.close()
 
+    def test_execute_includes_pending_reaction_window_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.reaction_requests = [
+                {
+                    "request_id": "react_001",
+                    "reaction_type": "shield",
+                    "template_type": "targeted_defense_rewrite",
+                    "trigger_type": "attack_declared",
+                    "status": "pending",
+                    "actor_entity_id": "ent_ally_eric_001",
+                    "target_entity_id": "ent_enemy_goblin_001",
+                    "ask_player": True,
+                    "auto_resolve": False,
+                    "payload": {},
+                }
+            ]
+            encounter.pending_reaction_window = {
+                "window_id": "rw_001",
+                "status": "waiting_reaction",
+                "trigger_event_id": "evt_attack_declared_001",
+                "trigger_type": "attack_declared",
+                "blocking": True,
+                "host_action_type": "attack",
+                "host_action_id": "atk_001",
+                "host_action_snapshot": {"phase": "before_hit_locked"},
+                "choice_groups": [
+                    {
+                        "group_id": "rg_001",
+                        "actor_entity_id": "ent_ally_eric_001",
+                        "status": "pending",
+                        "options": [
+                            {
+                                "option_id": "opt_001",
+                                "reaction_type": "shield",
+                                "template_type": "targeted_defense_rewrite",
+                                "request_id": "react_001",
+                                "label": "Shield",
+                                "status": "pending",
+                            }
+                        ],
+                    }
+                ],
+                "resolved_group_ids": [],
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            window = state["pending_reaction_window"]
+
+            self.assertEqual(window["window_id"], "rw_001")
+            self.assertEqual(window["status"], "waiting_reaction")
+            self.assertEqual(window["choice_groups"][0]["options"][0]["reaction_type"], "shield")
+            repo.close()
+
     def test_execute_builds_weapon_ranges(self) -> None:
         """测试近战和远程可选目标会按距离投影出来。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
