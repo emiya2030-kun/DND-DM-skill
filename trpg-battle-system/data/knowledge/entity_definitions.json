@@ -1,0 +1,282 @@
+{
+  "entity_definitions": {
+    "pc_miren": {
+      "entity_def_id": "pc_miren",
+      "name": "米伦",
+      "side": "ally",
+      "category": "pc",
+      "controller": "player",
+      "ac": 14,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "hp": {
+        "current": 22,
+        "max": 22,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "class_name": "wizard",
+        "spellcasting_ability": "int",
+        "entity_type": "humanoid"
+      },
+      "ability_scores": {
+        "str": 8,
+        "dex": 16,
+        "con": 14,
+        "int": 18,
+        "wis": 12,
+        "cha": 10
+      },
+      "ability_mods": {
+        "str": -1,
+        "dex": 3,
+        "con": 2,
+        "int": 4,
+        "wis": 1,
+        "cha": 0
+      },
+      "proficiency_bonus": 3,
+      "save_proficiencies": [
+        "int",
+        "wis"
+      ],
+      "skill_modifiers": {
+        "arcana": 7,
+        "investigation": 7
+      },
+      "conditions": [],
+      "resources": {
+        "spell_slots": {
+          "1": {
+            "max": 4,
+            "remaining": 4
+          },
+          "2": {
+            "max": 3,
+            "remaining": 3
+          },
+          "3": {
+            "max": 2,
+            "remaining": 2
+          }
+        }
+      },
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "dagger",
+          "name": "匕首",
+          "equipped": true
+        }
+      ],
+      "spells": [
+        {
+          "spell_id": "fireball",
+          "name": "火球术"
+        },
+        {
+          "spell_id": "hold_person",
+          "name": "定身类人"
+        }
+      ],
+      "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "pc_sabur": {
+      "entity_def_id": "pc_sabur",
+      "name": "萨布尔",
+      "side": "ally",
+      "category": "pc",
+      "controller": "player",
+      "ac": 16,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "hp": {
+        "current": 34,
+        "max": 34,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "class_name": "ranger"
+      },
+      "ability_scores": {
+        "str": 14,
+        "dex": 18,
+        "con": 14,
+        "int": 10,
+        "wis": 14,
+        "cha": 10
+      },
+      "ability_mods": {
+        "str": 2,
+        "dex": 4,
+        "con": 2,
+        "int": 0,
+        "wis": 2,
+        "cha": 0
+      },
+      "proficiency_bonus": 3,
+      "save_proficiencies": [
+        "str",
+        "dex"
+      ],
+      "skill_modifiers": {
+        "perception": 5,
+        "survival": 5
+      },
+      "conditions": [],
+      "resources": {},
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "shortbow",
+          "name": "短弓",
+          "equipped": true
+        },
+        {
+          "weapon_id": "warhammer",
+          "name": "战锤",
+          "equipped": false
+        }
+      ],
+      "spells": [],
+      "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "monster_sabur": {
+      "entity_def_id": "monster_sabur",
+      "name": "萨布尔",
+      "side": "enemy",
+      "category": "monster",
+      "controller": "gm",
+      "ac": 15,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "hp": {
+        "current": 45,
+        "max": 45,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "monster_type": "brute",
+        "entity_type": "humanoid"
+      },
+      "ability_scores": {
+        "str": 18,
+        "dex": 12,
+        "con": 16,
+        "int": 8,
+        "wis": 10,
+        "cha": 8
+      },
+      "ability_mods": {
+        "str": 4,
+        "dex": 1,
+        "con": 3,
+        "int": -1,
+        "wis": 0,
+        "cha": -1
+      },
+      "proficiency_bonus": 2,
+      "save_proficiencies": [],
+      "skill_modifiers": {},
+      "conditions": [],
+      "resources": {},
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "warhammer",
+          "name": "战锤",
+          "equipped": true
+        }
+      ],
+      "spells": [],
+      "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "npc_companion_guard": {
+      "entity_def_id": "npc_companion_guard",
+      "name": "守卫同伴",
+      "side": "ally",
+      "category": "npc",
+      "controller": "gm",
+      "ac": 15,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "hp": {
+        "current": 18,
+        "max": 18,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "role": "companion_guard"
+      },
+      "ability_scores": {
+        "str": 14,
+        "dex": 12,
+        "con": 12,
+        "int": 10,
+        "wis": 11,
+        "cha": 10
+      },
+      "ability_mods": {
+        "str": 2,
+        "dex": 1,
+        "con": 1,
+        "int": 0,
+        "wis": 0,
+        "cha": 0
+      },
+      "proficiency_bonus": 2,
+      "save_proficiencies": [],
+      "skill_modifiers": {
+        "perception": 2
+      },
+      "conditions": [],
+      "resources": {},
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "rapier",
+          "name": "刺剑",
+          "equipped": true
+        }
+      ],
+      "spells": [],
+      "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    }
+  }
+}
