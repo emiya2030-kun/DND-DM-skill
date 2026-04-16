@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from runtime.context import build_runtime_context
 from runtime.http_server import build_runtime_handler_class
 from runtime.http_server import ThreadingHTTPServer
+from tools.models import Encounter, EncounterEntity, EncounterMap
 
 
 class RuntimeHttpServerTests(unittest.TestCase):
@@ -71,6 +72,61 @@ class RuntimeHttpServerTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def _seed_attack_encounter(self) -> None:
+        actor = EncounterEntity(
+            entity_id="ent_ally_eric_001",
+            name="Eric",
+            side="ally",
+            category="pc",
+            controller="player",
+            position={"x": 2, "y": 2},
+            hp={"current": 20, "max": 20, "temp": 0},
+            ac=15,
+            speed={"walk": 30, "remaining": 30},
+            initiative=15,
+            ability_mods={"str": 1, "dex": 3, "con": 1, "int": 0, "wis": 0, "cha": 2},
+            proficiency_bonus=2,
+            weapons=[
+                {
+                    "weapon_id": "rapier",
+                    "name": "Rapier",
+                    "attack_bonus": 5,
+                    "damage": [{"formula": "1d8+3", "type": "piercing"}],
+                    "properties": ["finesse"],
+                    "range": {"normal": 5, "long": 5},
+                }
+            ],
+        )
+        target = EncounterEntity(
+            entity_id="ent_enemy_goblin_001",
+            name="Goblin",
+            side="enemy",
+            category="monster",
+            controller="gm",
+            position={"x": 3, "y": 2},
+            hp={"current": 9, "max": 9, "temp": 0},
+            ac=13,
+            speed={"walk": 30, "remaining": 30},
+            initiative=10,
+        )
+        encounter = Encounter(
+            encounter_id="enc_execute_attack_test",
+            name="Execute Attack Test Encounter",
+            status="active",
+            round=1,
+            current_entity_id=actor.entity_id,
+            turn_order=[actor.entity_id, target.entity_id],
+            entities={actor.entity_id: actor, target.entity_id: target},
+            map=EncounterMap(
+                map_id="map_execute_attack_test",
+                name="Execute Attack Test Map",
+                description="A small combat room.",
+                width=8,
+                height=8,
+            ),
+        )
+        self.context.encounter_repository.save(encounter)
+
     def test_health_endpoint_returns_ok_payload(self) -> None:
         status, payload = self._request("GET", "/runtime/health")
         self.assertEqual(status, 200)
@@ -87,6 +143,35 @@ class RuntimeHttpServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error_code"], "unknown_command")
+
+    def test_execute_attack_command_hits_and_returns_updated_encounter_state(self) -> None:
+        self._seed_attack_encounter()
+
+        with patch("tools.services.combat.attack.execute_attack.random.randint", side_effect=[12, 4]):
+            status, payload = self._request(
+                "POST",
+                "/runtime/command",
+                payload={
+                    "command": "execute_attack",
+                    "args": {
+                        "encounter_id": "enc_execute_attack_test",
+                        "actor_id": "ent_ally_eric_001",
+                        "target_id": "ent_enemy_goblin_001",
+                        "weapon_id": "rapier",
+                    },
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["command"], "execute_attack")
+        self.assertTrue(payload["result"]["attack_result"]["resolution"]["hit"])
+        self.assertEqual(payload["result"]["attack_result"]["roll_result"]["final_total"], 17)
+        self.assertEqual(payload["result"]["attack_result"]["resolution"]["hp_update"]["hp_after"], 2)
+
+        updated = self.context.encounter_repository.get("enc_execute_attack_test")
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.entities["ent_enemy_goblin_001"].hp["current"], 2)
 
     def test_encounter_state_requires_encounter_id_and_returns_json_error(self) -> None:
         status, payload = self._request("GET", "/runtime/encounter-state")
