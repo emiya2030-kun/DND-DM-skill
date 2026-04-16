@@ -83,6 +83,7 @@ class ExecuteAttack:
         mastery_rolls: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
+        skip_reaction_window: bool = False,
     ) -> dict[str, Any]:
         """执行一次完整攻击。
 
@@ -134,7 +135,9 @@ class ExecuteAttack:
             dice_rolls=dice_rolls,
         )
 
-        if not consume_reaction:
+        target_ac = request.context.get("target_ac")
+        attack_hits = isinstance(target_ac, int) and resolved_attack_roll["final_total"] >= target_ac
+        if not consume_reaction and not skip_reaction_window and attack_hits:
             attack_id = f"atk_{uuid4().hex[:12]}"
             trigger_event = {
                 "event_id": f"evt_attack_declared_{uuid4().hex[:12]}",
@@ -143,15 +146,22 @@ class ExecuteAttack:
                 "host_action_id": attack_id,
                 "host_action_snapshot": {
                     "attack_id": attack_id,
-                    "actor_entity_id": request.actor_entity_id,
-                    "target_entity_id": request.target_entity_id,
+                    "actor_id": request.actor_entity_id,
+                    "target_id": request.target_entity_id,
                     "weapon_id": weapon_id,
                     "attack_mode": normalized_attack_mode,
                     "grip_mode": grip_mode or "default",
                     "attack_total": resolved_attack_roll["final_total"],
-                    "target_ac_before_reaction": request.context["target_ac"],
+                    "target_ac_before_reaction": target_ac,
                     "vantage": request.context["vantage"],
                     "phase": "before_hit_locked",
+                    "final_total": resolved_attack_roll["final_total"],
+                    "dice_rolls": resolved_attack_roll["dice_rolls"],
+                    "damage_rolls": damage_rolls,
+                    "description": description,
+                    "allow_out_of_turn_actor": allow_out_of_turn_actor,
+                    "consume_action": effective_consume_action,
+                    "consume_reaction": consume_reaction,
                 },
                 "target_entity_id": request.target_entity_id,
             }

@@ -84,6 +84,37 @@ def build_encounter(*, with_shield: bool) -> Encounter:
 
 
 class AttackReactionWindowTests(unittest.TestCase):
+    def test_execute_attack_does_not_open_shield_window_on_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_encounter(with_shield=True))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=9,
+                dice_rolls={"base_rolls": [4], "modifier": 5},
+            )
+
+            self.assertIn("request", result)
+            self.assertIn("resolution", result)
+            self.assertNotIn("status", result)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_attack_returns_normal_result_when_no_shield_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

@@ -15,7 +15,7 @@ class TargetedDefenseRewrite:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
-            "resolution_mode": "no_effect",
+            "resolution_mode": "rewrite_host_action",
             "reaction_result": {
                 "status": "not_implemented",
                 "actor_entity_id": actor_entity_id,

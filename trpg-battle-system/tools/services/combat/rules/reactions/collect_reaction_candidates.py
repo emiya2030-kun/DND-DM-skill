@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import math
+
 from tools.models import Encounter
+from tools.services.encounter.movement_rules import get_center_position
 
 if TYPE_CHECKING:
     from tools.repositories import EncounterRepository
@@ -83,7 +86,7 @@ class CollectReactionCandidates:
                     continue
                 if entity.side == caster.side:
                     continue
-                if not self._eligible_for_counterspell(entity):
+                if not self._eligible_for_counterspell(entity, caster):
                     continue
                 actor_ids.append(entity.entity_id)
             if not actor_ids:
@@ -106,11 +109,12 @@ class CollectReactionCandidates:
             and self._has_spell_slot(entity, minimum_level=1)
         )
 
-    def _eligible_for_counterspell(self, entity: Any) -> bool:
+    def _eligible_for_counterspell(self, entity: Any, caster: Any) -> bool:
         return (
             self._reaction_available(entity)
             and self._has_spell(entity, "counterspell")
             and self._has_spell_slot(entity, minimum_level=3)
+            and self._within_counterspell_range(entity, caster)
         )
 
     def _reaction_available(self, entity: Any) -> bool:
@@ -157,3 +161,17 @@ class CollectReactionCandidates:
             if level >= minimum_level:
                 return True
         return False
+
+    def _within_counterspell_range(self, entity: Any, caster: Any) -> bool:
+        try:
+            distance = self._distance_feet(entity, caster)
+        except (KeyError, TypeError):
+            return False
+        return distance <= 60
+
+    def _distance_feet(self, source: Any, target: Any) -> int:
+        source_center = get_center_position(source)
+        target_center = get_center_position(target)
+        dx = abs(source_center["x"] - target_center["x"])
+        dy = abs(source_center["y"] - target_center["y"])
+        return math.ceil(max(dx, dy)) * 5

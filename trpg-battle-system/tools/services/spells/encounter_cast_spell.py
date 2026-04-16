@@ -60,6 +60,7 @@ class EncounterCastSpell:
         include_encounter_state: bool = False,
         apply_no_roll_immediate_effects: bool = True,
         allow_out_of_turn_actor: bool = False,
+        skip_reaction_window: bool = False,
     ) -> dict[str, Any]:
         """声明当前行动者施放一个法术。
 
@@ -88,37 +89,39 @@ class EncounterCastSpell:
         slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
-        spell_action_id = f"spell_{uuid4().hex[:12]}"
-        trigger_event = {
-            "event_id": f"evt_spell_declared_{uuid4().hex[:12]}",
-            "trigger_type": "spell_declared",
-            "host_action_type": "spell_cast",
-            "host_action_id": spell_action_id,
-            "host_action_snapshot": {
-                "spell_action_id": spell_action_id,
+        if not skip_reaction_window:
+            spell_action_id = f"spell_{uuid4().hex[:12]}"
+            trigger_event = {
+                "event_id": f"evt_spell_declared_{uuid4().hex[:12]}",
+                "trigger_type": "spell_declared",
+                "host_action_type": "spell_cast",
+                "host_action_id": spell_action_id,
+                "host_action_snapshot": {
+                    "spell_action_id": spell_action_id,
+                    "actor_id": caster.entity_id,
+                    "spell_id": resolved_spell_id,
+                    "spell_level": spell_level,
+                    "cast_level": resolved_cast_level,
+                    "target_ids": list(resolved_target_ids),
+                    "target_point": target_point,
+                    "action_cost": action_cost,
+                    "allow_out_of_turn_actor": allow_out_of_turn_actor,
+                    "phase": "before_spell_resolves",
+                },
                 "caster_entity_id": caster.entity_id,
-                "spell_id": resolved_spell_id,
-                "spell_level": spell_level,
-                "cast_level": resolved_cast_level,
-                "target_ids": list(resolved_target_ids),
-                "target_point": target_point,
-                "action_cost": action_cost,
-                "phase": "before_spell_resolves",
-            },
-            "caster_entity_id": caster.entity_id,
-            "target_entity_id": caster.entity_id,
-        }
-        window_result = self.open_reaction_window.execute(
-            encounter_id=encounter_id,
-            trigger_event=trigger_event,
-        )
-        if window_result["status"] == "waiting_reaction":
-            return {
-                "status": "waiting_reaction",
-                "pending_reaction_window": window_result["pending_reaction_window"],
-                "reaction_requests": window_result["reaction_requests"],
-                "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
+                "target_entity_id": caster.entity_id,
             }
+            window_result = self.open_reaction_window.execute(
+                encounter_id=encounter_id,
+                trigger_event=trigger_event,
+            )
+            if window_result["status"] == "waiting_reaction":
+                return {
+                    "status": "waiting_reaction",
+                    "pending_reaction_window": window_result["pending_reaction_window"],
+                    "reaction_requests": window_result["reaction_requests"],
+                    "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
+                }
         turn_effect_updates: list[dict[str, Any]] = []
         spell_instance: dict[str, Any] | None = None
         if apply_no_roll_immediate_effects:

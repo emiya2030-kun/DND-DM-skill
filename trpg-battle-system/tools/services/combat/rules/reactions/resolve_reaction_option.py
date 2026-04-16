@@ -6,8 +6,14 @@ from tools.models import Encounter
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.attack.execute_attack import ExecuteAttack
 from tools.services.combat.rules.reactions.close_reaction_window import CloseReactionWindow
+from tools.services.combat.rules.reactions.definitions.counterspell import ResolveCounterspellReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
+from tools.services.combat.rules.reactions.definitions.shield import ResolveShieldReaction
+from tools.services.combat.rules.reactions.resume_host_action import ResumeHostAction
+from tools.services.combat.rules.reactions.templates.cast_interrupt_contest import CastInterruptContest
 from tools.services.combat.rules.reactions.templates.leave_reach_interrupt import LeaveReachInterrupt
+from tools.services.combat.rules.reactions.templates.targeted_defense_rewrite import TargetedDefenseRewrite
+from tools.services.spells.encounter_cast_spell import EncounterCastSpell
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
 
@@ -21,6 +27,8 @@ class ResolveReactionOption:
         append_event: AppendEvent,
         execute_attack: ExecuteAttack,
         close_reaction_window: CloseReactionWindow | None = None,
+        encounter_cast_spell: EncounterCastSpell | None = None,
+        resume_host_action: ResumeHostAction | None = None,
     ) -> None:
         self.encounter_repository = encounter_repository
         self.append_event = append_event
@@ -28,6 +36,13 @@ class ResolveReactionOption:
         self.close_reaction_window = close_reaction_window or CloseReactionWindow(encounter_repository)
         self.opportunity_attack_resolver = ResolveOpportunityAttackReaction(
             LeaveReachInterrupt(execute_attack),
+        )
+        self.shield_resolver = ResolveShieldReaction(TargetedDefenseRewrite())
+        self.counterspell_resolver = ResolveCounterspellReaction(CastInterruptContest())
+        encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
+        self.resume_host_action = resume_host_action or ResumeHostAction(
+            execute_attack=execute_attack,
+            encounter_cast_spell=encounter_cast_spell,
         )
 
     def execute(
@@ -129,6 +144,13 @@ class ResolveReactionOption:
             self.encounter_repository.save(encounter)
             window_result = {"window_status": "closed", "pending_reaction_window": None}
 
+        host_action_result = None
+        if resolution_mode == "rewrite_host_action" and window_result["window_status"] == "closed":
+            host_action_result = self.resume_host_action.execute(
+                encounter_id=encounter_id,
+                pending_window=pending_window,
+            )["host_action_result"]
+
         event = self.append_event.execute(
             encounter_id=encounter_id,
             round=encounter.round,
@@ -153,6 +175,7 @@ class ResolveReactionOption:
             "resolution_mode": resolution_mode,
             "reaction_result": reaction_result,
             "attack_result": reaction_result,
+            "host_action_result": host_action_result,
             "event_id": event.event_id,
             "encounter_state": GetEncounterState(self.encounter_repository).execute(encounter_id),
         }
@@ -242,6 +265,20 @@ class ResolveReactionOption:
                 final_total=final_total,
                 dice_rolls=dice_rolls,
                 damage_rolls=damage_rolls,
+            )
+        if reaction_type == "shield":
+            return self.shield_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+            )
+        if reaction_type == "counterspell":
+            return self.counterspell_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
             )
         raise ValueError("unsupported_reaction_type")
 
