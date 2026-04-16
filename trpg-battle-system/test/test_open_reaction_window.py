@@ -26,6 +26,9 @@ def build_defender(entity_id: str = "ent_actor_001") -> EncounterEntity:
         ac=15,
         speed={"walk": 30, "remaining": 30},
         initiative=10,
+        spells=[{"spell_id": "shield", "name": "Shield", "level": 1}],
+        resources={"spell_slots": {"1": {"max": 1, "remaining": 1}}},
+        action_economy={"reaction_used": False},
     )
 
 
@@ -87,6 +90,6 @@ class OpenReactionWindowTests(unittest.TestCase):
             choice_groups = result["pending_reaction_window"]["choice_groups"]
             self.assertEqual(len(choice_groups), 1)
             options = choice_groups[0]["options"]
-            self.assertEqual({item["reaction_type"] for item in options}, {"shield", "absorb_elements"})
+            self.assertEqual({item["reaction_type"] for item in options}, {"shield"})
             self.assertEqual(choice_groups[0]["actor_entity_id"], encounter.current_entity_id)
             repository.close()

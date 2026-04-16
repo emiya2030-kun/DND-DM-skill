@@ -28,6 +28,14 @@ class CollectReactionCandidates:
             if not isinstance(target_id, str) or target_id not in encounter.entities:
                 return []
 
+            definitions = [definition for definition in definitions if definition.get("reaction_type") == "shield"]
+            if not definitions:
+                return []
+
+            target = encounter.entities.get(target_id)
+            if target is None or not self._eligible_for_shield(target):
+                return []
+
             return [
                 {
                     "actor_entity_id": target_id,
@@ -65,16 +73,17 @@ class CollectReactionCandidates:
             if caster is None:
                 return []
 
+            definitions = [definition for definition in definitions if definition.get("reaction_type") == "counterspell"]
+            if not definitions:
+                return []
+
             actor_ids: list[str] = []
             for entity in encounter.entities.values():
                 if entity.entity_id == caster.entity_id:
                     continue
                 if entity.side == caster.side:
                     continue
-                action_economy = entity.action_economy if isinstance(entity.action_economy, dict) else {}
-                if "reaction_used" not in action_economy:
-                    continue
-                if bool(action_economy.get("reaction_used")):
+                if not self._eligible_for_counterspell(entity):
                     continue
                 actor_ids.append(entity.entity_id)
             if not actor_ids:
@@ -89,3 +98,62 @@ class CollectReactionCandidates:
             ]
 
         return []
+
+    def _eligible_for_shield(self, entity: Any) -> bool:
+        return (
+            self._reaction_available(entity)
+            and self._has_spell(entity, "shield")
+            and self._has_spell_slot(entity, minimum_level=1)
+        )
+
+    def _eligible_for_counterspell(self, entity: Any) -> bool:
+        return (
+            self._reaction_available(entity)
+            and self._has_spell(entity, "counterspell")
+            and self._has_spell_slot(entity, minimum_level=3)
+        )
+
+    def _reaction_available(self, entity: Any) -> bool:
+        action_economy = entity.action_economy if isinstance(entity.action_economy, dict) else {}
+        if "reaction_used" not in action_economy:
+            return False
+        return not bool(action_economy.get("reaction_used"))
+
+    def _has_spell(self, entity: Any, spell_id: str) -> bool:
+        spell_id = str(spell_id)
+        if not spell_id:
+            return False
+        for spell in getattr(entity, "spells", []) or []:
+            if not isinstance(spell, dict):
+                continue
+            if spell.get("spell_id") == spell_id or spell.get("id") == spell_id:
+                return True
+            embedded = spell.get("spell_definition")
+            if isinstance(embedded, dict):
+                if embedded.get("spell_id") == spell_id or embedded.get("id") == spell_id:
+                    return True
+        source_ref = entity.source_ref if isinstance(entity.source_ref, dict) else {}
+        spell_definitions = source_ref.get("spell_definitions")
+        if isinstance(spell_definitions, dict):
+            if spell_id in spell_definitions:
+                return True
+        return False
+
+    def _has_spell_slot(self, entity: Any, *, minimum_level: int) -> bool:
+        resources = entity.resources if isinstance(entity.resources, dict) else {}
+        spell_slots = resources.get("spell_slots")
+        if not isinstance(spell_slots, dict):
+            return False
+        for level_key, slot in spell_slots.items():
+            if not isinstance(slot, dict):
+                continue
+            remaining = slot.get("remaining")
+            if not isinstance(remaining, int) or remaining <= 0:
+                continue
+            try:
+                level = int(level_key)
+            except (TypeError, ValueError):
+                continue
+            if level >= minimum_level:
+                return True
+        return False

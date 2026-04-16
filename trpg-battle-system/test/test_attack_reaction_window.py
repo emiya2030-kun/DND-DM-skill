@@ -41,7 +41,10 @@ def build_attacker() -> EncounterEntity:
     )
 
 
-def build_target() -> EncounterEntity:
+def build_target(*, with_shield: bool) -> EncounterEntity:
+    spells = [{"spell_id": "shield", "name": "Shield", "level": 1}] if with_shield else []
+    resources = {"spell_slots": {"1": {"max": 1, "remaining": 1}}} if with_shield else {}
+    action_economy = {"reaction_used": False} if with_shield else {"reaction_used": False}
     return EncounterEntity(
         entity_id="ent_ally_wizard_001",
         name="Wizard",
@@ -53,13 +56,15 @@ def build_target() -> EncounterEntity:
         ac=12,
         speed={"walk": 30, "remaining": 30},
         initiative=15,
-        action_economy={"reaction_used": False},
+        spells=spells,
+        resources=resources,
+        action_economy=action_economy,
     )
 
 
-def build_encounter() -> Encounter:
+def build_encounter(*, with_shield: bool) -> Encounter:
     attacker = build_attacker()
-    target = build_target()
+    target = build_target(with_shield=with_shield)
     return Encounter(
         encounter_id="enc_attack_reaction_test",
         name="Attack Reaction Test",
@@ -79,11 +84,42 @@ def build_encounter() -> Encounter:
 
 
 class AttackReactionWindowTests(unittest.TestCase):
+    def test_execute_attack_returns_normal_result_when_no_shield_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_encounter(with_shield=False))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertIn("request", result)
+            self.assertIn("resolution", result)
+            self.assertNotIn("status", result)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_attack_returns_waiting_reaction_when_target_can_cast_shield(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             event_repo = EventRepository(Path(tmp_dir) / "events.json")
-            encounter_repo.save(build_encounter())
+            encounter_repo.save(build_encounter(with_shield=True))
 
             append_event = AppendEvent(event_repo)
             service = ExecuteAttack(

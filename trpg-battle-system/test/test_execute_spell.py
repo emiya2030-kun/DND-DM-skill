@@ -646,6 +646,73 @@ class ExecuteSpellTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_returns_waiting_reaction_when_counterspell_window_opens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            spell_repo_path.write_text(
+                json.dumps(
+                    {
+                        "spell_definitions": {
+                            "fireball": {
+                                "id": "fireball",
+                                "name": "Fireball",
+                                "level": 3,
+                                "base": {
+                                    "level": 3,
+                                    "casting_time": "1 action",
+                                    "concentration": False,
+                                },
+                                "resolution": {"activation": "action"},
+                                "targeting": {"type": "area_sphere", "allowed_target_types": ["creature"]},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_encounter()
+            counterspeller = EncounterEntity(
+                entity_id="ent_counter_001",
+                name="Counter Mage",
+                side="enemy",
+                category="npc",
+                controller="gm",
+                position={"x": 2, "y": 2},
+                hp={"current": 12, "max": 12, "temp": 0},
+                ac=12,
+                speed={"walk": 30, "remaining": 30},
+                initiative=9,
+                action_economy={"reaction_used": False},
+                resources={"spell_slots": {"3": {"max": 1, "remaining": 1}}},
+                spells=[{"spell_id": "counterspell", "name": "Counterspell", "level": 3}],
+            )
+            encounter.entities[counterspeller.entity_id] = counterspeller
+            encounter.turn_order.append(counterspeller.entity_id)
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_spell_test",
+                actor_id="ent_caster_001",
+                spell_id="fireball",
+                cast_level=3,
+                target_entity_ids=["ent_target_001"],
+                target_point={"x": 2, "y": 2},
+                declared_action_cost="action",
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            self.assertEqual(result["pending_reaction_window"]["trigger_type"], "spell_declared")
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_returns_spell_request_error_without_declaring(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

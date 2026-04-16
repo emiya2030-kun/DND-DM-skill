@@ -132,6 +132,8 @@ class ExecuteSpell:
             apply_no_roll_immediate_effects=self._is_no_roll_spell(spell_definition),
             allow_out_of_turn_actor=bool(kwargs.get("allow_out_of_turn_actor", False)),
         )
+        if cast_result.get("status") == "waiting_reaction":
+            return cast_result
 
         if prepared_save_damage is not None:
             target_ids = prepared_save_damage["target_ids"]
