@@ -72,4 +72,43 @@ class ArmorProfileResolverTests(unittest.TestCase):
             self.assertEqual(profile["base_ac"], 18)
             self.assertEqual(profile["speed_penalty_feet"], 10)
             self.assertFalse(profile["wearing_untrained_armor"])
-            self.assertEqual(profile["armor_training"], ["heavy", "light", "medium", "shield"])
+            self.assertEqual(profile["armor_training"], ["light", "medium", "heavy", "shield"])
+
+    def test_resolve_chain_mail_and_shield_for_fighter_uses_shared_resolver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            knowledge_path = Path(tmp_dir) / "armor_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "chain_mail": {
+                                "armor_id": "chain_mail",
+                                "name": "链甲",
+                                "category": "heavy",
+                                "ac": {"base": 16},
+                                "strength_requirement": 13,
+                                "stealth_disadvantage": True,
+                            },
+                            "shield": {
+                                "armor_id": "shield",
+                                "name": "盾牌",
+                                "category": "shield",
+                                "ac": {"bonus": 2},
+                                "stealth_disadvantage": False,
+                            },
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.equipped_armor = {"armor_id": "chain_mail"}
+            actor.equipped_shield = {"armor_id": "shield"}
+            actor.class_features = {"fighter": {"level": 1}}
+
+            profile = ArmorProfileResolver(ArmorDefinitionRepository(knowledge_path)).resolve(actor)
+
+            self.assertFalse(profile["wearing_untrained_armor"])
+            self.assertTrue(profile["shield_trained"])
+            self.assertEqual(profile["current_ac"], 18)

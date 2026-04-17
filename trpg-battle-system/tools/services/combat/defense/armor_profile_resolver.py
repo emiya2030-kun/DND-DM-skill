@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.services.class_features.shared import resolve_entity_proficiencies
+
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 
@@ -115,20 +117,7 @@ class ArmorProfileResolver:
         return resolved
 
     def _resolve_armor_training(self, actor: EncounterEntity) -> list[str]:
-        proficiencies: set[str] = set()
-        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
-        fighter = class_features.get("fighter")
-        if isinstance(fighter, dict):
-            proficiencies.update({"light", "medium", "heavy", "shield"})
-            configured = fighter.get("armor_training")
-            if isinstance(configured, list):
-                for item in configured:
-                    if isinstance(item, str) and item.strip():
-                        proficiencies.add(item.strip().lower())
-
-        ordered = [item for item in _CANONICAL_ARMOR_TRAINING_ORDER if item in proficiencies]
-        extras = sorted(item for item in proficiencies if item not in _CANONICAL_ARMOR_TRAINING_ORDER)
-        return ordered + extras
+        return resolve_entity_proficiencies(actor)["armor_training"]
 
     def _is_equipment_trained(
         self,
