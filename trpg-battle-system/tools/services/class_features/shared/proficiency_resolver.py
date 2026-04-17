@@ -47,7 +47,7 @@ def _merge_string_list(target: set[str], values: Any) -> None:
     for value in values:
         if not isinstance(value, str):
             continue
-        normalized = value.strip()
+        normalized = value.strip().lower()
         if normalized:
             target.add(normalized)
 

@@ -7,7 +7,6 @@ from tools.services.class_features.shared import resolve_entity_proficiencies
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 
-_CANONICAL_ARMOR_TRAINING_ORDER = ["heavy", "light", "medium", "shield"]
 _TRAINED_ARMOR_CATEGORIES = {"light", "medium", "heavy"}
 
 

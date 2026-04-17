@@ -124,6 +124,23 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(proficiencies["weapon_proficiencies"], ["simple", "martial", "improvised"])
         self.assertEqual(proficiencies["armor_training"], ["light", "medium", "heavy", "shield", "tower"])
 
+    def test_resolve_entity_proficiencies_normalizes_mixed_case_armor_training(self) -> None:
+        _, _, _, _, resolve_entity_proficiencies = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "fighter": {
+                "level": 1,
+                "armor_training": ["HEAVY", "Shield", "Tower"],
+            }
+        }
+
+        proficiencies = resolve_entity_proficiencies(entity)
+
+        self.assertEqual(
+            proficiencies["armor_training"],
+            ["light", "medium", "heavy", "shield", "tower"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
