@@ -177,6 +177,15 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
 
         self.assertEqual(proficiencies, ["str", "con", "wis"])
 
+    def test_resolve_entity_save_proficiencies_adds_slippery_mind_wis_cha(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"rogue": {"level": 15}}
+
+        proficiencies = helpers.resolve_entity_save_proficiencies(entity)
+
+        self.assertEqual(proficiencies, ["dex", "int", "wis", "cha"])
+
     def test_ensure_class_runtime_writes_bucket_under_class_features(self) -> None:
         helpers = _import_helpers()
         entity = type("FakeEntity", (), {"class_features": {}})()

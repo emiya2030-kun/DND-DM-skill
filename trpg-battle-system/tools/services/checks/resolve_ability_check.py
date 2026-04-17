@@ -8,7 +8,7 @@ from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.check_catalog import SKILL_TO_ABILITY
-from tools.services.class_features.shared import resolve_entity_skill_proficiencies
+from tools.services.class_features.shared import ensure_rogue_runtime, resolve_entity_skill_proficiencies
 from tools.services.combat.rules.conditions import ConditionRuntime
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
 
@@ -38,6 +38,12 @@ class ResolveAbilityCheck:
         normalized_rolls = self._normalize_base_rolls(base_roll, base_rolls)
         self._ensure_roll_count_for_vantage(normalized_rolls, requested_vantage)
         chosen_roll = self._choose_roll(normalized_rolls, requested_vantage)
+        chosen_roll = self._apply_reliable_talent(
+            actor=actor,
+            check_type=requested_check_type,
+            check=check_type,
+            chosen_roll=chosen_roll,
+        )
         runtime = self._safe_condition_runtime(actor.conditions)
         exhaustion_penalty = runtime.get_d20_penalty()
         check_bonus, breakdown = self._resolve_bonus(
@@ -109,15 +115,46 @@ class ResolveAbilityCheck:
         ability = SKILL_TO_ABILITY[check]
         ability_modifier = int(actor.ability_mods.get(ability, 0))
         is_proficient = check in resolve_entity_skill_proficiencies(actor)
-        proficiency_bonus = int(actor.proficiency_bonus) if is_proficient else 0
+        proficiency_multiplier = 2 if is_proficient and self._has_expertise(actor=actor, skill=check) else 1
+        proficiency_bonus = int(actor.proficiency_bonus) * proficiency_multiplier if is_proficient else 0
         return ability_modifier + proficiency_bonus + additional_bonus, {
             "source": "ability_plus_proficiency",
             "ability": ability,
             "ability_modifier": ability_modifier,
             "is_proficient": is_proficient,
+            "proficiency_multiplier": proficiency_multiplier,
             "proficiency_bonus_applied": proficiency_bonus,
             "additional_bonus": additional_bonus,
         }
+
+    def _apply_reliable_talent(
+        self,
+        *,
+        actor: EncounterEntity,
+        check_type: str,
+        check: str,
+        chosen_roll: int,
+    ) -> int:
+        if check_type != "skill":
+            return chosen_roll
+        if check not in resolve_entity_skill_proficiencies(actor):
+            return chosen_roll
+        rogue_runtime = ensure_rogue_runtime(actor)
+        reliable_talent = rogue_runtime.get("reliable_talent")
+        if not isinstance(reliable_talent, dict) or not reliable_talent.get("enabled"):
+            return chosen_roll
+        return max(chosen_roll, 10)
+
+    def _has_expertise(self, *, actor: EncounterEntity, skill: str) -> bool:
+        rogue_runtime = ensure_rogue_runtime(actor)
+        expertise = rogue_runtime.get("expertise")
+        if not isinstance(expertise, dict):
+            return False
+        skills = expertise.get("skills")
+        if not isinstance(skills, list):
+            return False
+        normalized = {str(item).strip().lower() for item in skills if str(item).strip()}
+        return skill in normalized
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

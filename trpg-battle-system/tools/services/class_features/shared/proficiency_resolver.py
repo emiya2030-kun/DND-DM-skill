@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools.repositories import ClassProficiencyDefinitionRepository
+from tools.services.class_features.rogue import ensure_rogue_runtime
 
 _WEAPON_ORDER = ["simple", "martial", "martial_light", "martial_finesse_or_light"]
 _ARMOR_ORDER = ["light", "medium", "heavy", "shield"]
@@ -44,6 +45,10 @@ def resolve_entity_proficiencies(entity_or_class_features: Any) -> dict[str, lis
 def resolve_entity_save_proficiencies(entity: Any) -> list[str]:
     resolved = set(resolve_entity_proficiencies(entity)["save_proficiencies"])
     _merge_string_list(resolved, _extract_save_proficiencies(entity))
+    rogue_runtime = ensure_rogue_runtime(entity)
+    slippery_mind = rogue_runtime.get("slippery_mind")
+    if isinstance(slippery_mind, dict) and slippery_mind.get("enabled"):
+        resolved.update({"wis", "cha"})
     return _ordered(resolved, _SAVE_ORDER)
 
 
