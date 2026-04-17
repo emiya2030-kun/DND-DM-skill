@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 import math
 
 from tools.models import Encounter
-from tools.services.class_features.shared import get_class_runtime
+from tools.services.class_features.shared import get_class_runtime, get_fighter_runtime, get_monk_runtime
 from tools.services.encounter.movement_rules import get_center_position
 
 if TYPE_CHECKING:
@@ -141,6 +141,26 @@ class CollectReactionCandidates:
                 for definition in definitions
             ]
 
+        if trigger_type == "failed_ability_check":
+            target_id = trigger_event.get("target_entity_id")
+            if not isinstance(target_id, str):
+                return []
+            target = encounter.entities.get(target_id)
+            if target is None:
+                return []
+
+            definitions = [definition for definition in definitions if definition.get("reaction_type") == "tactical_mind"]
+            if not definitions or not self._eligible_for_tactical_mind(target):
+                return []
+
+            return [
+                {
+                    "actor_entity_id": target.entity_id,
+                    "reaction_definition": definition,
+                }
+                for definition in definitions
+            ]
+
         return []
 
     def _eligible_for_shield(self, entity: Any) -> bool:
@@ -161,7 +181,7 @@ class CollectReactionCandidates:
     def _eligible_for_deflect_attacks(self, *, entity: Any, trigger_event: dict[str, Any]) -> bool:
         if not self._reaction_available(entity):
             return False
-        monk_runtime = get_class_runtime(entity, "monk")
+        monk_runtime = get_monk_runtime(entity)
         if not monk_runtime:
             return False
         deflect_state = monk_runtime.get("deflect_attacks")
@@ -208,6 +228,25 @@ class CollectReactionCandidates:
         if not isinstance(indomitable_state, dict):
             return False
         remaining_uses = indomitable_state.get("remaining_uses")
+        return isinstance(remaining_uses, int) and not isinstance(remaining_uses, bool) and remaining_uses > 0
+
+    def _eligible_for_tactical_mind(self, entity: Any) -> bool:
+        fighter = get_fighter_runtime(entity)
+        if not isinstance(fighter, dict) or not fighter:
+            return False
+
+        level = fighter.get("level", fighter.get("fighter_level", 0))
+        if isinstance(level, bool) or not isinstance(level, int) or level < 2:
+            return False
+
+        tactical_mind = fighter.get("tactical_mind")
+        if isinstance(tactical_mind, dict) and not bool(tactical_mind.get("enabled", False)):
+            return False
+
+        second_wind = fighter.get("second_wind")
+        if not isinstance(second_wind, dict):
+            return False
+        remaining_uses = second_wind.get("remaining_uses")
         return isinstance(remaining_uses, int) and not isinstance(remaining_uses, bool) and remaining_uses > 0
 
     def _reaction_available(self, entity: Any) -> bool:

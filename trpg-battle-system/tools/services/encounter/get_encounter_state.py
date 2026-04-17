@@ -13,7 +13,7 @@ from tools.services.combat.attack.weapon_mastery_effects import (
 )
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import ensure_rogue_runtime
+from tools.services.class_features.shared import ensure_monk_runtime, ensure_rogue_runtime
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
@@ -850,7 +850,9 @@ class GetEncounterState:
             bucket = class_features.get(class_id)
             if not isinstance(bucket, dict):
                 continue
-            if class_id == "rogue":
+            if class_id == "monk":
+                bucket = ensure_monk_runtime(entity)
+            elif class_id == "rogue":
                 bucket = ensure_rogue_runtime(entity)
             elif class_id == "barbarian":
                 bucket = ensure_barbarian_runtime(entity)

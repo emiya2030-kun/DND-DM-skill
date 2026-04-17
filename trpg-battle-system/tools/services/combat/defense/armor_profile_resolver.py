@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import get_class_runtime, resolve_entity_proficiencies
+from tools.services.class_features.shared import get_class_runtime, get_monk_runtime, resolve_entity_proficiencies
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
@@ -137,7 +137,7 @@ class ArmorProfileResolver:
             barbarian = ensure_barbarian_runtime(actor)
             return 10 + self._ability_mod(actor, "dex") + self._ability_mod(actor, "con")
 
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         if not monk_runtime:
             return None
         if actor.equipped_armor is not None or actor.equipped_shield is not None:

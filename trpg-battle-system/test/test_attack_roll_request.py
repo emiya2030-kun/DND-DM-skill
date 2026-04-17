@@ -1847,6 +1847,87 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertEqual(request.context["attack_kind"], "melee_weapon")
             repo.close()
 
+    def test_resolve_weapon_uses_martial_arts_die_for_simple_melee_monk_weapon(self) -> None:
+        actor = build_actor(
+            class_features={
+                "monk": {
+                    "level": 5,
+                }
+            }
+        )
+        actor.weapons = [
+            {
+                "weapon_id": "quarterstaff",
+                "name": "Quarterstaff",
+                "category": "simple",
+                "kind": "melee",
+                "damage": [{"formula": "1d6+1", "type": "bludgeoning"}],
+                "properties": ["versatile"],
+                "range": {"normal": 5, "long": 5},
+            }
+        ]
+
+        weapon = WeaponProfileResolver().resolve(actor, "quarterstaff")
+
+        self.assertEqual(weapon["damage"][0]["formula"], "1d8+3")
+
+    def test_execute_uses_dex_for_simple_melee_monk_weapon_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                class_features={
+                    "monk": {
+                        "level": 5,
+                    }
+                }
+            )
+            actor.weapons = [
+                {
+                    "weapon_id": "quarterstaff",
+                    "name": "Quarterstaff",
+                    "category": "simple",
+                    "kind": "melee",
+                    "damage": [{"formula": "1d6+1", "type": "bludgeoning"}],
+                    "properties": ["versatile"],
+                    "range": {"normal": 5, "long": 5},
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="quarterstaff",
+            )
+
+            self.assertEqual(request.context["modifier"], "dex")
+            self.assertEqual(request.context["modifier_value"], 3)
+            repo.close()
+
+    def test_resolve_weapon_uses_martial_arts_die_for_light_martial_monk_weapon(self) -> None:
+        actor = build_actor(
+            class_features={
+                "monk": {
+                    "level": 11,
+                }
+            }
+        )
+        actor.weapons = [
+            {
+                "weapon_id": "shortsword",
+                "name": "Shortsword",
+                "category": "martial",
+                "kind": "melee",
+                "damage": [{"formula": "1d6+3", "type": "piercing"}],
+                "properties": ["light", "finesse"],
+                "range": {"normal": 5, "long": 5},
+            }
+        ]
+
+        weapon = WeaponProfileResolver().resolve(actor, "shortsword")
+
+        self.assertEqual(weapon["damage"][0]["formula"], "1d10+3")
+
     def test_execute_rejects_flurry_of_blows_when_no_focus_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

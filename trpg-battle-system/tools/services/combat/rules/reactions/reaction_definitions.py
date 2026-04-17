@@ -199,4 +199,30 @@ REACTION_DEFINITIONS = {
             "short_label": "Indomitable",
         },
     },
+    "tactical_mind": {
+        "reaction_type": "tactical_mind",
+        "template_type": "failed_ability_check_boost",
+        "name": "Tactical Mind",
+        "trigger_type": "failed_ability_check",
+        "resource_cost": {"class_feature": "tactical_mind"},
+        "timing": {
+            "window_phase": "after_failed_check_before_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "actor_has_tactical_mind",
+            "actor_has_remaining_second_wind_use",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_tactical_mind_reaction"},
+        "ui": {
+            "prompt": "Use Tactical Mind?",
+            "short_label": "Tactical Mind",
+        },
+    },
 }

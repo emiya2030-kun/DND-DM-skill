@@ -22,6 +22,7 @@ from tools.services.class_features.shared import (
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
+    get_monk_runtime,
     resolve_entity_save_proficiencies,
     resolve_extra_attack_count,
 )
@@ -1231,7 +1232,7 @@ class ExecuteAttack:
         redirect_target_id = effect.get("redirect_target_id")
         if not isinstance(redirect_target_id, str) or redirect_target_id not in encounter.entities:
             return None
-        monk_runtime = get_class_runtime(monk_entity, "monk")
+        monk_runtime = get_monk_runtime(monk_entity)
         focus_points = monk_runtime.get("focus_points")
         if not isinstance(focus_points, dict):
             return None
@@ -1925,7 +1926,7 @@ class ExecuteAttack:
     def _consume_monk_flurry_focus_if_needed(self, *, actor: Any, attack_mode: str) -> None:
         if attack_mode != "flurry_of_blows":
             return
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         focus_points = monk_runtime.get("focus_points")
         if not isinstance(focus_points, dict):
             return
@@ -2009,7 +2010,7 @@ class ExecuteAttack:
             resolution["stunning_strike"] = result_block
             return
 
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         if not isinstance(monk_runtime, dict) or not monk_runtime:
             raise ValueError("stunning_strike_requires_monk_runtime")
         focus_points = monk_runtime.get("focus_points")

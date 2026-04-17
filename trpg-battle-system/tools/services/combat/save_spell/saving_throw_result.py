@@ -6,6 +6,7 @@ from typing import Any
 from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import get_monk_runtime
 from tools.services.combat.rules.conditions import INCAPACITATING_CONDITIONS
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.shared.update_conditions import UpdateConditions
@@ -587,7 +588,7 @@ class SavingThrowResult:
     ) -> bool:
         if str(save_ability).strip().lower() != "dex":
             return False
-        monk_runtime = getattr(target, "class_features", {}).get("monk")
+        monk_runtime = get_monk_runtime(target)
         if not isinstance(monk_runtime, dict):
             return False
         evasion_runtime = monk_runtime.get("evasion")

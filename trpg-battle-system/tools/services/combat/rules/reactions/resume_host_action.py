@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from tools.models.roll_request import RollRequest
+from tools.models.roll_result import RollResult
+from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.checks.ability_check_result import AbilityCheckResult
+from tools.services.events.append_event import AppendEvent
+
 if TYPE_CHECKING:
     from tools.services.combat.attack.execute_attack import ExecuteAttack
     from tools.services.spells.encounter_cast_spell import EncounterCastSpell
@@ -12,13 +18,23 @@ class ResumeHostAction:
 
     def __init__(
         self,
+        encounter_repository: EncounterRepository,
+        append_event: AppendEvent,
         execute_attack: "ExecuteAttack",
         encounter_cast_spell: "EncounterCastSpell",
     ) -> None:
+        self.encounter_repository = encounter_repository
+        self.ability_check_result = AbilityCheckResult(encounter_repository, append_event)
         self.execute_attack = execute_attack
         self.encounter_cast_spell = encounter_cast_spell
 
-    def execute(self, *, encounter_id: str, pending_window: dict[str, Any] | None) -> dict[str, Any]:
+    def execute(
+        self,
+        *,
+        encounter_id: str,
+        pending_window: dict[str, Any] | None,
+        reaction_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not isinstance(pending_window, dict):
             raise ValueError("pending_reaction_window_not_found")
         host_action_type = pending_window.get("host_action_type")
@@ -49,6 +65,46 @@ class ResumeHostAction:
                     host_action_id=snapshot.get("attack_id"),
                     skip_reaction_window=True,
                 ),
+                "pending_window": pending_window,
+            }
+
+        if host_action_type == "ability_check":
+            roll_request_data = snapshot.get("roll_request")
+            roll_result_data = snapshot.get("roll_result")
+            if not isinstance(roll_request_data, dict):
+                raise ValueError("ability_check_roll_request_missing")
+            if not isinstance(roll_result_data, dict):
+                raise ValueError("ability_check_roll_result_missing")
+
+            roll_request = RollRequest.from_dict(dict(roll_request_data))
+            resolved_roll_result = RollResult.from_dict(dict(roll_result_data))
+            if isinstance(reaction_result, dict):
+                final_total = reaction_result.get("final_total")
+                if isinstance(final_total, int) and not isinstance(final_total, bool):
+                    resolved_roll_result.final_total = final_total
+                resolved_roll_result.metadata["tactical_mind"] = dict(reaction_result)
+
+            outcome = self.ability_check_result.execute(
+                encounter_id=encounter_id,
+                roll_request=roll_request,
+                roll_result=resolved_roll_result,
+            )
+            host_action_result: dict[str, Any] = {
+                "encounter_id": encounter_id,
+                "actor_id": resolved_roll_result.actor_entity_id,
+                "check_type": roll_request.context.get("check_type"),
+                "check": snapshot.get("check"),
+                "normalized_check": snapshot.get("normalized_check", roll_request.context.get("check")),
+                "request": roll_request.to_dict(),
+                "roll_result": resolved_roll_result.to_dict(),
+                **outcome,
+            }
+            if isinstance(reaction_result, dict):
+                host_action_result["class_feature_result"] = {"tactical_mind": dict(reaction_result)}
+            return {
+                "status": "resumed",
+                "encounter_id": encounter_id,
+                "host_action_result": host_action_result,
                 "pending_window": pending_window,
             }
 

@@ -35,6 +35,7 @@ from tools.services.class_features.shared import (
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
+    get_monk_runtime,
     has_unconsumed_studied_attack_mark,
     normalize_class_feature_options,
     resolve_extra_attack_count,
@@ -291,6 +292,8 @@ class AttackRollRequest:
     def _resolve_modifier_name(self, actor: EncounterEntity, weapon: dict, attack_mode: str) -> str:
         if self._is_monk_unarmed_attack(actor=actor, weapon=weapon):
             return "dex"
+        if self.weapon_profile_resolver.is_monk_weapon(actor, weapon):
+            return self.weapon_profile_resolver.resolve_monk_weapon_modifier_name(actor)
 
         properties = {str(prop).lower() for prop in weapon.get("properties", [])}
         normal_range = weapon.get("range", {}).get("normal", 0)
@@ -856,7 +859,7 @@ class AttackRollRequest:
         actor: EncounterEntity,
         option: dict[str, Any],
     ) -> dict[str, Any]:
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         if not isinstance(monk_runtime, dict) or not monk_runtime:
             raise ValueError("stunning_strike_requires_monk_runtime")
 
@@ -907,7 +910,7 @@ class AttackRollRequest:
                 raise ValueError("martial_arts_bonus_requires_unarmed_strike")
             raise ValueError("flurry_of_blows_requires_unarmed_strike")
 
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         martial_arts_die = monk_runtime.get("martial_arts_die")
         if not isinstance(martial_arts_die, str) or not martial_arts_die.strip():
             raise ValueError("martial_arts_requires_monk_runtime")
@@ -923,7 +926,7 @@ class AttackRollRequest:
     def _is_monk_unarmed_attack(self, *, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
         if str(weapon.get("weapon_id") or "").strip().lower() != "unarmed_strike":
             return False
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         martial_arts_die = monk_runtime.get("martial_arts_die")
         return isinstance(martial_arts_die, str) and bool(martial_arts_die.strip())
 

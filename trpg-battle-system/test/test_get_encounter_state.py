@@ -408,6 +408,27 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_monk_progression_from_level_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["monk"] = {
+                "level": 11,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            monk = state["current_turn_entity"]["resources"]["class_features"]["monk"]
+
+            self.assertEqual(monk["martial_arts_die"], "1d10")
+            self.assertEqual(monk["focus_points"]["max"], 11)
+            self.assertEqual(monk["focus_points"]["remaining"], 11)
+            self.assertEqual(monk["unarmored_movement_bonus_feet"], 20)
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_fighter_tactical_mind_and_style(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

@@ -22,6 +22,7 @@ from tools.services import (
     UpdateHp,
 )
 from tools.services.combat.rules.reactions.definitions import indomitable as indomitable_module
+from tools.services.combat.rules.reactions.definitions import tactical_mind as tactical_mind_module
 from tools.services.combat.rules.reactions.templates import cast_interrupt_contest as cast_interrupt_contest_module
 from tools.services.combat.rules.reactions.resolve_reaction_option import ResolveReactionOption
 from tools.services.spells.encounter_cast_spell import EncounterCastSpell
@@ -176,6 +177,31 @@ def build_indomitable_fighter() -> EncounterEntity:
             "fighter": {
                 "fighter_level": 9,
                 "indomitable": {"remaining_uses": 1, "max_uses": 1},
+            }
+        },
+    )
+
+
+def build_tactical_mind_fighter() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_fighter_tm_001",
+        name="Sabur",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 21, "max": 21, "temp": 0},
+        ac=16,
+        speed={"walk": 30, "remaining": 30},
+        initiative=14,
+        ability_mods={"str": 1, "dex": 3, "wis": 2},
+        proficiency_bonus=2,
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": False},
+        class_features={
+            "fighter": {
+                "level": 2,
+                "tactical_mind": {"enabled": True},
+                "second_wind": {"remaining_uses": 2, "max_uses": 2},
             }
         },
     )
@@ -339,6 +365,160 @@ class ResolveReactionOptionTests(unittest.TestCase):
             execute_attack,
             encounter_cast_spell=encounter_cast_spell,
         )
+
+    def test_resolve_tactical_mind_rewrites_failed_ability_check_without_spending_reaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            fighter = build_tactical_mind_fighter()
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_tactical_mind_option_test",
+                    name="Tactical Mind Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=fighter.entity_id,
+                    turn_order=[fighter.entity_id],
+                    entities={fighter.entity_id: fighter},
+                    map=EncounterMap(
+                        map_id="map_tactical_mind_option_test",
+                        name="Tactical Mind Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_tactical_mind_001",
+                            "reaction_type": "tactical_mind",
+                            "template_type": "failed_ability_check_boost",
+                            "trigger_type": "failed_ability_check",
+                            "status": "pending",
+                            "actor_entity_id": fighter.entity_id,
+                            "target_entity_id": fighter.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "dc": 15,
+                                "current_total": 7,
+                                "bonus_formula": "1d10",
+                                "consume_only_on_success": True,
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_failed_ability_check_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_failed_ability_check_001",
+                        "trigger_type": "failed_ability_check",
+                        "blocking": True,
+                        "host_action_type": "ability_check",
+                        "host_action_id": "ability_check_001",
+                        "host_action_snapshot": {
+                            "roll_request": {
+                                "type": "request_roll",
+                                "request_id": "req_ability_001",
+                                "encounter_id": "enc_tactical_mind_option_test",
+                                "actor_entity_id": fighter.entity_id,
+                                "target_entity_id": None,
+                                "roll_type": "ability_check",
+                                "formula": "1d20+check_modifier",
+                                "reason": "Strength check",
+                                "context": {
+                                    "check_type": "ability",
+                                    "check": "str",
+                                    "dc": 15,
+                                    "vantage": "normal",
+                                },
+                            },
+                            "roll_result": {
+                                "type": "roll_result",
+                                "request_id": "req_ability_001",
+                                "encounter_id": "enc_tactical_mind_option_test",
+                                "actor_entity_id": fighter.entity_id,
+                                "target_entity_id": None,
+                                "roll_type": "ability_check",
+                                "final_total": 7,
+                                "dice_rolls": {
+                                    "base_rolls": [6],
+                                    "chosen_roll": 6,
+                                    "check_bonus": 1,
+                                    "additional_bonus": 0,
+                                    "d20_penalty": 0,
+                                },
+                                "metadata": {
+                                    "check_type": "ability",
+                                    "check": "str",
+                                    "vantage": "normal",
+                                    "requested_vantage": "normal",
+                                    "chosen_roll": 6,
+                                    "check_bonus": 1,
+                                    "check_bonus_breakdown": {
+                                        "source": "ability_modifier",
+                                        "ability": "str",
+                                        "ability_modifier": 1,
+                                        "additional_bonus": 0,
+                                    },
+                                    "d20_penalty": 0,
+                                },
+                                "rolled_at": None,
+                            },
+                            "check": "力量",
+                            "normalized_check": "str",
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{fighter.entity_id}",
+                                "actor_entity_id": fighter.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "class_feature",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": fighter.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_tactical_mind_001",
+                                        "reaction_type": "tactical_mind",
+                                        "template_type": "failed_ability_check_boost",
+                                        "request_id": "react_tactical_mind_001",
+                                        "label": "Tactical Mind",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            service = self._build_service(encounter_repo, event_repo)
+            with patch.object(tactical_mind_module.random, "randint", side_effect=[8]):
+                result = service.execute(
+                    encounter_id="enc_tactical_mind_option_test",
+                    window_id="rw_failed_ability_check_001",
+                    group_id=f"rg_{fighter.entity_id}",
+                    option_id="opt_tactical_mind_001",
+                    final_total=0,
+                    dice_rolls={},
+                )
+
+            updated = encounter_repo.get("enc_tactical_mind_option_test")
+            assert updated is not None
+            fighter_state = updated.entities[fighter.entity_id].class_features["fighter"]
+            self.assertEqual(result["reaction_type"], "tactical_mind")
+            self.assertEqual(result["resolution_mode"], "rewrite_host_action")
+            self.assertEqual(result["reaction_result"]["bonus_roll"], 8)
+            self.assertTrue(result["reaction_result"]["consumed_second_wind"])
+            self.assertIsNotNone(result["host_action_result"])
+            self.assertTrue(result["host_action_result"]["success"])
+            self.assertEqual(result["host_action_result"]["final_total"], 15)
+            self.assertEqual(fighter_state["second_wind"]["remaining_uses"], 1)
+            self.assertFalse(updated.entities[fighter.entity_id].action_economy["reaction_used"])
+            encounter_repo.close()
+            event_repo.close()
 
     def test_resolve_indomitable_rerolls_save_and_adds_fighter_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

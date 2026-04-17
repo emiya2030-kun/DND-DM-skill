@@ -6,7 +6,7 @@ from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import get_class_runtime
+from tools.services.class_features.shared import get_monk_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns.start_turn import StartTurn
 
@@ -137,7 +137,7 @@ class RollInitiativeAndStartEncounter:
         if not bool(option.get("use_uncanny_metabolism")):
             return None
 
-        monk_runtime = get_class_runtime(entity, "monk")
+        monk_runtime = get_monk_runtime(entity)
         if not monk_runtime:
             raise ValueError("uncanny_metabolism_requires_monk_runtime")
 

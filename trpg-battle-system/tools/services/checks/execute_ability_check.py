@@ -18,11 +18,21 @@ class ExecuteAbilityCheck:
         self,
         encounter_repository: EncounterRepository,
         append_event: AppendEvent,
+        open_reaction_window: Any | None = None,
     ):
         self.encounter_repository = encounter_repository
         self.request_service = AbilityCheckRequest(encounter_repository)
         self.resolve_service = ResolveAbilityCheck(encounter_repository)
         self.result_service = AbilityCheckResult(encounter_repository, append_event)
+        if open_reaction_window is None:
+            from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
+            from tools.services.combat.rules.reactions import OpenReactionWindow
+
+            open_reaction_window = OpenReactionWindow(
+                encounter_repository=encounter_repository,
+                definition_repository=ReactionDefinitionRepository(),
+            )
+        self.open_reaction_window = open_reaction_window
 
     def execute(
         self,
@@ -82,6 +92,28 @@ class ExecuteAbilityCheck:
                 ),
             },
         )
+        reaction_window = self._maybe_open_failed_ability_check_window(
+            encounter_id=encounter_id,
+            actor_id=actor_id,
+            request=request,
+            roll_result=roll_result,
+            original_check=check,
+        )
+        if reaction_window is not None:
+            result: dict[str, Any] = {
+                "encounter_id": encounter_id,
+                "actor_id": actor_id,
+                "status": "waiting_reaction",
+                "request": request.to_dict(),
+                "roll_result": roll_result.to_dict(),
+                "check": check,
+                "normalized_check": request.context["check"],
+                "pending_reaction_window": reaction_window["pending_reaction_window"],
+                "reaction_requests": reaction_window["reaction_requests"],
+            }
+            if include_encounter_state:
+                result["encounter_state"] = GetEncounterState(self.encounter_repository).execute(encounter_id)
+            return result
         outcome = self.result_service.execute(
             encounter_id=encounter_id,
             roll_request=request,
@@ -112,4 +144,47 @@ class ExecuteAbilityCheck:
         result["normalized_check"] = request.context["check"]
         if include_encounter_state:
             result["encounter_state"] = GetEncounterState(self.encounter_repository).execute(encounter_id)
+        return result
+
+    def _maybe_open_failed_ability_check_window(
+        self,
+        *,
+        encounter_id: str,
+        actor_id: str,
+        request: Any,
+        roll_result: Any,
+        original_check: str,
+    ) -> dict[str, Any] | None:
+        raw_options = request.context.get("class_feature_options")
+        if isinstance(raw_options, dict) and raw_options.get("tactical_mind"):
+            return None
+
+        dc = request.context.get("dc")
+        if not isinstance(dc, int) or roll_result.final_total >= dc:
+            return None
+
+        trigger_event = {
+            "event_id": f"evt_failed_ability_check_{request.request_id}",
+            "trigger_type": "failed_ability_check",
+            "host_action_type": "ability_check",
+            "host_action_id": request.request_id,
+            "host_action_snapshot": {
+                "roll_request": request.to_dict(),
+                "roll_result": roll_result.to_dict(),
+                "check": original_check,
+                "normalized_check": request.context.get("check"),
+            },
+            "target_entity_id": actor_id,
+            "request_payloads": {
+                actor_id: {
+                    "dc": dc,
+                    "current_total": roll_result.final_total,
+                    "bonus_formula": "1d10",
+                    "consume_only_on_success": True,
+                }
+            },
+        }
+        result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
+        if result.get("status") != "waiting_reaction":
+            return None
         return result

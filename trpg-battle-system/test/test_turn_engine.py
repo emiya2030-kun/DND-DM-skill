@@ -82,6 +82,18 @@ def test_start_turn_without_fighter_runtime_does_not_raise() -> None:
     assert updated.entities["ent_ally_eric_001"].class_features == {}
 
 
+def test_start_turn_derives_monk_unarmored_movement_bonus_from_level() -> None:
+    encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+    entity = encounter.entities["ent_ally_eric_001"]
+    entity.class_features = {"monk": {"level": 6}}
+    entity.speed["remaining"] = 0
+
+    updated = start_turn(encounter)
+
+    assert updated.entities["ent_ally_eric_001"].speed["walk"] == 45
+    assert updated.entities["ent_ally_eric_001"].speed["remaining"] == 45
+
+
 def test_start_turn_still_resets_action_and_movement_when_fighter_runtime_exists() -> None:
     encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
     entity = encounter.entities["ent_ally_eric_001"]

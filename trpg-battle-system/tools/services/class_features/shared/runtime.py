@@ -29,11 +29,80 @@ def ensure_fighter_runtime(entity_or_class_features: Any) -> dict[str, Any]:
 
 
 def get_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return get_class_runtime(entity_or_class_features, "monk")
+    runtime = get_class_runtime(entity_or_class_features, "monk")
+    if not runtime:
+        return {}
+    return ensure_monk_runtime(entity_or_class_features)
 
 
 def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return ensure_class_runtime(entity_or_class_features, "monk")
+    monk = ensure_class_runtime(entity_or_class_features, "monk")
+    level = int(monk.get("level", 0) or 0)
+
+    explicit_martial_arts_die = monk.get("martial_arts_die")
+    monk["martial_arts_die"] = (
+        _resolve_monk_martial_arts_die(level)
+        if level > 0
+        else explicit_martial_arts_die if isinstance(explicit_martial_arts_die, str) and explicit_martial_arts_die.strip() else "1d6"
+    )
+    explicit_unarmored_movement = monk.get("unarmored_movement_bonus_feet")
+    monk["unarmored_movement_bonus_feet"] = (
+        _resolve_monk_unarmored_movement_bonus(level)
+        if level > 0
+        else explicit_unarmored_movement if isinstance(explicit_unarmored_movement, int) else 0
+    )
+
+    focus_points = monk.setdefault("focus_points", {})
+    focus_points["max"] = _resolve_monk_focus_points_max(level) if level > 0 else int(focus_points.get("max", 0) or 0)
+    remaining = focus_points.get("remaining")
+    focus_points["remaining"] = remaining if isinstance(remaining, int) else focus_points["max"]
+
+    martial_arts = monk.setdefault("martial_arts", {})
+    explicit_martial_arts_enabled = martial_arts.get("enabled")
+    martial_arts["enabled"] = explicit_martial_arts_enabled if isinstance(explicit_martial_arts_enabled, bool) else level >= 1
+    if not isinstance(martial_arts.get("grapple_dc_ability"), str):
+        martial_arts["grapple_dc_ability"] = "dex"
+
+    uncanny_metabolism = monk.setdefault("uncanny_metabolism", {})
+    explicit_uncanny_metabolism_available = uncanny_metabolism.get("available")
+    uncanny_metabolism["available"] = (
+        explicit_uncanny_metabolism_available
+        if isinstance(explicit_uncanny_metabolism_available, bool)
+        else level >= 2
+    )
+
+    deflect_attacks = monk.setdefault("deflect_attacks", {})
+    explicit_deflect_attacks_enabled = deflect_attacks.get("enabled")
+    deflect_attacks["enabled"] = bool(explicit_deflect_attacks_enabled) or level >= 3
+
+    slow_fall = monk.setdefault("slow_fall", {})
+    explicit_slow_fall_enabled = slow_fall.get("enabled")
+    slow_fall["enabled"] = bool(explicit_slow_fall_enabled) or level >= 4
+
+    stunning_strike = monk.setdefault("stunning_strike", {})
+    explicit_stunning_strike_enabled = stunning_strike.get("enabled")
+    stunning_strike["enabled"] = bool(explicit_stunning_strike_enabled) or level >= 5
+    if not isinstance(stunning_strike.get("max_per_turn"), int):
+        stunning_strike["max_per_turn"] = 1
+    stunning_strike.setdefault("uses_this_turn", 0)
+
+    empowered_strikes = monk.setdefault("empowered_strikes", {})
+    explicit_empowered_strikes_enabled = empowered_strikes.get("enabled")
+    empowered_strikes["enabled"] = bool(explicit_empowered_strikes_enabled) or level >= 6
+
+    evasion = monk.setdefault("evasion", {})
+    explicit_evasion_enabled = evasion.get("enabled")
+    evasion["enabled"] = bool(explicit_evasion_enabled) or level >= 7
+
+    heightened_focus = monk.setdefault("heightened_focus", {})
+    explicit_heightened_focus_enabled = heightened_focus.get("enabled")
+    heightened_focus["enabled"] = bool(explicit_heightened_focus_enabled) or level >= 10
+
+    deflect_energy = monk.setdefault("deflect_energy", {})
+    explicit_deflect_energy_enabled = deflect_energy.get("enabled")
+    deflect_energy["enabled"] = bool(explicit_deflect_energy_enabled) or level >= 13
+
+    return monk
 
 
 def get_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -71,3 +140,31 @@ def _ensure_class_features(entity_or_class_features: Any) -> dict[str, Any]:
 
     setattr(entity_or_class_features, "class_features", {})
     return entity_or_class_features.class_features
+
+
+def _resolve_monk_martial_arts_die(level: int) -> str:
+    if level >= 17:
+        return "1d12"
+    if level >= 11:
+        return "1d10"
+    if level >= 5:
+        return "1d8"
+    return "1d6"
+
+
+def _resolve_monk_focus_points_max(level: int) -> int:
+    return level if level >= 2 else 0
+
+
+def _resolve_monk_unarmored_movement_bonus(level: int) -> int:
+    if level >= 18:
+        return 30
+    if level >= 14:
+        return 25
+    if level >= 10:
+        return 20
+    if level >= 6:
+        return 15
+    if level >= 2:
+        return 10
+    return 0

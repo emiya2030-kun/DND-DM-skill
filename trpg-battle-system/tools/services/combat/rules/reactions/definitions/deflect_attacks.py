@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from tools.models import Encounter
 from tools.repositories.encounter_repository import EncounterRepository
-from tools.services.class_features.shared import get_class_runtime
+from tools.services.class_features.shared import get_monk_runtime
 
 
 class ResolveDeflectAttacksReaction:
@@ -23,7 +23,7 @@ class ResolveDeflectAttacksReaction:
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
         actor = self._get_entity_or_raise(encounter, str(request.get("actor_entity_id")))
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         if not monk_runtime:
             raise ValueError("deflect_attacks_requires_monk_runtime")
         if not isinstance(actor.action_economy, dict):

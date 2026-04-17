@@ -5,7 +5,7 @@ from tools.services.class_features.barbarian.runtime import ensure_barbarian_run
 from tools.services.combat.actions import clear_turn_effect_type
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
-from tools.services.class_features.shared import ensure_rogue_runtime, get_class_runtime
+from tools.services.class_features.shared import ensure_monk_runtime, ensure_rogue_runtime, get_class_runtime, get_monk_runtime
 
 
 def reset_turn_resources(entity: EncounterEntity) -> None:
@@ -51,6 +51,7 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
             sneak_attack["used_this_turn"] = False
     monk = class_features.get("monk")
     if isinstance(monk, dict):
+        monk = ensure_monk_runtime(entity)
         stunning_strike = monk.get("stunning_strike")
         if isinstance(stunning_strike, dict):
             stunning_strike["uses_this_turn"] = 0
@@ -65,7 +66,7 @@ def _resolve_base_walk_speed(*, entity: EncounterEntity, combat_flags: dict[str,
 
 
 def _get_monk_unarmored_movement_bonus(entity: EncounterEntity) -> int:
-    monk_runtime = get_class_runtime(entity, "monk")
+    monk_runtime = get_monk_runtime(entity)
     if not monk_runtime:
         return 0
     if entity.equipped_armor is not None or entity.equipped_shield is not None:

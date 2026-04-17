@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
-from tools.services.class_features.shared import get_class_runtime, resolve_entity_proficiencies
+from tools.services.class_features.shared import get_monk_runtime, resolve_entity_proficiencies
 
 
 class WeaponProfileResolver:
@@ -50,6 +51,11 @@ class WeaponProfileResolver:
             base_damage_override=base_damage_override,
             versatile_damage_override=versatile_damage_override,
             extra_damage_parts=extra_damage_parts,
+        )
+        damage_parts = self._apply_monk_weapon_martial_arts(
+            actor=actor,
+            weapon=resolved,
+            damage_parts=damage_parts,
         )
         if damage_parts:
             resolved["damage"] = damage_parts
@@ -153,7 +159,7 @@ class WeaponProfileResolver:
         }
 
     def _resolve_unarmed_damage_formula(self, actor: EncounterEntity) -> str:
-        monk_runtime = get_class_runtime(actor, "monk")
+        monk_runtime = get_monk_runtime(actor)
         monk_die = monk_runtime.get("martial_arts_die")
         if isinstance(monk_die, str) and monk_die.strip():
             die = monk_die.strip()
@@ -180,6 +186,125 @@ class WeaponProfileResolver:
         if damage_type is not None:
             normalized["type"] = damage_type
         return normalized
+
+    def is_monk_weapon(self, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
+        monk_runtime = get_monk_runtime(actor)
+        martial_arts = monk_runtime.get("martial_arts")
+        if not isinstance(martial_arts, dict) or not bool(martial_arts.get("enabled")):
+            return False
+
+        category = str(weapon.get("category") or "").strip().lower()
+        kind = str(weapon.get("kind") or "").strip().lower()
+        properties = {
+            str(entry).strip().lower()
+            for entry in weapon.get("properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
+        if kind != "melee":
+            return False
+        if category == "simple":
+            return True
+        return category == "martial" and "light" in properties
+
+    def _apply_monk_weapon_martial_arts(
+        self,
+        *,
+        actor: EncounterEntity,
+        weapon: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not damage_parts or not self.is_monk_weapon(actor, weapon):
+            return damage_parts
+
+        monk_runtime = get_monk_runtime(actor)
+        monk_die = monk_runtime.get("martial_arts_die")
+        if not isinstance(monk_die, str) or not monk_die.strip():
+            return damage_parts
+
+        updated_parts = [dict(part) for part in damage_parts]
+        formula = str(updated_parts[0].get("formula") or "").strip()
+        rewritten = self._rewrite_monk_weapon_damage_formula(
+            actor=actor,
+            weapon=weapon,
+            formula=formula,
+            martial_arts_die=monk_die.strip(),
+        )
+        if rewritten:
+            updated_parts[0]["formula"] = rewritten
+        return updated_parts
+
+    def _rewrite_monk_weapon_damage_formula(
+        self,
+        *,
+        actor: EncounterEntity,
+        weapon: dict[str, Any],
+        formula: str,
+        martial_arts_die: str,
+    ) -> str:
+        parsed_formula = self._parse_single_damage_formula(formula)
+        parsed_martial_arts = self._parse_single_damage_formula(martial_arts_die)
+        if parsed_formula is None or parsed_martial_arts is None:
+            return formula
+
+        dice_count, die_size, explicit_flat_bonus = parsed_formula
+        martial_arts_die_size = parsed_martial_arts[1]
+        resolved_die_size = max(die_size, martial_arts_die_size)
+
+        if explicit_flat_bonus is None:
+            return f"{dice_count}d{resolved_die_size}"
+
+        standard_modifier = self._resolve_standard_weapon_modifier_value(actor, weapon)
+        monk_modifier = self._resolve_monk_weapon_modifier_value(actor)
+        adjusted_flat_bonus = explicit_flat_bonus + (monk_modifier - standard_modifier)
+        return self._build_damage_formula(
+            dice_count=dice_count,
+            die_size=resolved_die_size,
+            flat_bonus=adjusted_flat_bonus,
+        )
+
+    def _parse_single_damage_formula(self, formula: str) -> tuple[int, int, int | None] | None:
+        match = re.fullmatch(r"\s*(\d+)d(\d+)([+-]\d+)?\s*", formula)
+        if match is None:
+            return None
+        explicit_bonus = match.group(3)
+        return int(match.group(1)), int(match.group(2)), int(explicit_bonus) if explicit_bonus else None
+
+    def _build_damage_formula(self, *, dice_count: int, die_size: int, flat_bonus: int) -> str:
+        base = f"{dice_count}d{die_size}"
+        if flat_bonus > 0:
+            return f"{base}+{flat_bonus}"
+        if flat_bonus < 0:
+            return f"{base}{flat_bonus}"
+        return base
+
+    def _resolve_standard_weapon_modifier_value(self, actor: EncounterEntity, weapon: dict[str, Any]) -> int:
+        modifier_name = self._resolve_standard_weapon_modifier_name(actor, weapon)
+        return int(actor.ability_mods.get(modifier_name, 0) or 0)
+
+    def _resolve_standard_weapon_modifier_name(self, actor: EncounterEntity, weapon: dict[str, Any]) -> str:
+        properties = {
+            str(entry).strip().lower()
+            for entry in weapon.get("properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
+        kind = str(weapon.get("kind") or "").strip().lower()
+        normal_range = int(weapon.get("range", {}).get("normal", 0) or 0)
+
+        if "finesse" in properties:
+            str_mod = int(actor.ability_mods.get("str", 0) or 0)
+            dex_mod = int(actor.ability_mods.get("dex", 0) or 0)
+            return "dex" if dex_mod >= str_mod else "str"
+        if kind == "ranged" or normal_range > 10:
+            return "dex"
+        return "str"
+
+    def resolve_monk_weapon_modifier_name(self, actor: EncounterEntity) -> str:
+        str_mod = int(actor.ability_mods.get("str", 0) or 0)
+        dex_mod = int(actor.ability_mods.get("dex", 0) or 0)
+        return "dex" if dex_mod >= str_mod else "str"
+
+    def _resolve_monk_weapon_modifier_value(self, actor: EncounterEntity) -> int:
+        return int(actor.ability_mods.get(self.resolve_monk_weapon_modifier_name(actor), 0) or 0)
 
     def _resolve_weapon_proficiency(
         self,
