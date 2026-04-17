@@ -143,6 +143,37 @@
     - 当前版 `check_type` 主要按 `skill` / `tool` 使用
     - 后续检定不要手动补优势,一律交给后端读取和消费
 
+- `use_grapple`
+  - 用途: 当前行动者对 5 尺内敌人发起擒抱
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+    - `target_id`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 后端自动计算擒抱 DC
+    - 目标自动在力量豁免和敏捷豁免中取更优者结算
+    - 若失败,目标获得 `grappled:来源`,施术者获得 `active_grapple`
+    - 返回动作结果与最新 `encounter_state`
+  - 调用约束:
+    - 目标必须是敌人且在 5 尺内
+    - 当前版一个擒抱者同一时间只能维持一个主动擒抱目标
+    - 后续若擒抱者正常移动,拖行会由普通移动链自动处理
+
+- `escape_grapple`
+  - 用途: 受擒目标用动作尝试挣脱
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 后端自动找到擒抱来源
+    - 后端自动在 `athletics` 与 `acrobatics` 中取更优者结算
+    - 若成功,移除 `grappled:来源` 并清除对方的 `active_grapple`
+    - 返回动作结果与最新 `encounter_state`
+  - 调用约束:
+    - 只有当前确实处于 `grappled:来源` 时才能调用
+
 阅读顺序:
 
 - `trpg-battle-system/combat-runtime/references/runtime-protocol.md`

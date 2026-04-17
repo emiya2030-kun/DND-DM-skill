@@ -8,6 +8,8 @@ from runtime.commands.use_disengage import use_disengage
 from runtime.commands.use_dodge import use_dodge
 from runtime.commands.use_help_attack import use_help_attack
 from runtime.commands.use_help_ability_check import use_help_ability_check
+from runtime.commands.use_grapple import use_grapple
+from runtime.commands.escape_grapple import escape_grapple
 
 COMMAND_HANDLERS = {
     "start_random_encounter": start_random_encounter,
@@ -20,6 +22,8 @@ COMMAND_HANDLERS = {
     "use_dodge": use_dodge,
     "use_help_attack": use_help_attack,
     "use_help_ability_check": use_help_ability_check,
+    "use_grapple": use_grapple,
+    "escape_grapple": escape_grapple,
 }
 
 __all__ = [
@@ -34,4 +38,6 @@ __all__ = [
     "use_dodge",
     "use_help_attack",
     "use_help_ability_check",
+    "use_grapple",
+    "escape_grapple",
 ]

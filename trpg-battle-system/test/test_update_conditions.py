@@ -51,6 +51,58 @@ def build_encounter() -> Encounter:
     )
 
 
+def build_release_encounter() -> Encounter:
+    grappler = EncounterEntity(
+        entity_id="ent_actor_001",
+        name="Sabur",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 20, "max": 20, "temp": 0},
+        ac=15,
+        speed={"walk": 30, "remaining": 30},
+        initiative=12,
+        combat_flags={
+            "active_grapple": {
+                "target_entity_id": "ent_target_001",
+                "escape_dc": 13,
+                "source_condition": "grappled:ent_actor_001",
+                "movement_speed_halved": True,
+            }
+        },
+    )
+    target = EncounterEntity(
+        entity_id="ent_target_001",
+        name="Raider",
+        side="enemy",
+        category="monster",
+        controller="gm",
+        position={"x": 3, "y": 2},
+        hp={"current": 18, "max": 18, "temp": 0},
+        ac=13,
+        speed={"walk": 30, "remaining": 0},
+        initiative=10,
+        conditions=["grappled:ent_actor_001"],
+    )
+    return Encounter(
+        encounter_id="enc_release_test",
+        name="Release Test Encounter",
+        status="active",
+        round=1,
+        current_entity_id=grappler.entity_id,
+        turn_order=[grappler.entity_id, target.entity_id],
+        entities={grappler.entity_id: grappler, target.entity_id: target},
+        map=EncounterMap(
+            map_id="map_release_test",
+            name="Release Test Map",
+            description="A small combat room.",
+            width=8,
+            height=8,
+        ),
+    )
+
+
 class UpdateConditionsTests(unittest.TestCase):
     def test_execute_applies_condition(self) -> None:
         """测试 apply 会把 condition 写进实体快照并追加事件。"""
@@ -344,5 +396,44 @@ class UpdateConditionsTests(unittest.TestCase):
                 ["exhaustion:2"],
             )
             self.assertTrue(result["changed"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_releases_active_grapple_when_grappler_becomes_incapacitated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_release_encounter())
+
+            UpdateConditions(encounter_repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_release_test",
+                target_id="ent_actor_001",
+                condition="incapacitated",
+                operation="apply",
+            )
+
+            updated = encounter_repo.get("enc_release_test")
+            assert updated is not None
+            self.assertNotIn("grappled:ent_actor_001", updated.entities["ent_target_001"].conditions)
+            self.assertNotIn("active_grapple", updated.entities["ent_actor_001"].combat_flags)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_releases_active_grapple_when_target_condition_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_release_encounter())
+
+            UpdateConditions(encounter_repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_release_test",
+                target_id="ent_target_001",
+                condition="grappled:ent_actor_001",
+                operation="remove",
+            )
+
+            updated = encounter_repo.get("enc_release_test")
+            assert updated is not None
+            self.assertNotIn("active_grapple", updated.entities["ent_actor_001"].combat_flags)
             encounter_repo.close()
             event_repo.close()

@@ -313,6 +313,49 @@ class BeginMoveEncounterEntityTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_ignores_opportunity_attacks_when_mover_has_disengage_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter_with_player_and_moving_enemy()
+            encounter.entities["ent_enemy_orc_001"].turn_effects = [
+                {"effect_id": "effect_disengage_001", "effect_type": "disengage", "name": "Disengage"}
+            ]
+            repo.save(encounter)
+
+            service = BeginMoveEncounterEntity(repo, AppendEvent(event_repo))
+            result = service.execute_with_state(
+                encounter_id="enc_begin_move_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+            )
+
+            updated = repo.get("enc_begin_move_test")
+            assert updated is not None
+            self.assertEqual(result["movement_status"], "completed")
+            self.assertIsNone(updated.pending_movement)
+            self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 8, "y": 4})
+            repo.close()
+            event_repo.close()
+
+    def test_execute_rejects_grappled_target_self_movement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter_with_enemy_reactor_and_player_mover()
+            encounter.entities["ent_ally_lia_001"].conditions = ["grappled:ent_enemy_guard_001"]
+            repo.save(encounter)
+
+            service = BeginMoveEncounterEntity(repo, AppendEvent(event_repo))
+            with self.assertRaisesRegex(ValueError, "cannot_move_while_grappled"):
+                service.execute_with_state(
+                    encounter_id="enc_begin_move_enemy_react_test",
+                    entity_id="ent_ally_lia_001",
+                    target_position={"x": 8, "y": 4},
+                )
+            repo.close()
+            event_repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

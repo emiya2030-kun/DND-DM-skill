@@ -75,6 +75,47 @@ def build_service_encounter(
     )
 
 
+def build_grapple_movement_encounter() -> Encounter:
+    actor = build_entity("ent_actor_001", name="Sabur", x=2, y=2, initiative=15)
+    actor.action_economy = {"action_used": False, "bonus_action_used": False, "reaction_used": False}
+    actor.combat_flags = {
+        "active_grapple": {
+            "target_entity_id": "ent_target_001",
+            "escape_dc": 13,
+            "source_condition": "grappled:ent_actor_001",
+            "movement_speed_halved": True,
+        }
+    }
+    target = build_entity(
+        "ent_target_001",
+        name="Raider",
+        x=3,
+        y=2,
+        side="enemy",
+        category="monster",
+        controller="gm",
+        initiative=10,
+        conditions=["grappled:ent_actor_001"],
+    )
+    return Encounter(
+        encounter_id="enc_move_test",
+        name="Grapple Move Encounter",
+        status="active",
+        round=1,
+        current_entity_id=actor.entity_id,
+        turn_order=[actor.entity_id, target.entity_id],
+        entities={actor.entity_id: actor, target.entity_id: target},
+        map=EncounterMap(
+            map_id="map_grapple_move_test",
+            name="Move Service Test Map",
+            description="A map used by grapple movement tests.",
+            width=12,
+            height=12,
+            terrain=[],
+        ),
+    )
+
+
 class MoveEncounterEntityTests(unittest.TestCase):
     def test_services_package_exports_move_encounter_entity(self) -> None:
         from tools.services import MoveEncounterEntity as ExportedMoveEncounterEntity
@@ -656,6 +697,38 @@ class MoveEncounterEntityTests(unittest.TestCase):
                     entity_id="ent_ally_eric_001",
                     target_position={"x": 5, "y": 2},
                 )
+            repo.close()
+
+    def test_execute_rejects_grappled_target_self_movement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_grapple_movement_encounter()
+            encounter.current_entity_id = "ent_target_001"
+            encounter.turn_order = ["ent_target_001", "ent_actor_001"]
+            repo.save(encounter)
+
+            with self.assertRaisesRegex(ValueError, "cannot_move_while_grappled"):
+                MoveEncounterEntity(repo).execute(
+                    "enc_move_test",
+                    "ent_target_001",
+                    {"x": 4, "y": 2},
+                )
+            repo.close()
+
+    def test_execute_drags_grappled_target_and_halves_available_speed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_grapple_movement_encounter())
+
+            updated = MoveEncounterEntity(repo).execute(
+                "enc_move_test",
+                "ent_actor_001",
+                {"x": 4, "y": 2},
+            )
+
+            self.assertEqual(updated.entities["ent_actor_001"].position, {"x": 4, "y": 2})
+            self.assertEqual(updated.entities["ent_target_001"].position, {"x": 3, "y": 2})
+            self.assertEqual(updated.entities["ent_actor_001"].speed["remaining"], 5)
             repo.close()
 
 

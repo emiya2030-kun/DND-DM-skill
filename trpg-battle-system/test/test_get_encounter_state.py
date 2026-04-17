@@ -1160,6 +1160,32 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertIn("受到Eric的 Help（investigation）", state["turn_order"][2]["ongoing_effects"])
             repo.close()
 
+    def test_execute_projects_grapple_status_for_target_and_grappler(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            goblin = encounter.entities["ent_enemy_goblin_001"]
+            player.combat_flags["active_grapple"] = {
+                "target_entity_id": goblin.entity_id,
+                "escape_dc": 13,
+                "source_condition": f"grappled:{player.entity_id}",
+            }
+            goblin.conditions.append(f"grappled:{player.entity_id}")
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+
+            self.assertIn("正在擒抱 Goblin", state["current_turn_entity"]["ongoing_effects"])
+            conditions = state["turn_order"][1]["conditions"]
+            if isinstance(conditions, str):
+                self.assertIn(f"grappled:{player.entity_id}", conditions)
+            else:
+                self.assertIn(f"grappled:{player.entity_id}", conditions)
+            repo.close()
+            event_repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

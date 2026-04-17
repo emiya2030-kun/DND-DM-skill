@@ -6,6 +6,7 @@ from typing import Any
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.combat.grapple.shared import release_grapple_if_invalid
 from tools.services.combat.rules.conditions import ConditionRuntime, parse_condition
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
@@ -59,6 +60,14 @@ class UpdateConditions:
             event_type = "condition_removed"
         else:
             raise ValueError("operation must be 'apply' or 'remove'")
+
+        grapple_ids_to_validate: set[str] = set()
+        if isinstance(target.combat_flags, dict) and isinstance(target.combat_flags.get("active_grapple"), dict):
+            grapple_ids_to_validate.add(target.entity_id)
+        if condition_request.name == "grappled" and isinstance(condition_request.source, str):
+            grapple_ids_to_validate.add(condition_request.source)
+        for grappler_id in grapple_ids_to_validate:
+            release_grapple_if_invalid(encounter, grappler_id)
 
         self.encounter_repository.save(encounter)
 

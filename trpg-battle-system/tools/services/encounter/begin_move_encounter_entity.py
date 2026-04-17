@@ -8,6 +8,12 @@ from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.rules.conditions import ConditionRuntime
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
+from tools.services.combat.grapple.shared import (
+    get_active_grapple_target,
+    has_active_grapple_target,
+    resolve_dragged_target_position,
+)
+from tools.services.combat.actions import has_disengage_effect
 from tools.services.combat.rules.opportunity_attacks import build_opportunity_request
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
@@ -90,22 +96,40 @@ class BeginMoveEncounterEntity:
             allow_out_of_turn_actor=allow_out_of_turn_actor,
             entity_label="entity",
         )
+        mover_runtime = self._safe_condition_runtime(mover.conditions)
+        if mover_runtime.has("grappled"):
+            raise ValueError("cannot_move_while_grappled")
         start_position = {"x": mover.position["x"], "y": mover.position["y"]}
-        result = validate_movement_path(
-            encounter=encounter,
-            entity_id=entity_id,
-            target_position=target_position,
-            count_movement=count_movement,
-            use_dash=use_dash,
-        )
-        self._ensure_movement_available(mover, result, use_dash)
+        dragged_target = get_active_grapple_target(encounter, mover)
+        original_dragged_position = dict(dragged_target.position) if dragged_target is not None else None
+        if dragged_target is not None:
+            dragged_target.position = {"x": -9999, "y": -9999}
+        try:
+            result = validate_movement_path(
+                encounter=encounter,
+                entity_id=entity_id,
+                target_position=target_position,
+                count_movement=count_movement,
+                use_dash=use_dash,
+            )
+        finally:
+            if dragged_target is not None and original_dragged_position is not None:
+                dragged_target.position = original_dragged_position
+        self._ensure_movement_available(encounter, mover, result, use_dash)
 
         first_trigger = None
-        if not ignore_opportunity_attacks_for_this_move:
+        movement_ignores_opportunity_attacks = ignore_opportunity_attacks_for_this_move or has_disengage_effect(mover)
+        if not movement_ignores_opportunity_attacks:
             first_trigger = self._find_first_opportunity_trigger(encounter, mover, result)
         if first_trigger is None:
             mover.position = {"x": target_position["x"], "y": target_position["y"]}
-            self._apply_movement_progress(mover, result.feet_cost, use_dash, count_movement)
+            self._drag_active_grapple_target(
+                encounter=encounter,
+                mover=mover,
+                start_position=start_position,
+                walked_path=[dict(step.anchor) for step in result.path],
+            )
+            self._apply_movement_progress(encounter, mover, result.feet_cost, use_dash, count_movement)
             self.repository.save(encounter)
             return {
                 "encounter_id": encounter_id,
@@ -116,7 +140,19 @@ class BeginMoveEncounterEntity:
             }
 
         mover.position = dict(first_trigger["trigger_position"])
-        self._apply_movement_progress(mover, int(first_trigger["feet_spent_before_trigger"]), use_dash, count_movement)
+        self._drag_active_grapple_target(
+            encounter=encounter,
+            mover=mover,
+            start_position=start_position,
+            walked_path=first_trigger["walked_path"],
+        )
+        self._apply_movement_progress(
+            encounter,
+            mover,
+            int(first_trigger["feet_spent_before_trigger"]),
+            use_dash,
+            count_movement,
+        )
         request = first_trigger["request"]
         pending_movement_id = f"move_{uuid4().hex[:12]}"
         trigger_event = self._build_leave_reach_trigger_event(
@@ -135,8 +171,14 @@ class BeginMoveEncounterEntity:
         window_result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
         if window_result["status"] != "waiting_reaction":
             mover.position = {"x": target_position["x"], "y": target_position["y"]}
+            self._drag_active_grapple_target(
+                encounter=encounter,
+                mover=mover,
+                start_position=start_position,
+                walked_path=[dict(step.anchor) for step in result.path],
+            )
             remaining_cost = max(0, result.feet_cost - int(first_trigger["feet_spent_before_trigger"]))
-            self._apply_movement_progress(mover, remaining_cost, use_dash, count_movement)
+            self._apply_movement_progress(encounter, mover, remaining_cost, use_dash, count_movement)
             self.repository.save(encounter)
             return {
                 "encounter_id": encounter_id,
@@ -202,6 +244,7 @@ class BeginMoveEncounterEntity:
                     return {
                         "trigger_position": dict(current_anchor),
                         "feet_spent_before_trigger": feet_spent_before_trigger,
+                        "walked_path": [dict(path_step.anchor) for path_step in movement.path[:index]],
                         "remaining_path": [dict(path_step.anchor) for path_step in movement.path[index:]],
                         "request": build_opportunity_request(
                             actor=candidate,
@@ -299,6 +342,7 @@ class BeginMoveEncounterEntity:
 
     def _ensure_movement_available(
         self,
+        encounter: Encounter,
         mover: EncounterEntity,
         movement: MovementValidationResult,
         use_dash: bool,
@@ -309,6 +353,8 @@ class BeginMoveEncounterEntity:
         armor_speed_penalty = get_armor_speed_penalty(mover)
         distance_already_moved = self._movement_spent_feet(mover)
         effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
+        if has_active_grapple_target(encounter, mover):
+            effective_walk_speed //= 2
         total_available_movement = effective_walk_speed * (2 if use_dash else 1)
         available_movement = max(0, total_available_movement - distance_already_moved)
         if movement.feet_cost > available_movement:
@@ -325,6 +371,7 @@ class BeginMoveEncounterEntity:
 
     def _apply_movement_progress(
         self,
+        encounter: Encounter,
         mover: EncounterEntity,
         feet_spent_delta: int,
         use_dash: bool,
@@ -337,12 +384,28 @@ class BeginMoveEncounterEntity:
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(mover)
         armor_speed_penalty = get_armor_speed_penalty(mover)
         effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
+        if has_active_grapple_target(encounter, mover):
+            effective_walk_speed //= 2
         spent_before = self._movement_spent_feet(mover)
         spent_after = spent_before + feet_spent_delta
         mover.combat_flags["movement_spent_feet"] = spent_after
         mover.speed["remaining"] = max(0, effective_walk_speed - min(spent_after, effective_walk_speed))
         if use_dash and spent_after > effective_walk_speed:
             mover.speed["remaining"] = 0
+
+    def _drag_active_grapple_target(
+        self,
+        *,
+        encounter: Encounter,
+        mover: EncounterEntity,
+        start_position: dict[str, int],
+        walked_path: list[dict[str, int]],
+    ) -> None:
+        dragged_target = get_active_grapple_target(encounter, mover)
+        dragged_position = resolve_dragged_target_position(start_position=start_position, walked_path=walked_path)
+        if dragged_target is None or dragged_position is None:
+            return
+        dragged_target.position = {"x": dragged_position["x"], "y": dragged_position["y"]}
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.repository.get(encounter_id)

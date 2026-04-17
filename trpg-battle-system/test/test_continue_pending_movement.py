@@ -196,6 +196,30 @@ def build_waiting_reaction_encounter(
     )
 
 
+def build_waiting_reaction_encounter_with_grapple() -> Encounter:
+    encounter = build_waiting_reaction_encounter()
+    mover = encounter.entities["ent_enemy_orc_001"]
+    grappled_target = build_entity(
+        "ent_enemy_raider_001",
+        name="Raider",
+        x=6,
+        y=4,
+        side="enemy",
+        controller="gm",
+        initiative=11,
+    )
+    grappled_target.conditions = [f"grappled:{mover.entity_id}"]
+    mover.combat_flags["active_grapple"] = {
+        "target_entity_id": grappled_target.entity_id,
+        "escape_dc": 13,
+        "source_condition": f"grappled:{mover.entity_id}",
+        "movement_speed_halved": True,
+    }
+    encounter.entities[grappled_target.entity_id] = grappled_target
+    encounter.turn_order.insert(1, grappled_target.entity_id)
+    return encounter
+
+
 class ContinuePendingMovementTests(unittest.TestCase):
     def test_execute_declines_pending_request_and_finishes_move_when_player_skips_reaction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -257,6 +281,24 @@ class ContinuePendingMovementTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 5, "y": 4})
             self.assertEqual(updated.reaction_requests[0]["status"], "resolved")
             self.assertEqual(result["movement_status"], "interrupted")
+            repo.close()
+            event_repo.close()
+
+    def test_execute_drags_grappled_target_when_resuming_remaining_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_waiting_reaction_encounter_with_grapple())
+
+            result = ContinuePendingMovement(repo, AppendEvent(event_repo)).execute_with_state(
+                encounter_id="enc_continue_move_test"
+            )
+
+            updated = repo.get("enc_continue_move_test")
+            assert updated is not None
+            self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 8, "y": 4})
+            self.assertEqual(updated.entities["ent_enemy_raider_001"].position, {"x": 7, "y": 4})
+            self.assertEqual(result["movement_status"], "completed")
             repo.close()
             event_repo.close()
 

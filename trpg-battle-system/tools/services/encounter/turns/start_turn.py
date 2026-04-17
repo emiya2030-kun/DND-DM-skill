@@ -4,6 +4,7 @@ from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.attack.weapon_mastery_effects import remove_expired_weapon_mastery_effects
+from tools.services.combat.grapple.shared import release_grapple_if_invalid
 from tools.services.combat.rules.death_saves.resolve_death_save import resolve_death_save
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns.turn_effects import resolve_turn_effects
@@ -37,6 +38,8 @@ class StartTurn:
             raise ValueError(f"encounter '{encounter_id}' not found")
 
         updated = start_turn(encounter)
+        if updated.current_entity_id is not None:
+            release_grapple_if_invalid(updated, updated.current_entity_id)
         _expire_source_turn_help_effects(updated, updated.current_entity_id)
         remove_expired_weapon_mastery_effects(
             encounter=updated,

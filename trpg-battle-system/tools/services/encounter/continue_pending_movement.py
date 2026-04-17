@@ -103,7 +103,14 @@ class ContinuePendingMovement:
         )
         if next_trigger is None:
             mover.position = dict(pending["target_position"])
+            self.begin_move_helper._drag_active_grapple_target(
+                encounter=encounter,
+                mover=mover,
+                start_position=dict(pending["current_position"]),
+                walked_path=[dict(step.anchor) for step in movement.path],
+            )
             self.begin_move_helper._apply_movement_progress(
+                encounter,
                 mover,
                 movement.feet_cost,
                 bool(pending.get("use_dash")),
@@ -120,7 +127,14 @@ class ContinuePendingMovement:
             }
 
         mover.position = dict(next_trigger["trigger_position"])
+        self.begin_move_helper._drag_active_grapple_target(
+            encounter=encounter,
+            mover=mover,
+            start_position=dict(pending["current_position"]),
+            walked_path=next_trigger["walked_path"],
+        )
         self.begin_move_helper._apply_movement_progress(
+            encounter,
             mover,
             int(next_trigger["feet_spent_before_trigger"]),
             bool(pending.get("use_dash")),
@@ -146,7 +160,14 @@ class ContinuePendingMovement:
         )
         if window_result["status"] != "waiting_reaction":
             mover.position = dict(pending["target_position"])
+            self.begin_move_helper._drag_active_grapple_target(
+                encounter=encounter,
+                mover=mover,
+                start_position=dict(pending["current_position"]),
+                walked_path=[dict(step.anchor) for step in movement.path],
+            )
             self.begin_move_helper._apply_movement_progress(
+                encounter,
                 mover,
                 movement.feet_cost,
                 bool(pending.get("use_dash")),

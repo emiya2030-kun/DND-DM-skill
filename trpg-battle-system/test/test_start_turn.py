@@ -63,6 +63,59 @@ def build_encounter(*, current_entity_id: str | None = "ent_ally_eric_001") -> E
     )
 
 
+def build_grapple_release_encounter() -> Encounter:
+    grappler = EncounterEntity(
+        entity_id="ent_actor_001",
+        name="Sabur",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 20, "max": 20, "temp": 0},
+        ac=15,
+        speed={"walk": 30, "remaining": 0},
+        initiative=15,
+        conditions=["incapacitated"],
+        combat_flags={
+            "active_grapple": {
+                "target_entity_id": "ent_target_001",
+                "escape_dc": 13,
+                "source_condition": "grappled:ent_actor_001",
+                "movement_speed_halved": True,
+            }
+        },
+    )
+    target = EncounterEntity(
+        entity_id="ent_target_001",
+        name="Raider",
+        side="enemy",
+        category="monster",
+        controller="gm",
+        position={"x": 3, "y": 2},
+        hp={"current": 18, "max": 18, "temp": 0},
+        ac=13,
+        speed={"walk": 30, "remaining": 0},
+        initiative=10,
+        conditions=["grappled:ent_actor_001"],
+    )
+    return Encounter(
+        encounter_id="enc_start_turn_grapple_test",
+        name="Start Turn Grapple Test",
+        status="active",
+        round=1,
+        current_entity_id=grappler.entity_id,
+        turn_order=[grappler.entity_id, target.entity_id],
+        entities={grappler.entity_id: grappler, target.entity_id: target},
+        map=EncounterMap(
+            map_id="map_start_turn_grapple_test",
+            name="Start Turn Grapple Test Map",
+            description="A map used by grapple start turn tests.",
+            width=10,
+            height=10,
+        ),
+    )
+
+
 class StartTurnTests(unittest.TestCase):
     def test_execute_keeps_slowed_speed_penalty_on_target_turn_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -508,4 +561,15 @@ class StartTurnTests(unittest.TestCase):
 
             self.assertFalse(any(effect.get("effect_id") == "help_check_1" for effect in updated.entities[ally.entity_id].turn_effects))
             self.assertFalse(any(effect.get("effect_id") == "help_attack_1" for effect in updated.entities[enemy.entity_id].turn_effects))
+            repo.close()
+
+    def test_execute_releases_active_grapple_when_current_grappler_is_incapacitated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_grapple_release_encounter())
+
+            updated = StartTurn(repo).execute("enc_start_turn_grapple_test")
+
+            self.assertNotIn("active_grapple", updated.entities["ent_actor_001"].combat_flags)
+            self.assertNotIn("grappled:ent_actor_001", updated.entities["ent_target_001"].conditions)
             repo.close()

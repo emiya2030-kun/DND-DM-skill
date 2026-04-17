@@ -230,6 +230,10 @@ class GetEncounterState:
                 help_check = effect.get("help_check") or {}
                 check_key = help_check.get("check_key") or "未知检定"
                 effect_labels.append(f"受到{source_name}的 Help（{check_key}）")
+        active_grapple = entity.combat_flags.get("active_grapple", {}) if isinstance(entity.combat_flags, dict) else {}
+        target_id = active_grapple.get("target_entity_id")
+        if isinstance(target_id, str):
+            effect_labels.append(f"正在擒抱 {self._entity_name_or_fallback(encounter, target_id, '未知目标')}")
         return self._dedupe_preserve_order(effect_labels)
 
     def _build_retargetable_spell_actions(
