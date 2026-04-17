@@ -10,6 +10,8 @@ from importlib import import_module
 
 __all__ = [
     "AbilityCheckRequest",
+    "AbilityCheckResult",
+    "ExecuteAbilityCheck",
     "ResolveAbilityCheck",
     "AppendEvent",
     "EncounterCastSpell",
@@ -49,6 +51,8 @@ __all__ = [
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AbilityCheckRequest": ("tools.services.checks.ability_check_request", "AbilityCheckRequest"),
+    "AbilityCheckResult": ("tools.services.checks.ability_check_result", "AbilityCheckResult"),
+    "ExecuteAbilityCheck": ("tools.services.checks.execute_ability_check", "ExecuteAbilityCheck"),
     "ResolveAbilityCheck": ("tools.services.checks.resolve_ability_check", "ResolveAbilityCheck"),
     "AppendEvent": ("tools.services.events.append_event", "AppendEvent"),
     "EncounterCastSpell": ("tools.services.spells.encounter_cast_spell", "EncounterCastSpell"),
