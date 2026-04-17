@@ -41,7 +41,13 @@ def build_attacker(*, damage_type: str = "piercing") -> EncounterEntity:
     )
 
 
-def build_target(*, with_shield: bool, with_deflect_attacks: bool = False) -> EncounterEntity:
+def build_target(
+    *,
+    with_shield: bool,
+    with_deflect_attacks: bool = False,
+    monk_level: int = 5,
+    with_deflect_energy: bool = False,
+) -> EncounterEntity:
     spells = [{"spell_id": "shield", "name": "Shield", "level": 1}] if with_shield else []
     resources = {"spell_slots": {"1": {"max": 1, "remaining": 1}}} if with_shield else {}
     action_economy = {"reaction_used": False} if with_shield else {"reaction_used": False}
@@ -63,8 +69,9 @@ def build_target(*, with_shield: bool, with_deflect_attacks: bool = False) -> En
     if with_deflect_attacks:
         target.class_features = {
             "monk": {
-                "level": 5,
+                "level": monk_level,
                 "deflect_attacks": {"enabled": True},
+                "deflect_energy": {"enabled": with_deflect_energy},
                 "focus_points": {"max": 5, "remaining": 3},
             }
         }
@@ -76,9 +83,16 @@ def build_encounter(
     with_shield: bool,
     with_deflect_attacks: bool = False,
     damage_type: str = "piercing",
+    monk_level: int = 5,
+    with_deflect_energy: bool = False,
 ) -> Encounter:
     attacker = build_attacker(damage_type=damage_type)
-    target = build_target(with_shield=with_shield, with_deflect_attacks=with_deflect_attacks)
+    target = build_target(
+        with_shield=with_shield,
+        with_deflect_attacks=with_deflect_attacks,
+        monk_level=monk_level,
+        with_deflect_energy=with_deflect_energy,
+    )
     return Encounter(
         encounter_id="enc_attack_reaction_test",
         name="Attack Reaction Test",
@@ -254,5 +268,43 @@ class AttackReactionWindowTests(unittest.TestCase):
             self.assertIn("request", result)
             self.assertIn("resolution", result)
             self.assertNotIn("status", result)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_opens_deflect_window_for_level_13_monk_on_non_bps_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(
+                build_encounter(
+                    with_shield=False,
+                    with_deflect_attacks=True,
+                    damage_type="fire",
+                    monk_level=13,
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            options = result["pending_reaction_window"]["choice_groups"][0]["options"]
+            self.assertEqual(options[0]["reaction_type"], "deflect_attacks")
             encounter_repo.close()
             event_repo.close()
