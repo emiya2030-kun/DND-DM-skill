@@ -169,18 +169,26 @@ def build_humanoid_target(*, category: str = "npc", hp_current: int = 7) -> Enco
     )
 
 
-def build_encounter(actor: Optional[EncounterEntity] = None, target: Optional[EncounterEntity] = None) -> Encounter:
+def build_encounter(
+    actor: Optional[EncounterEntity] = None,
+    target: Optional[EncounterEntity] = None,
+    extra_entities: Optional[list[EncounterEntity]] = None,
+) -> Encounter:
     """构造完整攻击测试需要的最小 encounter."""
     actor = actor or build_actor()
     target = target or build_target()
+    extra_entities = extra_entities or []
+    entities = {actor.entity_id: actor, target.entity_id: target}
+    entities.update({entity.entity_id: entity for entity in extra_entities})
+    turn_order = [actor.entity_id, target.entity_id, *[entity.entity_id for entity in extra_entities]]
     return Encounter(
         encounter_id="enc_execute_attack_test",
         name="Execute Attack Test Encounter",
         status="active",
         round=1,
         current_entity_id=actor.entity_id,
-        turn_order=[actor.entity_id, target.entity_id],
-        entities={actor.entity_id: actor, target.entity_id: target},
+        turn_order=turn_order,
+        entities=entities,
         map=EncounterMap(
             map_id="map_execute_attack_test",
             name="Execute Attack Test Map",
@@ -2542,7 +2550,13 @@ class ExecuteAttackTests(unittest.TestCase):
                     "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
                 }
             }
-            encounter_repo.save(build_encounter(actor=actor, target=target))
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
 
             append_event = AppendEvent(event_repo)
             service = ExecuteAttack(
@@ -2589,6 +2603,62 @@ class ExecuteAttackTests(unittest.TestCase):
             )
             self.assertEqual(second["resolution"]["damage_resolution"]["total_damage"], 8)
             self.assertEqual(len(second["resolution"]["damage_resolution"]["parts"]), 1)
+
+    def test_execute_allows_sneak_attack_on_opportunity_attack(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "reaction_used": False}
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter = build_encounter(actor=actor, target=target, extra_entities=[ally])
+            encounter.current_entity_id = target.entity_id
+            encounter.turn_order = [target.entity_id, actor.entity_id, ally.entity_id]
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4, 5]},
+                ],
+                class_feature_options={"sneak_attack": True},
+                consume_action=False,
+                consume_reaction=True,
+                allow_out_of_turn_actor=True,
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 20)
+            self.assertTrue(updated.entities[actor.entity_id].action_economy["reaction_used"])
+            self.assertTrue(updated.entities[actor.entity_id].class_features["rogue"]["sneak_attack"]["used_this_turn"])
 
     def test_execute_martial_arts_bonus_consumes_bonus_action(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):

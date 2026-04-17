@@ -105,6 +105,7 @@ def build_encounter(
     *,
     actor: EncounterEntity | None = None,
     target: EncounterEntity | None = None,
+    extra_entities: list[EncounterEntity] | None = None,
     terrain: list[dict] | None = None,
     width: int = 8,
     height: int = 8,
@@ -112,14 +113,18 @@ def build_encounter(
     """构造攻击请求测试用 encounter。"""
     actor = actor or build_actor()
     target = target or build_target()
+    extra_entities = extra_entities or []
+    entities = {actor.entity_id: actor, target.entity_id: target}
+    entities.update({entity.entity_id: entity for entity in extra_entities})
+    turn_order = [actor.entity_id, target.entity_id, *[entity.entity_id for entity in extra_entities]]
     return Encounter(
         encounter_id="enc_attack_request_test",
         name="Attack Request Test Encounter",
         status="active",
         round=1,
         current_entity_id=actor.entity_id,
-        turn_order=[actor.entity_id, target.entity_id],
-        entities={actor.entity_id: actor, target.entity_id: target},
+        turn_order=turn_order,
+        entities=entities,
         map=EncounterMap(
             map_id="map_attack_request_test",
             name="Attack Request Test Map",
@@ -1410,6 +1415,104 @@ class AttackRollRequestTests(unittest.TestCase):
                     encounter_id="enc_attack_request_test",
                     target_id="ent_enemy_goblin_001",
                     weapon_id="glaive",
+                    class_feature_options={"sneak_attack": True},
+                )
+            repo.close()
+
+    def test_execute_allows_sneak_attack_with_advantage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                vantage="advantage",
+                class_feature_options={"sneak_attack": True},
+            )
+
+            self.assertTrue(request.context["class_feature_options"]["sneak_attack"])
+            self.assertEqual(request.context["vantage"], "advantage")
+            repo.close()
+
+    def test_execute_allows_sneak_attack_with_adjacent_ally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            ally = build_target(position=(4, 2), entity_id="ent_ally_lia_001", name="Lia")
+            ally.side = "ally"
+            ally.category = "pc"
+            ally.controller = "player"
+            repo.save(build_encounter(actor=actor, extra_entities=[ally]))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                class_feature_options={"sneak_attack": True},
+            )
+
+            self.assertTrue(request.context["class_feature_options"]["sneak_attack"])
+            self.assertEqual(request.context["vantage"], "normal")
+            repo.close()
+
+    def test_execute_rejects_sneak_attack_without_advantage_or_adjacent_ally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "sneak_attack_requires_advantage_or_adjacent_ally"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="rapier",
+                    class_feature_options={"sneak_attack": True},
+                )
+            repo.close()
+
+    def test_execute_rejects_sneak_attack_with_disadvantage_even_if_adjacent_ally_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            actor.conditions = ["poisoned"]
+            ally = build_target(position=(4, 2), entity_id="ent_ally_lia_001", name="Lia")
+            ally.side = "ally"
+            ally.category = "pc"
+            ally.controller = "player"
+            repo.save(build_encounter(actor=actor, extra_entities=[ally]))
+
+            with self.assertRaisesRegex(ValueError, "sneak_attack_not_allowed_with_disadvantage"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="rapier",
                     class_feature_options={"sneak_attack": True},
                 )
             repo.close()

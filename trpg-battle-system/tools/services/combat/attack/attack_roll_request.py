@@ -153,6 +153,14 @@ class AttackRollRequest:
         else:
             resolved_vantage = "normal"
 
+        self._ensure_sneak_attack_allowed(
+            encounter=encounter,
+            actor=actor,
+            target=target,
+            resolved_vantage=resolved_vantage,
+            request_class_feature_options=request_class_feature_options,
+        )
+
         melee_auto_crit = (
             attack_kind == "melee_weapon"
             and distance_to_target_feet <= 5
@@ -717,6 +725,48 @@ class AttackRollRequest:
         if "finesse" in properties:
             return True
         return self._resolve_attack_kind(weapon, "default") == "ranged_weapon"
+
+    def _ensure_sneak_attack_allowed(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        target: EncounterEntity,
+        resolved_vantage: str,
+        request_class_feature_options: dict[str, Any],
+    ) -> None:
+        if not bool(request_class_feature_options.get("sneak_attack")):
+            return
+        if resolved_vantage == "disadvantage":
+            raise ValueError("sneak_attack_not_allowed_with_disadvantage")
+        if resolved_vantage == "advantage":
+            return
+        if self._has_adjacent_non_incapacitated_ally(encounter=encounter, actor=actor, target=target):
+            return
+        raise ValueError("sneak_attack_requires_advantage_or_adjacent_ally")
+
+    def _has_adjacent_non_incapacitated_ally(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        target: EncounterEntity,
+    ) -> bool:
+        for entity in encounter.entities.values():
+            if entity.entity_id in {actor.entity_id, target.entity_id}:
+                continue
+            if entity.side != actor.side:
+                continue
+            combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
+            if bool(combat_flags.get("is_defeated")):
+                continue
+            entity_runtime = ConditionRuntime(entity.conditions)
+            if any(entity_runtime.has(condition) for condition in BLOCKED_ATTACK_CONDITIONS):
+                continue
+            if self._distance_feet(target, entity) > 5:
+                continue
+            return True
+        return False
 
     def _collect_close_range_hostile_sources(
         self,
