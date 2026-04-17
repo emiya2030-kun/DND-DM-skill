@@ -15,6 +15,40 @@ from tools.services.combat.defense.armor_profile_resolver import ArmorProfileRes
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
+MARTIAL_CLASS_SUMMARIES = {
+    "monk": {
+        "fields": [
+            "level",
+            "focus_points",
+            "martial_arts_die",
+            "unarmored_movement_bonus_feet",
+        ],
+        "available_features": [
+            "martial_arts",
+            "flurry_of_blows",
+            "patient_defense",
+            "step_of_the_wind",
+            "stunning_strike",
+        ],
+    },
+    "rogue": {
+        "fields": ["level", "sneak_attack"],
+        "available_features": ["sneak_attack", "cunning_action"],
+    },
+    "paladin": {
+        "fields": ["level", "divine_smite"],
+        "available_features": ["divine_smite", "lay_on_hands"],
+    },
+    "barbarian": {
+        "fields": ["level", "rage"],
+        "available_features": ["rage", "reckless_attack", "danger_sense"],
+    },
+    "ranger": {
+        "fields": ["level"],
+        "available_features": ["favored_enemy", "weapon_mastery"],
+    },
+}
+
 
 class GetEncounterState:
     """把底层 Encounter 投影成 `get_encounter_state` 视图对象。"""
@@ -788,14 +822,27 @@ class GetEncounterState:
 
     def _build_class_feature_resource_view(self, entity: EncounterEntity) -> dict[str, Any]:
         class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
-        fighter = class_features.get("fighter")
-        if not isinstance(fighter, dict):
-            return {}
+        projected: dict[str, Any] = {}
 
-        fighter_view = dict(fighter)
-        fighter_view.pop("weapon_proficiencies", None)
-        fighter_view.pop("armor_training", None)
-        return {"fighter": fighter_view}
+        for class_id, summary in MARTIAL_CLASS_SUMMARIES.items():
+            bucket = class_features.get(class_id)
+            if not isinstance(bucket, dict):
+                continue
+            projected[class_id] = {
+                field: bucket[field]
+                for field in summary["fields"]
+                if field in bucket
+            }
+            projected[class_id]["available_features"] = list(summary["available_features"])
+
+        fighter = class_features.get("fighter")
+        if isinstance(fighter, dict):
+            fighter_view = dict(fighter)
+            fighter_view.pop("weapon_proficiencies", None)
+            fighter_view.pop("armor_training", None)
+            projected["fighter"] = fighter_view
+
+        return projected
 
     def _format_death_saves(self, entity: EncounterEntity) -> str:
         combat_flags = entity.combat_flags or {}

@@ -265,6 +265,59 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_martial_class_resource_summaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features.update(
+                {
+                    "monk": {
+                        "level": 5,
+                        "focus_points": {"max": 5, "remaining": 4},
+                        "martial_arts_die": "1d8",
+                        "unarmored_movement_bonus_feet": 10,
+                    },
+                    "rogue": {
+                        "level": 5,
+                        "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                    },
+                    "paladin": {"level": 5, "divine_smite": {"enabled": True}},
+                    "barbarian": {"level": 4, "rage": {"remaining": 2, "max": 3}},
+                    "ranger": {"level": 4},
+                }
+            )
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            resources = state["current_turn_entity"]["resources"]["class_features"]
+
+            monk = resources["monk"]
+            self.assertEqual(monk["focus_points"]["remaining"], 4)
+            self.assertEqual(monk["martial_arts_die"], "1d8")
+            self.assertIn("stunning_strike", monk["available_features"])
+
+            rogue = resources["rogue"]
+            self.assertEqual(rogue["level"], 5)
+            self.assertEqual(rogue["sneak_attack"]["damage_dice"], "3d6")
+            self.assertIn("sneak_attack", rogue["available_features"])
+
+            paladin = resources["paladin"]
+            self.assertEqual(paladin["level"], 5)
+            self.assertIn("divine_smite", paladin["available_features"])
+
+            barbarian = resources["barbarian"]
+            self.assertEqual(barbarian["rage"]["remaining"], 2)
+            self.assertIn("rage", barbarian["available_features"])
+
+            ranger = resources["ranger"]
+            self.assertEqual(ranger["level"], 4)
+            self.assertIn("weapon_mastery", ranger["available_features"])
+
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
