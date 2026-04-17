@@ -16,6 +16,7 @@ from tools.services.combat.attack.weapon_mastery_effects import (
 from tools.services.class_features.shared import (
     add_or_refresh_studied_attack_mark,
     consume_studied_attack_mark,
+    ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
     resolve_extra_attack_count,
@@ -718,7 +719,7 @@ class ExecuteAttack:
         if not isinstance(options, dict) or not bool(options.get("sneak_attack")):
             return False
 
-        rogue_runtime = get_class_runtime(actor, "rogue")
+        rogue_runtime = ensure_rogue_runtime(actor)
         sneak_attack = rogue_runtime.get("sneak_attack")
         if not isinstance(sneak_attack, dict):
             return False
@@ -1129,7 +1130,7 @@ class ExecuteAttack:
         if not any(isinstance(part, dict) and part.get("source") == "rogue_sneak_attack" for part in parts):
             return
 
-        rogue_runtime = get_class_runtime(actor, "rogue")
+        rogue_runtime = ensure_rogue_runtime(actor)
         sneak_attack = rogue_runtime.get("sneak_attack")
         if isinstance(sneak_attack, dict):
             sneak_attack["used_this_turn"] = True

@@ -318,6 +318,25 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_rogue_sneak_attack_growth_from_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["rogue"] = {
+                "level": 7,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            rogue = state["current_turn_entity"]["resources"]["class_features"]["rogue"]
+
+            self.assertEqual(rogue["level"], 7)
+            self.assertEqual(rogue["sneak_attack"]["damage_dice"], "4d6")
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

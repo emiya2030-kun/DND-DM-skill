@@ -15,6 +15,7 @@ def _import_helpers():
         add_or_refresh_studied_attack_mark,
         ensure_class_runtime,
         ensure_fighter_runtime,
+        ensure_rogue_runtime,
         get_class_runtime,
         get_fighter_runtime,
         normalize_class_feature_options,
@@ -27,6 +28,7 @@ def _import_helpers():
         add_or_refresh_studied_attack_mark=add_or_refresh_studied_attack_mark,
         ensure_class_runtime=ensure_class_runtime,
         ensure_fighter_runtime=ensure_fighter_runtime,
+        ensure_rogue_runtime=ensure_rogue_runtime,
         get_class_runtime=get_class_runtime,
         get_fighter_runtime=get_fighter_runtime,
         normalize_class_feature_options=normalize_class_feature_options,
@@ -181,6 +183,19 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         monk = helpers.ensure_class_runtime(entity, "monk")
         monk["focus_points"] = {"max": 5, "remaining": 5}
         self.assertEqual(entity.class_features["monk"]["focus_points"]["remaining"], 5)
+
+    def test_ensure_rogue_runtime_refreshes_sneak_attack_damage_by_level(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"rogue": {"level": 7}}
+
+        rogue = helpers.ensure_rogue_runtime(entity)
+
+        self.assertEqual(rogue["sneak_attack"]["damage_dice"], "4d6")
+        self.assertFalse(rogue["sneak_attack"]["used_this_turn"])
+        self.assertTrue(rogue["uncanny_dodge"]["enabled"])
+        self.assertTrue(rogue["reliable_talent"]["enabled"])
+        self.assertFalse(rogue["slippery_mind"]["enabled"])
 
     def test_parse_class_feature_options_normalizes_known_flags(self) -> None:
         helpers = _import_helpers()

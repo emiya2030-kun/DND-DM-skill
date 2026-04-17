@@ -1,4 +1,5 @@
 from tools.services.class_features.shared.extra_attack import resolve_extra_attack_count
+from tools.services.class_features.rogue import ensure_rogue_runtime, resolve_rogue_sneak_attack_dice
 from tools.services.class_features.shared.proficiency_resolver import (
     resolve_entity_proficiencies,
     resolve_entity_save_proficiencies,
@@ -26,6 +27,7 @@ __all__ = [
     "consume_studied_attack_mark",
     "ensure_class_runtime",
     "ensure_fighter_runtime",
+    "ensure_rogue_runtime",
     "fighter_has_studied_attacks",
     "get_unconsumed_studied_attack_mark",
     "get_class_runtime",
@@ -36,4 +38,5 @@ __all__ = [
     "resolve_entity_proficiencies",
     "resolve_entity_save_proficiencies",
     "resolve_entity_skill_proficiencies",
+    "resolve_rogue_sneak_attack_dice",
 ]

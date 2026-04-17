@@ -3,7 +3,7 @@ from __future__ import annotations
 from tools.models import Encounter, EncounterEntity
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
-from tools.services.class_features.shared import get_class_runtime
+from tools.services.class_features.shared import ensure_rogue_runtime, get_class_runtime
 
 
 def reset_turn_resources(entity: EncounterEntity) -> None:
@@ -38,6 +38,7 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
             temporary_bonuses["extra_non_magic_action_available"] = 0
     rogue = class_features.get("rogue")
     if isinstance(rogue, dict):
+        rogue = ensure_rogue_runtime(entity)
         sneak_attack = rogue.get("sneak_attack")
         if isinstance(sneak_attack, dict):
             sneak_attack["used_this_turn"] = False

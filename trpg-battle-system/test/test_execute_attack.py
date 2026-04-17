@@ -2604,6 +2604,57 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(second["resolution"]["damage_resolution"]["total_damage"], 8)
             self.assertEqual(len(second["resolution"]["damage_resolution"]["parts"]), 1)
 
+    def test_execute_applies_sneak_attack_damage_from_rogue_level_without_manual_damage_dice(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            actor.class_features = {
+                "rogue": {
+                    "level": 7,
+                }
+            }
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [1, 2, 3, 4]},
+                ],
+                class_feature_options={"sneak_attack": True},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            rogue = updated.entities["ent_ally_eric_001"].class_features["rogue"]
+            self.assertEqual(rogue["sneak_attack"]["damage_dice"], "4d6")
+            self.assertEqual(
+                result["resolution"]["damage_resolution"]["parts"][1]["formula"],
+                "4d6",
+            )
+
     def test_execute_allows_sneak_attack_on_opportunity_attack(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_actor()

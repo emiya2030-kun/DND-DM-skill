@@ -12,6 +12,7 @@ from tools.services.combat.attack.weapon_mastery_effects import (
     get_weapon_mastery_speed_penalty,
 )
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
+from tools.services.class_features.shared import ensure_rogue_runtime
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
@@ -828,6 +829,8 @@ class GetEncounterState:
             bucket = class_features.get(class_id)
             if not isinstance(bucket, dict):
                 continue
+            if class_id == "rogue":
+                bucket = ensure_rogue_runtime(entity)
             projected[class_id] = {
                 field: bucket[field]
                 for field in summary["fields"]
