@@ -8,6 +8,9 @@ from runtime.dispatcher import execute_runtime_command
 
 
 class RuntimeDispatcherTests(unittest.TestCase):
+    def test_command_handlers_include_execute_ability_check(self) -> None:
+        self.assertIn("execute_ability_check", COMMAND_HANDLERS)
+
     def test_command_handlers_include_execute_attack(self) -> None:
         self.assertIn("execute_attack", COMMAND_HANDLERS)
 
