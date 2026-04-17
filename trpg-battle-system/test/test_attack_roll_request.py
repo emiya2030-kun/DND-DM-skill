@@ -1388,6 +1388,56 @@ class AttackRollRequestTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_passes_stunning_strike_option_to_request_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "stunning_strike": {"uses_this_turn": 0, "max_per_turn": 1},
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                class_feature_options={
+                    "stunning_strike": {"enabled": True, "save_roll": 9, "save_vantage": "advantage"}
+                },
+            )
+
+            stunning = request.context["class_feature_options"]["stunning_strike"]
+            self.assertTrue(stunning["enabled"])
+            self.assertEqual(stunning["save_roll"], 9)
+            self.assertEqual(stunning["save_vantage"], "advantage")
+            repo.close()
+
+    def test_execute_rejects_stunning_strike_when_per_turn_limit_reached(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "stunning_strike": {"uses_this_turn": 1, "max_per_turn": 1},
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "stunning_strike_max_per_turn_reached"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="rapier",
+                    class_feature_options={"stunning_strike": {"enabled": True}},
+                )
+            repo.close()
+
     def test_execute_allows_martial_arts_bonus_unarmed_attack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

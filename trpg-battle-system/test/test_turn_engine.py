@@ -252,3 +252,19 @@ class TurnEngineTests(unittest.TestCase):
 
         rogue = updated.entities["ent_ally_eric_001"].class_features["rogue"]
         self.assertFalse(rogue["sneak_attack"]["used_this_turn"])
+
+    def test_start_turn_resets_monk_stunning_strike_uses_this_turn(self) -> None:
+        encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+        entity = encounter.entities["ent_ally_eric_001"]
+        entity.class_features = {
+            "monk": {
+                "level": 5,
+                "focus_points": {"max": 5, "remaining": 4},
+                "stunning_strike": {"uses_this_turn": 1, "max_per_turn": 1},
+            }
+        }
+
+        updated = start_turn(encounter)
+
+        monk = updated.entities["ent_ally_eric_001"].class_features["monk"]
+        self.assertEqual(monk["stunning_strike"]["uses_this_turn"], 0)

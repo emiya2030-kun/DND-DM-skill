@@ -36,6 +36,11 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         sneak_attack = rogue.get("sneak_attack")
         if isinstance(sneak_attack, dict):
             sneak_attack["used_this_turn"] = False
+    monk = class_features.get("monk")
+    if isinstance(monk, dict):
+        stunning_strike = monk.get("stunning_strike")
+        if isinstance(stunning_strike, dict):
+            stunning_strike["uses_this_turn"] = 0
 
 
 def start_turn(encounter: Encounter) -> Encounter:

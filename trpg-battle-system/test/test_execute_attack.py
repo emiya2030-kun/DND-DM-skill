@@ -2550,6 +2550,144 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertTrue(updated.entities[actor.entity_id].action_economy["bonus_action_used"])
             self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
 
+    def test_execute_stunning_strike_failed_save_applies_stunned_and_consumes_focus(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                    "stunning_strike": {"uses_this_turn": 0, "max_per_turn": 1},
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+                class_feature_options={"stunning_strike": {"enabled": True, "save_roll": 4}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertIn("stunned", updated.entities[target.entity_id].conditions)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["stunning_strike"]["uses_this_turn"], 1)
+            self.assertEqual(result["resolution"]["stunning_strike"]["status"], "failed_save")
+            self.assertFalse(result["resolution"]["stunning_strike"]["save"]["success"])
+
+    def test_execute_stunning_strike_success_applies_turn_effect_marker_and_consumes_focus(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                    "stunning_strike": {"uses_this_turn": 0, "max_per_turn": 1},
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+                class_feature_options={"stunning_strike": {"enabled": True, "save_roll": 18}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertNotIn("stunned", updated.entities[target.entity_id].conditions)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
+            self.assertEqual(result["resolution"]["stunning_strike"]["status"], "successful_save")
+            self.assertTrue(result["resolution"]["stunning_strike"]["save"]["success"])
+            success_effects = [
+                effect
+                for effect in updated.entities[target.entity_id].turn_effects
+                if effect.get("effect_type") == "monk_stunning_strike_success"
+            ]
+            self.assertEqual(len(success_effects), 1)
+
+    def test_execute_stunning_strike_rejects_second_use_in_same_turn(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                    "stunning_strike": {"uses_this_turn": 0, "max_per_turn": 1},
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 60, "max": 60, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+                class_feature_options={"stunning_strike": {"enabled": True, "save_roll": 18}},
+            )
+            with self.assertRaisesRegex(ValueError, "stunning_strike_max_per_turn_reached"):
+                service.execute(
+                    encounter_id="enc_execute_attack_test",
+                    target_id=target.entity_id,
+                    weapon_id="unarmed_strike",
+                    consume_action=False,
+                    final_total=17,
+                    dice_rolls={"base_rolls": [12], "modifier": 5},
+                    damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+                    class_feature_options={"stunning_strike": {"enabled": True, "save_roll": 18}},
+                )
+
     def test_execute_ignores_damage_rolls_when_attack_misses(self) -> None:
         """测试未命中时应忽略 damage_rolls，结果中不包含伤害分解."""
         with make_repositories() as (encounter_repo, event_repo):

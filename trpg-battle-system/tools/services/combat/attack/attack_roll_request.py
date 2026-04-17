@@ -77,11 +77,11 @@ class AttackRollRequest:
         self.armor_profile_resolver.refresh_entity_armor_class(target)
         weapon = self.resolve_weapon_or_raise(actor, weapon_id)
         normalized_class_feature_options = normalize_class_feature_options(class_feature_options)
-        request_class_feature_options: dict[str, Any] = {}
-        if bool(normalized_class_feature_options.get("sneak_attack")):
-            if not self._weapon_qualifies_for_sneak_attack(weapon):
-                raise ValueError("sneak_attack_requires_finesse_or_ranged_weapon")
-            request_class_feature_options["sneak_attack"] = True
+        request_class_feature_options = self._build_request_class_feature_options(
+            actor=actor,
+            weapon=weapon,
+            normalized_class_feature_options=normalized_class_feature_options,
+        )
         actor_armor_profile = self.armor_profile_resolver.resolve(actor)
 
         actor_runtime = ConditionRuntime(actor.conditions)
@@ -467,6 +467,80 @@ class AttackRollRequest:
         normalized = str(attack_mode or "default").lower()
         if normalized not in {"default", "thrown", "light_bonus", "martial_arts_bonus", "flurry_of_blows"}:
             raise ValueError("invalid_attack_mode")
+        return normalized
+
+    def _build_request_class_feature_options(
+        self,
+        *,
+        actor: EncounterEntity,
+        weapon: dict[str, Any],
+        normalized_class_feature_options: dict[str, Any],
+    ) -> dict[str, Any]:
+        request_class_feature_options: dict[str, Any] = {}
+        if bool(normalized_class_feature_options.get("sneak_attack")):
+            if not self._weapon_qualifies_for_sneak_attack(weapon):
+                raise ValueError("sneak_attack_requires_finesse_or_ranged_weapon")
+            request_class_feature_options["sneak_attack"] = True
+
+        raw_stunning_strike = normalized_class_feature_options.get("stunning_strike")
+        if raw_stunning_strike is None:
+            return request_class_feature_options
+        if not isinstance(raw_stunning_strike, dict):
+            raise ValueError("stunning_strike_option_must_be_object")
+
+        if bool(raw_stunning_strike.get("enabled")):
+            request_class_feature_options["stunning_strike"] = self._normalize_stunning_strike_option(
+                actor=actor,
+                option=raw_stunning_strike,
+            )
+        return request_class_feature_options
+
+    def _normalize_stunning_strike_option(
+        self,
+        *,
+        actor: EncounterEntity,
+        option: dict[str, Any],
+    ) -> dict[str, Any]:
+        monk_runtime = get_class_runtime(actor, "monk")
+        if not isinstance(monk_runtime, dict) or not monk_runtime:
+            raise ValueError("stunning_strike_requires_monk_runtime")
+
+        focus_points = monk_runtime.get("focus_points")
+        if not isinstance(focus_points, dict):
+            raise ValueError("stunning_strike_requires_focus_points")
+        remaining = focus_points.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int):
+            raise ValueError("stunning_strike_requires_focus_points")
+        if remaining < 1:
+            raise ValueError("stunning_strike_focus_points_depleted")
+
+        stunning_strike_runtime = monk_runtime.get("stunning_strike")
+        if not isinstance(stunning_strike_runtime, dict):
+            raise ValueError("stunning_strike_requires_runtime")
+        uses_this_turn = stunning_strike_runtime.get("uses_this_turn", 0)
+        max_per_turn = stunning_strike_runtime.get("max_per_turn", 1)
+        if (
+            isinstance(uses_this_turn, bool)
+            or not isinstance(uses_this_turn, int)
+            or uses_this_turn < 0
+            or isinstance(max_per_turn, bool)
+            or not isinstance(max_per_turn, int)
+            or max_per_turn < 1
+        ):
+            raise ValueError("stunning_strike_runtime_invalid")
+        if uses_this_turn >= max_per_turn:
+            raise ValueError("stunning_strike_max_per_turn_reached")
+
+        normalized: dict[str, Any] = {"enabled": True}
+        save_roll = option.get("save_roll")
+        if isinstance(save_roll, int) and not isinstance(save_roll, bool):
+            normalized["save_roll"] = save_roll
+        save_rolls = option.get("save_rolls")
+        if isinstance(save_rolls, list):
+            normalized["save_rolls"] = list(save_rolls)
+        save_vantage = option.get("save_vantage")
+        if save_vantage is not None:
+            normalized["save_vantage"] = self._normalize_vantage(str(save_vantage))
         return normalized
 
     def _validate_monk_attack_mode(self, *, actor: EncounterEntity, attack_mode: str, weapon_id: str) -> None:

@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.services.combat.attack.attack_roll_request import AttackRollRequest
 from tools.services.combat.attack.attack_roll_result import AttackRollResult
@@ -305,6 +306,13 @@ class ExecuteAttack:
             target_entity_id=request.target_entity_id,
             hit=bool(resolution.get("hit")),
             studied_attacks_applied=bool(request.context.get("studied_attacks_applied")),
+        )
+        self._apply_stunning_strike_updates(
+            encounter_id=encounter_id,
+            actor_entity_id=request.actor_entity_id,
+            target_entity_id=request.target_entity_id,
+            attack_context=request.context,
+            resolution=resolution,
         )
 
         self._mark_attack_resource_used(
@@ -960,6 +968,158 @@ class ExecuteAttack:
         sneak_attack = rogue_runtime.get("sneak_attack")
         if isinstance(sneak_attack, dict):
             sneak_attack["used_this_turn"] = True
+
+    def _apply_stunning_strike_updates(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        target_entity_id: str,
+        attack_context: dict[str, Any],
+        resolution: dict[str, Any],
+    ) -> None:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return
+        stunning_option = class_feature_options.get("stunning_strike")
+        if not isinstance(stunning_option, dict) or not bool(stunning_option.get("enabled")):
+            return
+
+        result_block: dict[str, Any] = {
+            "requested": True,
+            "enabled": True,
+            "triggered": False,
+            "status": "not_hit",
+            "save": None,
+            "applied_effects": [],
+        }
+        if not bool(resolution.get("hit")):
+            resolution["stunning_strike"] = result_block
+            return
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying stunning strike")
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            raise ValueError(
+                f"actor '{actor_entity_id}' not part of encounter '{encounter_id}' while applying stunning strike"
+            )
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            result_block["status"] = "target_removed"
+            resolution["stunning_strike"] = result_block
+            return
+
+        monk_runtime = get_class_runtime(actor, "monk")
+        if not isinstance(monk_runtime, dict) or not monk_runtime:
+            raise ValueError("stunning_strike_requires_monk_runtime")
+        focus_points = monk_runtime.get("focus_points")
+        if not isinstance(focus_points, dict):
+            raise ValueError("stunning_strike_requires_focus_points")
+        remaining = focus_points.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 1:
+            raise ValueError("stunning_strike_focus_points_depleted")
+        focus_points["remaining"] = remaining - 1
+
+        stunning_runtime = monk_runtime.get("stunning_strike")
+        if not isinstance(stunning_runtime, dict):
+            raise ValueError("stunning_strike_requires_runtime")
+        uses_this_turn = stunning_runtime.get("uses_this_turn", 0)
+        if isinstance(uses_this_turn, bool) or not isinstance(uses_this_turn, int) or uses_this_turn < 0:
+            raise ValueError("stunning_strike_runtime_invalid")
+        stunning_runtime["uses_this_turn"] = uses_this_turn + 1
+
+        save_dc = 8 + int(actor.proficiency_bonus) + int(actor.ability_mods.get("wis", 0) or 0)
+        save_vantage = self._normalize_save_vantage(stunning_option.get("save_vantage"))
+        base_roll = stunning_option.get("save_roll")
+        save_rolls_raw = stunning_option.get("save_rolls")
+        base_roll_input = base_roll if isinstance(base_roll, int) and not isinstance(base_roll, bool) else None
+        base_rolls_input = save_rolls_raw if isinstance(save_rolls_raw, list) else None
+        if base_roll_input is None and base_rolls_input is None:
+            if save_vantage in {"advantage", "disadvantage"}:
+                base_rolls_input = [random.randint(1, 20), random.randint(1, 20)]
+            else:
+                base_roll_input = random.randint(1, 20)
+
+        save_request = RollRequest(
+            request_id=f"req_stunning_strike_{uuid4().hex[:12]}",
+            encounter_id=encounter_id,
+            actor_entity_id=target.entity_id,
+            target_entity_id=target.entity_id,
+            roll_type="saving_throw",
+            formula="1d20+save_modifier",
+            reason=f"{target.name} makes a CON save against Stunning Strike",
+            context={
+                "save_ability": "con",
+                "save_dc": save_dc,
+                "vantage": save_vantage,
+            },
+        )
+        save_result = self.resolve_saving_throw.execute(
+            encounter_id=encounter_id,
+            roll_request=save_request,
+            base_roll=base_roll_input,
+            base_rolls=base_rolls_input,
+            metadata={"source": "class_feature", "class_feature": "monk.stunning_strike"},
+        )
+        save_success = save_result.final_total >= save_dc
+        result_block["triggered"] = True
+        result_block["save"] = {
+            "request_id": save_result.request_id,
+            "dc": save_dc,
+            "total": save_result.final_total,
+            "success": save_success,
+            "dice_rolls": save_result.dice_rolls,
+            "metadata": save_result.metadata,
+        }
+        if not save_success:
+            applied = False
+            if "stunned" not in target.conditions:
+                target.conditions.append("stunned")
+                applied = True
+            result_block["status"] = "failed_save"
+            result_block["applied_effects"].append(
+                {
+                    "type": "condition",
+                    "condition": "stunned",
+                    "applied": applied,
+                }
+            )
+        else:
+            success_effect = {
+                "effect_id": f"effect_stunning_strike_{uuid4().hex[:12]}",
+                "effect_type": "monk_stunning_strike_success",
+                "name": "Stunning Strike - Save Success",
+                "source_entity_id": actor.entity_id,
+                "source_name": actor.name,
+                "target_entity_id": target.entity_id,
+                "source_ref": str(attack_context.get("attack_name") or "stunning_strike"),
+                "expires_on": "start_of_source_turn",
+                "next_attack_advantage_once": True,
+                "speed_multiplier": 0.5,
+            }
+            target.turn_effects.append(success_effect)
+            result_block["status"] = "successful_save"
+            result_block["applied_effects"].append(
+                {
+                    "type": "turn_effect",
+                    "effect_id": success_effect["effect_id"],
+                    "effect_type": success_effect["effect_type"],
+                    "next_attack_advantage_once": True,
+                    "speed_multiplier": 0.5,
+                }
+            )
+        result_block["focus_points_remaining"] = focus_points["remaining"]
+        result_block["uses_this_turn"] = stunning_runtime["uses_this_turn"]
+        resolution["stunning_strike"] = result_block
+        self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _normalize_save_vantage(self, raw_vantage: Any) -> str:
+        normalized = str(raw_vantage or "normal").strip().lower()
+        if normalized not in {"normal", "advantage", "disadvantage"}:
+            return "normal"
+        return normalized
 
     def _consume_attack_action_sequence(self, actor: Any) -> bool:
         class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
