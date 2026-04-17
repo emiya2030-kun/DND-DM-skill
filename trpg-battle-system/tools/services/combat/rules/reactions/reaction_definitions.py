@@ -87,6 +87,33 @@ REACTION_DEFINITIONS = {
             "short_label": "Deflect Attacks",
         },
     },
+    "uncanny_dodge": {
+        "reaction_type": "uncanny_dodge",
+        "template_type": "defensive_reaction_reduce_damage",
+        "name": "Uncanny Dodge",
+        "trigger_type": "attack_declared",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "before_damage_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": True,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_target_of_trigger",
+            "actor_has_uncanny_dodge",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_uncanny_dodge_reaction"},
+        "ui": {
+            "prompt": "Use Uncanny Dodge?",
+            "short_label": "Uncanny Dodge",
+        },
+    },
     "absorb_elements": {
         "reaction_type": "absorb_elements",
         "template_type": "post_hit_damage_modifier",

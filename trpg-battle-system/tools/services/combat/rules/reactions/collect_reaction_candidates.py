@@ -56,6 +56,16 @@ class CollectReactionCandidates:
                             "reaction_definition": definition,
                         }
                     )
+                elif reaction_type == "uncanny_dodge" and self._eligible_for_uncanny_dodge(
+                    entity=target,
+                    trigger_event=trigger_event,
+                ):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target_id,
+                            "reaction_definition": definition,
+                        }
+                    )
             return candidates
 
         if trigger_type == "leave_reach":
@@ -168,6 +178,21 @@ class CollectReactionCandidates:
             return True
         level = monk_runtime.get("level", 0)
         return isinstance(level, int) and level >= 13
+
+    def _eligible_for_uncanny_dodge(self, *, entity: Any, trigger_event: dict[str, Any]) -> bool:
+        if not self._reaction_available(entity):
+            return False
+        rogue_runtime = get_class_runtime(entity, "rogue")
+        if not isinstance(rogue_runtime, dict) or not rogue_runtime:
+            return False
+        level = rogue_runtime.get("level", 0)
+        if isinstance(level, bool) or not isinstance(level, int) or level < 5:
+            return False
+        uncanny_dodge = rogue_runtime.get("uncanny_dodge")
+        if isinstance(uncanny_dodge, dict):
+            return bool(uncanny_dodge.get("enabled"))
+        host_snapshot = trigger_event.get("host_action_snapshot")
+        return isinstance(host_snapshot, dict) and isinstance(host_snapshot.get("actor_id"), str)
 
     def _eligible_for_indomitable(self, entity: Any) -> bool:
         class_features = entity.class_features if isinstance(entity.class_features, dict) else {}

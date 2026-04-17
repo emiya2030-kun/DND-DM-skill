@@ -8,7 +8,9 @@ from tools.models.roll_request import RollRequest
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
+from tools.services.combat.actions import has_dodge_effect
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
+from tools.services.combat.rules.conditions import ConditionRuntime
 
 
 class SavingThrowRequest:
@@ -48,6 +50,7 @@ class SavingThrowRequest:
         target = self._get_entity_or_raise(encounter, target_id)
         spell_definition = self._get_spell_definition_or_raise(encounter, caster, spell_id)
         self.armor_profile_resolver.refresh_entity_armor_class(target)
+        target_runtime = ConditionRuntime(target.conditions)
 
         save_ability = force_save_ability or spell_definition.get("save_ability")
         if not isinstance(save_ability, str) or not save_ability.strip():
@@ -64,6 +67,13 @@ class SavingThrowRequest:
             vantage_sources["disadvantage"].append("requested_disadvantage")
         if armor_profile["wearing_untrained_armor"] and save_ability.strip().lower() in {"str", "dex"}:
             vantage_sources["disadvantage"].append("armor_untrained")
+        if (
+            save_ability.strip().lower() == "dex"
+            and has_dodge_effect(target)
+            and not target_runtime.has("incapacitated")
+            and int(target.speed.get("walk", 0) or 0) > 0
+        ):
+            vantage_sources["advantage"].append("dodge")
         if vantage_sources["advantage"] and vantage_sources["disadvantage"]:
             normalized_vantage = "normal"
         elif vantage_sources["advantage"]:

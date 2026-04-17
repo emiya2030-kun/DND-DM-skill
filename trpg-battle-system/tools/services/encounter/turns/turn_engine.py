@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tools.models import Encounter, EncounterEntity
+from tools.services.combat.actions import clear_turn_effect_type
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
 from tools.services.class_features.shared import ensure_rogue_runtime, get_class_runtime
@@ -13,6 +14,8 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         "reaction_used": False,
         "free_interaction_used": False,
     }
+    clear_turn_effect_type(entity, "disengage")
+    clear_turn_effect_type(entity, "dodge")
     combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
     base_walk_speed = _resolve_base_walk_speed(entity=entity, combat_flags=combat_flags)
     current_walk_speed = max(0, base_walk_speed + _get_monk_unarmored_movement_bonus(entity))

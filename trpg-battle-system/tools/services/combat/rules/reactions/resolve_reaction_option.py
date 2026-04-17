@@ -11,6 +11,7 @@ from tools.services.combat.rules.reactions.definitions.deflect_attacks import Re
 from tools.services.combat.rules.reactions.definitions.indomitable import ResolveIndomitableReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
 from tools.services.combat.rules.reactions.definitions.shield import ResolveShieldReaction
+from tools.services.combat.rules.reactions.definitions.uncanny_dodge import ResolveUncannyDodgeReaction
 from tools.services.combat.rules.reactions.resume_host_action import ResumeHostAction
 from tools.services.combat.rules.reactions.templates.cast_interrupt_contest import CastInterruptContest
 from tools.services.combat.rules.reactions.templates.leave_reach_interrupt import LeaveReachInterrupt
@@ -46,6 +47,7 @@ class ResolveReactionOption:
             CastInterruptContest(encounter_repository),
         )
         self.deflect_attacks_resolver = ResolveDeflectAttacksReaction(encounter_repository)
+        self.uncanny_dodge_resolver = ResolveUncannyDodgeReaction(encounter_repository)
         self.indomitable_resolver = ResolveIndomitableReaction(encounter_repository)
         encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
         self.resume_host_action = resume_host_action or ResumeHostAction(
@@ -289,6 +291,12 @@ class ResolveReactionOption:
             )
         if reaction_type == "deflect_attacks":
             return self.deflect_attacks_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                option_payload=option_payload,
+            )
+        if reaction_type == "uncanny_dodge":
+            return self.uncanny_dodge_resolver.execute(
                 encounter_id=encounter_id,
                 request=request,
                 option_payload=option_payload,

@@ -45,6 +45,7 @@ class ResumeHostAction:
                     allow_out_of_turn_actor=bool(snapshot.get("allow_out_of_turn_actor", False)),
                     consume_action=bool(snapshot.get("consume_action", True)),
                     consume_reaction=bool(snapshot.get("consume_reaction", False)),
+                    pending_damage_multiplier=snapshot.get("pending_damage_multiplier"),
                     host_action_id=snapshot.get("attack_id"),
                     skip_reaction_window=True,
                 ),

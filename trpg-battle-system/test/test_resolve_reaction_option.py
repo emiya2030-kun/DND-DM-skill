@@ -118,6 +118,22 @@ def build_deflect_monk_target() -> EncounterEntity:
     return target
 
 
+def build_uncanny_dodge_target() -> EncounterEntity:
+    target = build_target()
+    target.side = "ally"
+    target.controller = "player"
+    target.entity_id = "ent_ally_rogue_001"
+    target.name = "Rogue"
+    target.ac = 14
+    target.action_economy = {"reaction_used": False}
+    target.class_features = {
+        "rogue": {
+            "level": 5,
+        }
+    }
+    return target
+
+
 def build_counterspell_actor() -> EncounterEntity:
     return EncounterEntity(
         entity_id="ent_ally_counter_001",
@@ -540,6 +556,115 @@ class ResolveReactionOptionTests(unittest.TestCase):
                 result["host_action_result"]["resolution"]["deflect_attacks"]["status"],
                 "damage_reduced",
             )
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_resolves_uncanny_dodge_and_halves_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            attacker = build_attacker()
+            target = build_uncanny_dodge_target()
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_uncanny_dodge_option_test",
+                    name="Uncanny Dodge Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=attacker.entity_id,
+                    turn_order=[attacker.entity_id, target.entity_id],
+                    entities={attacker.entity_id: attacker, target.entity_id: target},
+                    map=EncounterMap(
+                        map_id="map_uncanny_dodge_option_test",
+                        name="Uncanny Dodge Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_uncanny_001",
+                            "reaction_type": "uncanny_dodge",
+                            "template_type": "defensive_reaction_reduce_damage",
+                            "trigger_type": "attack_declared",
+                            "status": "pending",
+                            "actor_entity_id": target.entity_id,
+                            "target_entity_id": target.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "source_actor_id": attacker.entity_id,
+                                "weapon_id": "rapier",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_attack_declared_uncanny_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_attack_declared_uncanny_001",
+                        "trigger_type": "attack_declared",
+                        "blocking": True,
+                        "host_action_type": "attack",
+                        "host_action_id": "attack_uncanny_001",
+                        "host_action_snapshot": {
+                            "attack_id": "attack_uncanny_001",
+                            "actor_id": attacker.entity_id,
+                            "target_id": target.entity_id,
+                            "weapon_id": "rapier",
+                            "final_total": 16,
+                            "dice_rolls": {"base_rolls": [11], "modifier": 5},
+                            "damage_rolls": [{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                            "vantage": "normal",
+                            "consume_action": True,
+                            "consume_reaction": False,
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{target.entity_id}",
+                                "actor_entity_id": target.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "reaction",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": target.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_uncanny_001",
+                                        "reaction_type": "uncanny_dodge",
+                                        "template_type": "defensive_reaction_reduce_damage",
+                                        "request_id": "react_uncanny_001",
+                                        "label": "Uncanny Dodge",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            result = self._build_service(encounter_repo, event_repo).execute(
+                encounter_id="enc_uncanny_dodge_option_test",
+                window_id="rw_attack_declared_uncanny_001",
+                group_id=f"rg_{target.entity_id}",
+                option_id="opt_uncanny_001",
+                final_total=0,
+                dice_rolls={},
+            )
+
+            updated = encounter_repo.get("enc_uncanny_dodge_option_test")
+            assert updated is not None
+            updated_target = updated.entities[target.entity_id]
+            self.assertEqual(result["reaction_type"], "uncanny_dodge")
+            self.assertEqual(result["resolution_mode"], "rewrite_host_action")
+            self.assertEqual(result["reaction_result"]["status"], "uncanny_dodge_armed")
+            self.assertEqual(result["reaction_result"]["pending_damage_multiplier"], 0.5)
+            self.assertEqual(result["host_action_result"]["resolution"]["damage_resolution"]["total_damage"], 4)
+            self.assertTrue(updated_target.action_economy["reaction_used"])
+            self.assertEqual(updated_target.hp["current"], 11)
             encounter_repo.close()
             event_repo.close()
 

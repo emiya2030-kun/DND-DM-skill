@@ -182,3 +182,64 @@ class SavingThrowRequestTests(unittest.TestCase):
 
             self.assertEqual(request.context["vantage"], "advantage")
             repo.close()
+
+    def test_execute_marks_advantage_for_dodge_dex_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_iron_duster_001"].turn_effects = [
+                {"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}
+            ]
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                force_save_ability="dex",
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("dodge", request.context["vantage_sources"]["advantage"])
+            repo.close()
+
+    def test_execute_dodge_dex_save_ignored_when_target_speed_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_iron_duster_001"].speed["walk"] = 0
+            encounter.entities["ent_enemy_iron_duster_001"].speed["remaining"] = 0
+            encounter.entities["ent_enemy_iron_duster_001"].turn_effects = [
+                {"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}
+            ]
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                force_save_ability="dex",
+            )
+
+            self.assertNotIn("dodge", request.context["vantage_sources"]["advantage"])
+            repo.close()
+
+    def test_execute_dodge_dex_save_ignored_when_target_incapacitated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_iron_duster_001"].conditions = ["incapacitated"]
+            encounter.entities["ent_enemy_iron_duster_001"].turn_effects = [
+                {"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}
+            ]
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                force_save_ability="dex",
+            )
+
+            self.assertNotIn("dodge", request.context["vantage_sources"]["advantage"])
+            repo.close()
