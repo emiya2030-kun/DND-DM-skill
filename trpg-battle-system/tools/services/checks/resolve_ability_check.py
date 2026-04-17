@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+from typing import Any
+
+from tools.models.encounter import Encounter
+from tools.models.encounter_entity import EncounterEntity
+from tools.models.roll_request import RollRequest
+from tools.models.roll_result import RollResult
+from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.checks.check_catalog import SKILL_TO_ABILITY
+from tools.services.class_features.shared import resolve_entity_skill_proficiencies
+from tools.services.combat.rules.conditions import ConditionRuntime
+from tools.services.combat.rules.conditions.condition_parser import parse_condition
+
+
+class ResolveAbilityCheck:
+    def __init__(self, encounter_repository: EncounterRepository):
+        self.encounter_repository = encounter_repository
+
+    def execute(
+        self,
+        *,
+        encounter_id: str,
+        roll_request: RollRequest,
+        base_roll: int | None = None,
+        base_rolls: list[int] | None = None,
+        additional_bonus: int = 0,
+        metadata: dict[str, Any] | None = None,
+        rolled_at: str | None = None,
+    ) -> RollResult:
+        encounter = self._get_encounter_or_raise(encounter_id)
+        self._validate_roll_request(encounter_id, roll_request)
+        actor = self._get_entity_or_raise(encounter, roll_request.actor_entity_id)
+
+        check_type = str(roll_request.context["check"])
+        requested_check_type = str(roll_request.context["check_type"])
+        requested_vantage = self._normalize_vantage(roll_request.context.get("vantage", "normal"))
+        normalized_rolls = self._normalize_base_rolls(base_roll, base_rolls)
+        self._ensure_roll_count_for_vantage(normalized_rolls, requested_vantage)
+        chosen_roll = self._choose_roll(normalized_rolls, requested_vantage)
+        runtime = self._safe_condition_runtime(actor.conditions)
+        exhaustion_penalty = runtime.get_d20_penalty()
+        check_bonus, breakdown = self._resolve_bonus(
+            actor=actor,
+            check_type=requested_check_type,
+            check=check_type,
+            additional_bonus=additional_bonus,
+        )
+        final_total = chosen_roll + check_bonus - exhaustion_penalty
+
+        result_metadata = dict(metadata or {})
+        result_metadata.update(
+            {
+                "check_type": requested_check_type,
+                "check": check_type,
+                "vantage": requested_vantage,
+                "chosen_roll": chosen_roll,
+                "check_bonus": check_bonus,
+                "check_bonus_breakdown": breakdown,
+                "d20_penalty": exhaustion_penalty,
+            }
+        )
+
+        return RollResult(
+            request_id=roll_request.request_id,
+            encounter_id=encounter_id,
+            actor_entity_id=actor.entity_id,
+            roll_type="ability_check",
+            final_total=final_total,
+            dice_rolls={
+                "base_rolls": normalized_rolls,
+                "chosen_roll": chosen_roll,
+                "check_bonus": check_bonus,
+                "additional_bonus": additional_bonus,
+                "d20_penalty": exhaustion_penalty,
+            },
+            metadata=result_metadata,
+            rolled_at=rolled_at,
+        )
+
+    def _resolve_bonus(
+        self,
+        *,
+        actor: EncounterEntity,
+        check_type: str,
+        check: str,
+        additional_bonus: int,
+    ) -> tuple[int, dict[str, Any]]:
+        if not isinstance(additional_bonus, int):
+            raise ValueError("additional_bonus must be an integer")
+
+        if check_type == "ability":
+            ability_modifier = int(actor.ability_mods.get(check, 0))
+            return ability_modifier + additional_bonus, {
+                "source": "ability_modifier",
+                "ability": check,
+                "ability_modifier": ability_modifier,
+                "additional_bonus": additional_bonus,
+            }
+
+        if check in actor.skill_modifiers and isinstance(actor.skill_modifiers[check], int):
+            skill_modifier = int(actor.skill_modifiers[check])
+            return skill_modifier + additional_bonus, {
+                "source": "skill_modifier",
+                "skill_modifier": skill_modifier,
+                "additional_bonus": additional_bonus,
+            }
+
+        ability = SKILL_TO_ABILITY[check]
+        ability_modifier = int(actor.ability_mods.get(ability, 0))
+        is_proficient = check in resolve_entity_skill_proficiencies(actor)
+        proficiency_bonus = int(actor.proficiency_bonus) if is_proficient else 0
+        return ability_modifier + proficiency_bonus + additional_bonus, {
+            "source": "ability_plus_proficiency",
+            "ability": ability,
+            "ability_modifier": ability_modifier,
+            "is_proficient": is_proficient,
+            "proficiency_bonus_applied": proficiency_bonus,
+            "additional_bonus": additional_bonus,
+        }
+
+    def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
+        encounter = self.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found")
+        return encounter
+
+    def _validate_roll_request(self, encounter_id: str, roll_request: RollRequest) -> None:
+        if roll_request.encounter_id != encounter_id:
+            raise ValueError("roll_request.encounter_id does not match encounter_id")
+        if roll_request.roll_type != "ability_check":
+            raise ValueError("roll_request must use ability_check")
+
+    def _get_entity_or_raise(self, encounter: Encounter, entity_id: str) -> EncounterEntity:
+        entity = encounter.entities.get(entity_id)
+        if entity is None:
+            raise ValueError(f"entity '{entity_id}' not found in encounter")
+        return entity
+
+    def _normalize_vantage(self, vantage: Any) -> str:
+        if vantage not in {"normal", "advantage", "disadvantage"}:
+            raise ValueError("roll_request.context.vantage must be 'normal', 'advantage', or 'disadvantage'")
+        return str(vantage)
+
+    def _normalize_base_rolls(self, base_roll: int | None, base_rolls: list[int] | None) -> list[int]:
+        raw_rolls: list[int]
+        if base_rolls is not None:
+            raw_rolls = base_rolls
+        elif base_roll is not None:
+            raw_rolls = [base_roll]
+        else:
+            raise ValueError("base_roll or base_rolls is required")
+
+        normalized_rolls: list[int] = []
+        for roll in raw_rolls:
+            if not isinstance(roll, int) or roll < 1 or roll > 20:
+                raise ValueError("each base roll must be an integer between 1 and 20")
+            normalized_rolls.append(roll)
+        if len(normalized_rolls) > 2:
+            raise ValueError("ability check cannot use more than 2 d20 rolls")
+        return normalized_rolls
+
+    def _ensure_roll_count_for_vantage(self, rolls: list[int], vantage: str) -> None:
+        if vantage == "normal":
+            if len(rolls) not in {1, 2}:
+                raise ValueError("normal ability check requires 1 or 2 rolls")
+            return
+        if len(rolls) != 2:
+            raise ValueError(f"{vantage} ability check requires 2 rolls")
+
+    def _choose_roll(self, base_rolls: list[int], vantage: str) -> int:
+        if vantage == "advantage":
+            return max(base_rolls)
+        if vantage == "disadvantage":
+            return min(base_rolls)
+        return base_rolls[0]
+
+    def _safe_condition_runtime(self, conditions: list[str]) -> ConditionRuntime:
+        validated: list[str] = []
+        for condition in conditions:
+            try:
+                parse_condition(condition)
+            except ValueError:
+                continue
+            validated.append(condition)
+        return ConditionRuntime(validated)

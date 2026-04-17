@@ -2,6 +2,7 @@ from tools.services.class_features.shared.extra_attack import resolve_extra_atta
 from tools.services.class_features.shared.proficiency_resolver import (
     resolve_entity_proficiencies,
     resolve_entity_save_proficiencies,
+    resolve_entity_skill_proficiencies,
 )
 from tools.services.class_features.shared.martial_feature_options import (
     normalize_class_feature_options,
@@ -34,4 +35,5 @@ __all__ = [
     "resolve_extra_attack_count",
     "resolve_entity_proficiencies",
     "resolve_entity_save_proficiencies",
+    "resolve_entity_skill_proficiencies",
 ]

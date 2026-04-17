@@ -61,6 +61,27 @@ SKILL_ALIASES = {
     "求生": "survival",
 }
 
+SKILL_TO_ABILITY = {
+    "athletics": "str",
+    "acrobatics": "dex",
+    "animal_handling": "wis",
+    "arcana": "int",
+    "deception": "cha",
+    "history": "int",
+    "insight": "wis",
+    "intimidation": "cha",
+    "investigation": "int",
+    "medicine": "wis",
+    "nature": "int",
+    "perception": "wis",
+    "performance": "cha",
+    "persuasion": "cha",
+    "religion": "int",
+    "sleight_of_hand": "dex",
+    "stealth": "dex",
+    "survival": "wis",
+}
+
 
 def normalize_check_name(check_type: str, raw_check: str) -> str:
     normalized = raw_check.strip().lower()

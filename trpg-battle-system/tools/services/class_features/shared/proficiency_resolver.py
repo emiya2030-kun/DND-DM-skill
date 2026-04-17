@@ -47,6 +47,13 @@ def resolve_entity_save_proficiencies(entity: Any) -> list[str]:
     return _ordered(resolved, _SAVE_ORDER)
 
 
+def resolve_entity_skill_proficiencies(entity: Any) -> list[str]:
+    source_ref = _extract_source_ref(entity)
+    proficiencies: set[str] = set()
+    _merge_string_list(proficiencies, source_ref.get("skill_proficiencies"))
+    return sorted(proficiencies)
+
+
 def _extract_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(entity_or_class_features, dict):
         class_features = entity_or_class_features.get("class_features")
@@ -64,6 +71,16 @@ def _extract_save_proficiencies(entity: Any) -> Any:
     if isinstance(entity, dict):
         return entity.get("save_proficiencies")
     return getattr(entity, "save_proficiencies", [])
+
+
+def _extract_source_ref(entity: Any) -> dict[str, Any]:
+    if isinstance(entity, dict):
+        source_ref = entity.get("source_ref")
+    else:
+        source_ref = getattr(entity, "source_ref", None)
+    if isinstance(source_ref, dict):
+        return source_ref
+    return {}
 
 
 def _merge_string_list(target: set[str], values: Any) -> None:
