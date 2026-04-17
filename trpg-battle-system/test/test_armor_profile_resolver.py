@@ -68,6 +68,19 @@ class ArmorProfileResolverTests(unittest.TestCase):
 
         self.assertNotEqual(profile["base_ac"], 15)
 
+    def test_resolve_unarmored_defense_for_barbarian_without_armor_allows_shield(self) -> None:
+        actor = build_actor()
+        actor.ability_mods["dex"] = 2
+        actor.ability_mods["con"] = 3
+        actor.class_features = {"barbarian": {"level": 1}}
+        actor.equipped_armor = None
+        actor.equipped_shield = {"armor_id": "shield", "category": "shield", "ac": {"bonus": 2}}
+
+        profile = ArmorProfileResolver().resolve(actor)
+
+        self.assertEqual(profile["base_ac"], 17)
+        self.assertEqual(profile["current_ac"], 17)
+
     def test_resolve_chain_mail_and_shield_for_fighter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             knowledge_path = Path(tmp_dir) / "armor_definitions.json"

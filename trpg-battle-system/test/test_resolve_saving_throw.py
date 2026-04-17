@@ -233,6 +233,23 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertEqual(result.final_total, 8)
             repo.close()
 
+    def test_execute_danger_sense_adds_advantage_to_dex_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_guard_001"].class_features = {"barbarian": {"level": 2}}
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                target_id="ent_enemy_guard_001",
+                spell_id="burning_hands",
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("barbarian_danger_sense", request.context["vantage_sources"]["advantage"])
+            repo.close()
+
     def test_execute_does_not_auto_fail_wis_save(self) -> None:
         """非 STR/DEX 豁免即使目标眩晕也能正常掷骰。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

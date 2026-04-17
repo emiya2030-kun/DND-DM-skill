@@ -8,6 +8,7 @@ from tools.models.roll_request import RollRequest
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.combat.actions import has_dodge_effect
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.combat.rules.conditions import ConditionRuntime
@@ -74,6 +75,13 @@ class SavingThrowRequest:
             and int(target.speed.get("walk", 0) or 0) > 0
         ):
             vantage_sources["advantage"].append("dodge")
+        barbarian = ensure_barbarian_runtime(target) if target.class_features.get("barbarian") else {}
+        if (
+            save_ability.strip().lower() == "dex"
+            and barbarian.get("danger_sense", {}).get("enabled")
+            and not target_runtime.has("incapacitated")
+        ):
+            vantage_sources["advantage"].append("barbarian_danger_sense")
         if vantage_sources["advantage"] and vantage_sources["disadvantage"]:
             normalized_vantage = "normal"
         elif vantage_sources["advantage"]:

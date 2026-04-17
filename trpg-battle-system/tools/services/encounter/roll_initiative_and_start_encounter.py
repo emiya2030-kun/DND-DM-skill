@@ -5,6 +5,7 @@ from random import random, randint
 from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import get_class_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns.start_turn import StartTurn
@@ -35,7 +36,13 @@ class RollInitiativeAndStartEncounter:
             if metabolism_result is not None:
                 metabolism_results.append(metabolism_result)
             modifier = int(entity.ability_mods.get("dex", 0))
-            roll = randint(1, 20)
+            vantage = "normal"
+            barbarian = ensure_barbarian_runtime(entity) if entity.class_features.get("barbarian") else {}
+            if barbarian.get("feral_instinct", {}).get("enabled"):
+                roll = max(randint(1, 20), randint(1, 20))
+                vantage = "advantage"
+            else:
+                roll = randint(1, 20)
             tiebreak = round(random(), 2)
             total = roll + modifier
             entity.initiative = total
@@ -47,6 +54,7 @@ class RollInitiativeAndStartEncounter:
                     "initiative_modifier": modifier,
                     "initiative_total": total,
                     "initiative_tiebreak_decimal": tiebreak,
+                    "vantage": vantage,
                 }
             )
 
@@ -76,6 +84,7 @@ class RollInitiativeAndStartEncounter:
                     "initiative_roll": row["initiative_roll"],
                     "initiative_modifier": row["initiative_modifier"],
                     "initiative_total": row["initiative_total"],
+                    "vantage": row["vantage"],
                 }
                 for row in rolled_rows
             ],

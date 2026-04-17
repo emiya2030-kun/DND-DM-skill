@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import get_class_runtime, resolve_entity_proficiencies
 
 from tools.models.encounter_entity import EncounterEntity
@@ -58,7 +59,10 @@ class ArmorProfileResolver:
         stealth_disadvantage_sources: list[str] = []
 
         if armor is None:
-            base_armor_ac = 10 + dex_mod
+            if isinstance(unarmored_defense_base_ac, int):
+                base_armor_ac = unarmored_defense_base_ac
+            else:
+                base_armor_ac = 10 + dex_mod
         else:
             ac_data = armor.get("ac") if isinstance(armor.get("ac"), dict) else {}
             armor_base = int(ac_data.get("base", 10))
@@ -128,6 +132,11 @@ class ArmorProfileResolver:
         return resolve_entity_proficiencies(actor)["armor_training"]
 
     def _resolve_unarmored_defense_base_ac(self, actor: EncounterEntity) -> int | None:
+        barbarian_runtime = get_class_runtime(actor, "barbarian")
+        if barbarian_runtime and actor.equipped_armor is None:
+            barbarian = ensure_barbarian_runtime(actor)
+            return 10 + self._ability_mod(actor, "dex") + self._ability_mod(actor, "con")
+
         monk_runtime = get_class_runtime(actor, "monk")
         if not monk_runtime:
             return None

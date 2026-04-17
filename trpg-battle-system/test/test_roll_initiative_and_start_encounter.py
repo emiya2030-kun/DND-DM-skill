@@ -197,6 +197,38 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_uses_advantage_for_feral_instinct(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            barbarian = build_entity("ent_a", name="萨布尔", x=2, y=2)
+            barbarian.ability_mods = {"dex": 2}
+            barbarian.class_features = {"barbarian": {"level": 7}}
+            encounter = Encounter(
+                encounter_id="enc_feral_instinct_test",
+                name="Feral Instinct Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": barbarian},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", side_effect=[5, 18]):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.33):
+                    result = RollInitiativeAndStartEncounter(repo).execute("enc_feral_instinct_test")
+
+            self.assertEqual(result["initiative_results"][0]["initiative_total"], 20)
+            self.assertEqual(result["initiative_results"][0]["vantage"], "advantage")
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

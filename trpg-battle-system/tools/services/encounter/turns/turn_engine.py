@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tools.models import Encounter, EncounterEntity
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.combat.actions import clear_turn_effect_type
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
@@ -18,7 +19,10 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
     clear_turn_effect_type(entity, "dodge")
     combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
     base_walk_speed = _resolve_base_walk_speed(entity=entity, combat_flags=combat_flags)
-    current_walk_speed = max(0, base_walk_speed + _get_monk_unarmored_movement_bonus(entity))
+    current_walk_speed = max(
+        0,
+        base_walk_speed + _get_monk_unarmored_movement_bonus(entity) + _get_barbarian_fast_movement_bonus(entity),
+    )
     entity.speed["walk"] = current_walk_speed
     speed_penalty = get_weapon_mastery_speed_penalty(entity) + get_armor_speed_penalty(entity)
     entity.speed["remaining"] = max(0, current_walk_speed - speed_penalty)
@@ -70,6 +74,21 @@ def _get_monk_unarmored_movement_bonus(entity: EncounterEntity) -> int:
     if isinstance(bonus, int) and bonus > 0:
         return bonus
     return 0
+
+
+def _get_barbarian_fast_movement_bonus(entity: EncounterEntity) -> int:
+    barbarian_runtime = get_class_runtime(entity, "barbarian")
+    if not barbarian_runtime:
+        return 0
+    barbarian = ensure_barbarian_runtime(entity)
+    if int(barbarian.get("level", 0) or 0) < 5:
+        return 0
+    armor = entity.equipped_armor
+    if isinstance(armor, dict):
+        category = armor.get("category")
+        if isinstance(category, str) and category.strip().lower() == "heavy":
+            return 0
+    return 10
 
 
 def start_turn(encounter: Encounter) -> Encounter:
