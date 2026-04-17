@@ -432,3 +432,80 @@ class StartTurnTests(unittest.TestCase):
             self.assertEqual(updated_actor.combat_flags["death_saves"], {"successes": 1, "failures": 1})
             self.assertEqual(result["turn_effect_resolutions"], [])
             repo.close()
+
+    def test_execute_clears_disengage_and_dodge_effects_on_current_entity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].turn_effects = [
+                {"effect_id": "effect_disengage_001", "effect_type": "disengage", "name": "Disengage"},
+                {"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"},
+                {"effect_id": "effect_other_001", "effect_type": "knockout_protection", "name": "Knockout"},
+            ]
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.turns.turn_effects.random.randint", return_value=1):
+                updated = StartTurn(repo).execute("enc_start_turn_test")
+
+            effect_types = [effect.get("effect_type") for effect in updated.entities["ent_ally_eric_001"].turn_effects]
+            self.assertNotIn("disengage", effect_types)
+            self.assertNotIn("dodge", effect_types)
+            self.assertIn("knockout_protection", effect_types)
+            repo.close()
+
+    def test_execute_expires_help_effects_created_by_current_entity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            ally = EncounterEntity(
+                entity_id="ent_ally_lia_001",
+                name="Lia",
+                side="ally",
+                category="pc",
+                controller="player",
+                position={"x": 2, "y": 3},
+                hp={"current": 18, "max": 18, "temp": 0},
+                ac=14,
+                speed={"walk": 30, "remaining": 30},
+                initiative=9,
+                turn_effects=[],
+            )
+            enemy = EncounterEntity(
+                entity_id="ent_enemy_goblin_001",
+                name="Goblin",
+                side="enemy",
+                category="monster",
+                controller="gm",
+                position={"x": 3, "y": 2},
+                hp={"current": 9, "max": 9, "temp": 0},
+                ac=13,
+                speed={"walk": 30, "remaining": 30},
+                initiative=8,
+                turn_effects=[],
+            )
+            ally.turn_effects.append(
+                {
+                    "effect_id": "help_check_1",
+                    "effect_type": "help_ability_check",
+                    "source_entity_id": "ent_ally_eric_001",
+                    "expires_on": "source_next_turn_start",
+                }
+            )
+            enemy.turn_effects.append(
+                {
+                    "effect_id": "help_attack_1",
+                    "effect_type": "help_attack",
+                    "source_entity_id": "ent_ally_eric_001",
+                    "expires_on": "source_next_turn_start",
+                }
+            )
+            encounter.entities[ally.entity_id] = ally
+            encounter.entities[enemy.entity_id] = enemy
+            encounter.turn_order = ["ent_ally_eric_001", ally.entity_id, enemy.entity_id]
+            repo.save(encounter)
+
+            updated = StartTurn(repo).execute("enc_start_turn_test")
+
+            self.assertFalse(any(effect.get("effect_id") == "help_check_1" for effect in updated.entities[ally.entity_id].turn_effects))
+            self.assertFalse(any(effect.get("effect_id") == "help_attack_1" for effect in updated.entities[enemy.entity_id].turn_effects))
+            repo.close()

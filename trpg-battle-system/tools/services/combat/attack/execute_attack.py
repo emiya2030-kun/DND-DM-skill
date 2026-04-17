@@ -13,12 +13,14 @@ from tools.services.combat.attack.weapon_mastery_effects import (
     apply_weapon_mastery_on_hit,
     consume_attack_roll_weapon_mastery_effects,
 )
+from tools.services.combat.actions import remove_turn_effect_by_id
 from tools.services.class_features.shared import (
     add_or_refresh_studied_attack_mark,
     consume_studied_attack_mark,
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
+    resolve_entity_save_proficiencies,
     resolve_extra_attack_count,
 )
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
@@ -95,6 +97,7 @@ class ExecuteAttack:
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
         host_action_id: str | None = None,
+        pending_damage_multiplier: float | None = None,
         skip_reaction_window: bool = False,
     ) -> dict[str, Any]:
         """执行一次完整攻击。
@@ -259,6 +262,11 @@ class ExecuteAttack:
             concentration_vantage=concentration_vantage,
             enforce_current_turn_actor=not allow_out_of_turn_actor,
         )
+        self._consume_help_attack_effect(
+            encounter_id=encounter_id,
+            target_entity_id=request.target_entity_id,
+            effect_id=request.context.get("consumed_help_attack_effect_id"),
+        )
         if resolution["hit"] and use_structured_damage:
             if prepared_damage_resolution is None:
                 raise ValueError("structured_damage_resolution_missing")
@@ -271,6 +279,12 @@ class ExecuteAttack:
             )
             if deflect_result is not None:
                 resolution["deflect_attacks"] = deflect_result
+            uncanny_dodge_result = self._apply_pending_damage_multiplier(
+                damage_resolution=damage_resolution,
+                damage_multiplier=pending_damage_multiplier,
+            )
+            if uncanny_dodge_result is not None:
+                resolution["uncanny_dodge"] = uncanny_dodge_result
             resolution["damage_resolution"] = damage_resolution
             if damage_resolution.get("total_damage", 0):
                 resolution["hp_update"] = self._apply_resolved_damage(
@@ -290,7 +304,10 @@ class ExecuteAttack:
                 target_id=target_id,
                 source_entity_id=request.actor_entity_id,
                 attack_name=request.context.get("attack_name") or "Attack",
-                hp_change=hp_change,
+                hp_change=self._apply_legacy_damage_multiplier(
+                    hp_change=hp_change,
+                    damage_multiplier=pending_damage_multiplier,
+                ),
                 damage_reason=damage_reason,
                 damage_type=damage_type,
                 is_critical_hit=resolution["is_critical_hit"],
@@ -298,6 +315,16 @@ class ExecuteAttack:
                 zero_hp_intent=zero_hp_intent,
                 attack_kind=request.context.get("attack_kind"),
             )
+
+        cunning_strike_result = self._apply_cunning_strike_effects(
+            encounter_id=encounter_id,
+            actor_entity_id=request.actor_entity_id,
+            target_entity_id=target_id,
+            attack_context=request.context,
+            resolution=resolution,
+        )
+        if cunning_strike_result is not None:
+            resolution["cunning_strike"] = cunning_strike_result
 
         mastery_updates = self._apply_weapon_mastery_updates(
             encounter_id=encounter_id,
@@ -729,11 +756,17 @@ class ExecuteAttack:
         damage_dice = sneak_attack.get("damage_dice")
         if not isinstance(damage_dice, str) or not damage_dice.strip():
             return False
+        resolved_formula = self._resolve_cunning_strike_adjusted_sneak_attack_formula(
+            base_formula=damage_dice.strip(),
+            attack_context=attack_context,
+        )
+        if resolved_formula is None:
+            return False
 
         damage_parts.append(
             {
                 "source": "rogue_sneak_attack",
-                "formula": damage_dice.strip(),
+                "formula": resolved_formula,
                 "damage_type": attack_context.get("primary_damage_type"),
             }
         )
@@ -829,6 +862,26 @@ class ExecuteAttack:
         if dice_count <= 0 or die_size <= 0:
             raise ValueError("invalid_damage_formula")
         return dice_count, die_size
+
+    def _resolve_cunning_strike_adjusted_sneak_attack_formula(
+        self,
+        *,
+        base_formula: str,
+        attack_context: dict[str, Any],
+    ) -> str | None:
+        dice_count, die_size = self._parse_damage_formula(base_formula)
+        options = attack_context.get("class_feature_options")
+        spent_dice = 0
+        if isinstance(options, dict):
+            cunning_strike = options.get("cunning_strike")
+            if isinstance(cunning_strike, dict):
+                raw_spent = cunning_strike.get("spent_dice", 0)
+                if isinstance(raw_spent, int) and not isinstance(raw_spent, bool):
+                    spent_dice = max(0, raw_spent)
+        remaining_dice = max(0, dice_count - spent_dice)
+        if remaining_dice <= 0:
+            return None
+        return f"{remaining_dice}d{die_size}"
 
     def _apply_resolved_damage(
         self,
@@ -1049,6 +1102,71 @@ class ExecuteAttack:
         sides = int(match.group(2))
         return f"{count}d{sides}"
 
+    def _apply_pending_damage_multiplier(
+        self,
+        *,
+        damage_resolution: dict[str, Any],
+        damage_multiplier: float | None,
+    ) -> dict[str, Any] | None:
+        if damage_multiplier is None:
+            return None
+        if not isinstance(damage_multiplier, (int, float)):
+            raise ValueError("pending_damage_multiplier_must_be_numeric")
+        if damage_multiplier < 0:
+            raise ValueError("pending_damage_multiplier_must_be_positive")
+        if float(damage_multiplier) == 1:
+            return None
+
+        original_total = int(damage_resolution.get("total_damage", 0) or 0)
+        reduced_total = int(original_total * float(damage_multiplier))
+        damage_resolution["total_damage"] = reduced_total
+
+        parts = damage_resolution.get("parts")
+        if isinstance(parts, list):
+            adjusted_parts: list[dict[str, Any] | Any] = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    adjusted_parts.append(part)
+                    continue
+                adjusted_total = part.get("adjusted_total")
+                updated_part = dict(part)
+                if isinstance(adjusted_total, int):
+                    updated_part["adjusted_total"] = int(adjusted_total * float(damage_multiplier))
+                    if isinstance(updated_part.get("total"), int):
+                        updated_part["total"] = updated_part["adjusted_total"]
+                adjusted_parts.append(updated_part)
+            numeric_parts = [
+                item for item in adjusted_parts
+                if isinstance(item, dict) and isinstance(item.get("adjusted_total"), int)
+            ]
+            delta = reduced_total - sum(int(item["adjusted_total"]) for item in numeric_parts)
+            if delta != 0 and numeric_parts:
+                numeric_parts[-1]["adjusted_total"] = max(0, int(numeric_parts[-1]["adjusted_total"]) + delta)
+                if isinstance(numeric_parts[-1].get("total"), int):
+                    numeric_parts[-1]["total"] = numeric_parts[-1]["adjusted_total"]
+            damage_resolution["parts"] = adjusted_parts
+
+        return {
+            "status": "damage_halved",
+            "damage_multiplier": float(damage_multiplier),
+            "original_damage": original_total,
+            "reduced_damage": reduced_total,
+        }
+
+    def _apply_legacy_damage_multiplier(
+        self,
+        *,
+        hp_change: int,
+        damage_multiplier: float | None,
+    ) -> int:
+        if damage_multiplier is None:
+            return hp_change
+        if not isinstance(damage_multiplier, (int, float)):
+            raise ValueError("pending_damage_multiplier_must_be_numeric")
+        if damage_multiplier < 0:
+            raise ValueError("pending_damage_multiplier_must_be_positive")
+        return int(hp_change * float(damage_multiplier))
+
     def _roll_formula(self, formula: str) -> list[int]:
         match = self._FORMULA_RE.match(formula)
         if match is None:
@@ -1056,6 +1174,243 @@ class ExecuteAttack:
         count = int(match.group(1))
         sides = int(match.group(2))
         return [random.randint(1, sides) for _ in range(count)]
+
+    def _apply_cunning_strike_effects(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        target_entity_id: str,
+        attack_context: dict[str, Any],
+        resolution: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not bool(resolution.get("hit")):
+            return None
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return None
+        cunning_strike = class_feature_options.get("cunning_strike")
+        if not isinstance(cunning_strike, dict):
+            return None
+        effects = cunning_strike.get("effects")
+        if not isinstance(effects, list) or not effects:
+            return None
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found")
+        actor = encounter.entities.get(actor_entity_id)
+        target = encounter.entities.get(target_entity_id)
+        if actor is None or target is None:
+            raise ValueError("cunning_strike_entities_not_found")
+
+        applied_effects: list[dict[str, Any]] = []
+        changed = False
+        save_dc = 8 + int(actor.proficiency_bonus or 0) + int(actor.ability_mods.get("dex", 0) or 0)
+
+        for effect_option in effects:
+            if not isinstance(effect_option, dict):
+                continue
+            effect_name = str(effect_option.get("effect") or "").strip().lower()
+            if effect_name == "trip":
+                outcome = self._apply_cunning_strike_trip(
+                    target=target,
+                    save_dc=save_dc,
+                    effect_option=effect_option,
+                )
+            elif effect_name == "withdraw":
+                outcome = {
+                    "effect": "withdraw",
+                    "status": "movement_available",
+                    "withdraw_movement": {
+                        "feet": int(actor.speed.get("walk", 0) or 0) // 2,
+                        "ignore_opportunity_attacks": True,
+                    },
+                }
+            elif effect_name == "poison":
+                outcome = self._apply_cunning_strike_condition_with_save(
+                    target=target,
+                    effect_name="poison",
+                    applied_condition="poisoned",
+                    save_ability="con",
+                    save_dc=save_dc,
+                    effect_option=effect_option,
+                    ends_on_next_turn_end=False,
+                )
+            elif effect_name == "daze":
+                outcome = self._apply_cunning_strike_condition_with_save(
+                    target=target,
+                    effect_name="daze",
+                    applied_condition="dazed",
+                    save_ability="con",
+                    save_dc=save_dc,
+                    effect_option=effect_option,
+                    ends_on_next_turn_end=True,
+                )
+            elif effect_name == "knock_out":
+                outcome = self._apply_cunning_strike_condition_with_save(
+                    target=target,
+                    effect_name="knock_out",
+                    applied_condition="unconscious",
+                    save_ability="con",
+                    save_dc=save_dc,
+                    effect_option=effect_option,
+                    ends_on_next_turn_end=False,
+                )
+            elif effect_name == "obscure":
+                outcome = self._apply_cunning_strike_condition_with_save(
+                    target=target,
+                    effect_name="obscure",
+                    applied_condition="blinded",
+                    save_ability="dex",
+                    save_dc=save_dc,
+                    effect_option=effect_option,
+                    ends_on_next_turn_end=True,
+                )
+            else:
+                continue
+            applied_effects.append(outcome)
+            changed = changed or bool(outcome.get("changed"))
+
+        if changed:
+            self.attack_roll_request.encounter_repository.save(encounter)
+        return {
+            "spent_dice": int(cunning_strike.get("spent_dice", 0) or 0),
+            "save_dc": save_dc,
+            "applied_effects": applied_effects,
+        }
+
+    def _apply_cunning_strike_trip(
+        self,
+        *,
+        target: Any,
+        save_dc: int,
+        effect_option: dict[str, Any],
+    ) -> dict[str, Any]:
+        if str(getattr(target, "size", "medium")).lower() not in {"tiny", "small", "medium", "large"}:
+            return {"effect": "trip", "status": "invalid_target_size", "changed": False}
+        save = self._roll_cunning_strike_save(target=target, ability="dex", save_dc=save_dc, effect_option=effect_option)
+        changed = False
+        if not save["success"] and "prone" not in target.conditions:
+            target.conditions.append("prone")
+            changed = True
+        return {
+            "effect": "trip",
+            "status": "applied" if changed else ("saved" if save["success"] else "already_applied"),
+            "changed": changed,
+            "save": save,
+        }
+
+    def _apply_cunning_strike_condition_with_save(
+        self,
+        *,
+        target: Any,
+        effect_name: str,
+        applied_condition: str,
+        save_ability: str,
+        save_dc: int,
+        effect_option: dict[str, Any],
+        ends_on_next_turn_end: bool,
+    ) -> dict[str, Any]:
+        save = self._roll_cunning_strike_save(
+            target=target,
+            ability=save_ability,
+            save_dc=save_dc,
+            effect_option=effect_option,
+        )
+        if save["success"]:
+            return {
+                "effect": effect_name,
+                "status": "saved",
+                "changed": False,
+                "save": save,
+            }
+
+        changed = False
+        if applied_condition not in target.conditions:
+            target.conditions.append(applied_condition)
+            changed = True
+        effect_id = f"effect_cunning_strike_{effect_name}_{uuid4().hex[:12]}"
+        if ends_on_next_turn_end:
+            target.turn_effects.append(
+                {
+                    "effect_id": effect_id,
+                    "effect_type": f"cunning_strike_{effect_name}",
+                    "name": f"Cunning Strike {effect_name}",
+                    "source_entity_id": effect_option.get("source_entity_id"),
+                    "target_entity_id": target.entity_id,
+                    "trigger": "end_of_turn",
+                    "save": None,
+                    "on_trigger": {
+                        "damage_parts": [],
+                        "apply_conditions": [],
+                        "remove_conditions": [applied_condition],
+                    },
+                    "on_save_success": {"damage_parts": [], "apply_conditions": [], "remove_conditions": []},
+                    "on_save_failure": {"damage_parts": [], "apply_conditions": [], "remove_conditions": []},
+                    "remove_after_trigger": True,
+                }
+            )
+            changed = True
+        else:
+            target.turn_effects.append(
+                {
+                    "effect_id": effect_id,
+                    "effect_type": f"cunning_strike_{effect_name}",
+                    "name": f"Cunning Strike {effect_name}",
+                    "source_entity_id": effect_option.get("source_entity_id"),
+                    "target_entity_id": target.entity_id,
+                    "trigger": "end_of_turn",
+                    "save": {"ability": save_ability, "dc": save_dc, "on_success_remove_effect": True},
+                    "on_trigger": {"damage_parts": [], "apply_conditions": [], "remove_conditions": []},
+                    "on_save_success": {
+                        "damage_parts": [],
+                        "apply_conditions": [],
+                        "remove_conditions": [applied_condition],
+                    },
+                    "on_save_failure": {"damage_parts": [], "apply_conditions": [], "remove_conditions": []},
+                    "remove_after_trigger": False,
+                }
+            )
+            changed = True
+
+        return {
+            "effect": effect_name,
+            "status": "applied",
+            "changed": changed,
+            "save": save,
+            "condition": applied_condition,
+            "effect_id": effect_id,
+        }
+
+    def _roll_cunning_strike_save(
+        self,
+        *,
+        target: Any,
+        ability: str,
+        save_dc: int,
+        effect_option: dict[str, Any],
+    ) -> dict[str, Any]:
+        override = effect_option.get("save_roll")
+        if isinstance(override, bool):
+            override = None
+        if isinstance(override, int):
+            base_roll = override
+        else:
+            base_roll = random.randint(1, 20)
+
+        ability_mod = int(target.ability_mods.get(ability, 0) or 0)
+        proficiency_bonus = int(target.proficiency_bonus or 0) if ability in resolve_entity_save_proficiencies(target) else 0
+        total = base_roll + ability_mod + proficiency_bonus
+        return {
+            "ability": ability,
+            "dc": save_dc,
+            "base_roll": base_roll,
+            "ability_mod": ability_mod,
+            "proficiency_bonus": proficiency_bonus,
+            "total": total,
+            "success": total >= save_dc,
+        }
 
     def _mark_attack_resource_used(
         self,
@@ -1101,7 +1456,11 @@ class ExecuteAttack:
         elif consume_action:
             actor.combat_flags.pop("light_bonus_trigger", None)
         self._consume_monk_flurry_focus_if_needed(actor=actor, attack_mode=attack_mode)
-        self._mark_rogue_sneak_attack_used_if_applied(actor=actor, resolution=resolution)
+        self._mark_rogue_sneak_attack_used_if_applied(
+            actor=actor,
+            attack_context=attack_context,
+            resolution=resolution,
+        )
         self.attack_roll_request.encounter_repository.save(encounter)
 
     def _consume_monk_flurry_focus_if_needed(self, *, actor: Any, attack_mode: str) -> None:
@@ -1118,16 +1477,30 @@ class ExecuteAttack:
             return
         focus_points["remaining"] = remaining - 1
 
-    def _mark_rogue_sneak_attack_used_if_applied(self, *, actor: Any, resolution: dict[str, Any]) -> None:
+    def _mark_rogue_sneak_attack_used_if_applied(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        resolution: dict[str, Any],
+    ) -> None:
         if not bool(resolution.get("hit")):
             return
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict) or not bool(class_feature_options.get("sneak_attack")):
+            return
         damage_resolution = resolution.get("damage_resolution")
-        if not isinstance(damage_resolution, dict):
+        cunning_strike_used = isinstance(class_feature_options.get("cunning_strike"), dict)
+        if not isinstance(damage_resolution, dict) and not cunning_strike_used:
             return
-        parts = damage_resolution.get("parts")
-        if not isinstance(parts, list):
-            return
-        if not any(isinstance(part, dict) and part.get("source") == "rogue_sneak_attack" for part in parts):
+        if isinstance(damage_resolution, dict):
+            parts = damage_resolution.get("parts")
+            if isinstance(parts, list) and any(
+                isinstance(part, dict) and part.get("source") == "rogue_sneak_attack"
+                for part in parts
+            ):
+                cunning_strike_used = True
+        if not cunning_strike_used:
             return
 
         rogue_runtime = ensure_rogue_runtime(actor)
@@ -1323,6 +1696,27 @@ class ExecuteAttack:
             return
 
         target.turn_effects = retained_effects
+        self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _consume_help_attack_effect(
+        self,
+        *,
+        encounter_id: str,
+        target_entity_id: str,
+        effect_id: str | None,
+    ) -> None:
+        if not isinstance(effect_id, str) or not effect_id.strip():
+            return
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while consuming help attack effect")
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            return
+        before = len(getattr(target, "turn_effects", []))
+        remove_turn_effect_by_id(target, effect_id.strip())
+        if len(getattr(target, "turn_effects", [])) == before:
+            return
         self.attack_roll_request.encounter_repository.save(encounter)
 
     def _normalize_save_vantage(self, raw_vantage: Any) -> str:

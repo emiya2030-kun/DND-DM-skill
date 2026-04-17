@@ -2711,6 +2711,59 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertTrue(updated.entities[actor.entity_id].action_economy["reaction_used"])
             self.assertTrue(updated.entities[actor.entity_id].class_features["rogue"]["sneak_attack"]["used_this_turn"])
 
+    def test_execute_cunning_strike_trip_consumes_one_sneak_die_and_applies_prone(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                }
+            }
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4]},
+                ],
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {
+                        "effects": [{"effect": "trip", "save_roll": 5}],
+                    },
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["formula"], "2d6")
+            self.assertIn("prone", updated.entities["ent_enemy_goblin_001"].conditions)
+            self.assertEqual(result["resolution"]["cunning_strike"]["applied_effects"][0]["effect"], "trip")
+
     def test_execute_martial_arts_bonus_consumes_bonus_action(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_actor()
@@ -2927,6 +2980,51 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertFalse(
                 any(
                     effect.get("effect_type") == "monk_stunning_strike_success"
+                    for effect in updated.entities[target.entity_id].turn_effects
+                )
+            )
+
+    def test_execute_attack_consumes_help_attack_effect_after_attack_executes(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            target.turn_effects.append(
+                {
+                    "effect_id": "help_attack_1",
+                    "effect_type": "help_attack",
+                    "source_entity_id": "ent_helper_001",
+                    "source_side": "ally",
+                    "remaining_uses": 1,
+                }
+            )
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            service.execute(
+                encounter_id="enc_execute_attack_test",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=20,
+                dice_rolls={"base_rolls": [15], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertFalse(
+                any(
+                    effect.get("effect_id") == "help_attack_1"
                     for effect in updated.entities[target.entity_id].turn_effects
                 )
             )

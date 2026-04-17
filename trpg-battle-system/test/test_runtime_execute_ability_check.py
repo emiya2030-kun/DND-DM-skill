@@ -7,6 +7,10 @@ from runtime.commands import COMMAND_HANDLERS
 from runtime.context import build_runtime_context
 from runtime.dispatcher import execute_runtime_command
 from test.test_ability_check_request import build_encounter
+from tools.models import EncounterEntity
+from tools.repositories import EncounterRepository
+from tools.repositories import EventRepository
+from tools.services import AppendEvent, ExecuteAbilityCheck
 
 
 class RuntimeExecuteAbilityCheckTests(unittest.TestCase):
@@ -54,6 +58,49 @@ class RuntimeExecuteAbilityCheckTests(unittest.TestCase):
                 self.assertTrue(kwargs["include_encounter_state"])
             finally:
                 context.close()
+
+    def test_execute_ability_check_uses_help_effect_as_advantage_and_consumes_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            try:
+                encounter = build_encounter()
+                actor: EncounterEntity = encounter.entities["ent_ally_sabur_001"]
+                actor.turn_effects.append(
+                    {
+                        "effect_id": "help_check_1",
+                        "effect_type": "help_ability_check",
+                        "remaining_uses": 1,
+                        "help_check": {"check_type": "skill", "check_key": "stealth"},
+                    }
+                )
+                encounter_repo.save(encounter)
+
+                with patch("tools.services.checks.execute_ability_check.random.randint", side_effect=[4, 16]):
+                    result = ExecuteAbilityCheck(encounter_repo, AppendEvent(event_repo)).execute(
+                        encounter_id="enc_ability_check_test",
+                        actor_id="ent_ally_sabur_001",
+                        check_type="skill",
+                        check="stealth",
+                        dc=12,
+                        include_encounter_state=True,
+                    )
+
+                self.assertEqual(result["request"]["context"]["vantage"], "advantage")
+                self.assertEqual(result["roll_result"]["dice_rolls"]["base_rolls"], [4, 16])
+                updated = encounter_repo.get("enc_ability_check_test")
+                self.assertIsNotNone(updated)
+                self.assertFalse(
+                    any(
+                        effect.get("effect_id") == "help_check_1"
+                        for effect in updated.entities["ent_ally_sabur_001"].turn_effects
+                    )
+                )
+            finally:
+                try:
+                    encounter_repo.close()
+                finally:
+                    event_repo.close()
 
 
 if __name__ == "__main__":

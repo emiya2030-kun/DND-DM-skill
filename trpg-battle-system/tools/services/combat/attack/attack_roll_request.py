@@ -25,11 +25,13 @@ from tools.services.combat.rules.conditions import (
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
 from tools.services.combat.attack.weapon_profile_resolver import WeaponProfileResolver
 from tools.services.combat.attack.weapon_mastery_effects import collect_attack_roll_weapon_mastery_modifiers
+from tools.services.combat.actions import find_help_attack_effect, has_dodge_effect
 from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
 )
 from tools.services.class_features.shared import (
+    ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
     has_unconsumed_studied_attack_mark,
@@ -77,6 +79,10 @@ class AttackRollRequest:
         self.armor_profile_resolver.refresh_entity_armor_class(target)
         weapon = self.resolve_weapon_or_raise(actor, weapon_id)
         normalized_class_feature_options = normalize_class_feature_options(class_feature_options)
+        steady_aim_requested = self._should_apply_steady_aim(
+            actor=actor,
+            normalized_class_feature_options=normalized_class_feature_options,
+        )
         request_class_feature_options = self._build_request_class_feature_options(
             actor=actor,
             weapon=weapon,
@@ -120,7 +126,12 @@ class AttackRollRequest:
         self._ensure_actor_not_charmed(actor_runtime, target.entity_id)
         self._ensure_target_in_range(distance_to_target_feet, weapon, attack_kind, normalized_attack_mode)
         self._ensure_line_of_sight(encounter, actor, target)
-        resolved_vantage, vantage_sources, next_attack_advantage_turn_effect_ids = self._resolve_vantage(
+        (
+            resolved_vantage,
+            vantage_sources,
+            next_attack_advantage_turn_effect_ids,
+            consumed_help_attack_effect_id,
+        ) = self._resolve_vantage(
             encounter=encounter,
             requested_vantage=vantage,
             actor=actor,
@@ -137,6 +148,8 @@ class AttackRollRequest:
             vantage_sources["advantage"].extend(mastery_modifiers["advantage_sources"])
         if mastery_modifiers["disadvantage_sources"]:
             vantage_sources["disadvantage"].extend(mastery_modifiers["disadvantage_sources"])
+        if steady_aim_requested:
+            vantage_sources["advantage"].append("steady_aim")
         if actor_armor_profile["wearing_untrained_armor"] and modifier in {"str", "dex"}:
             vantage_sources["disadvantage"].append("armor_untrained")
         if (
@@ -152,6 +165,8 @@ class AttackRollRequest:
             resolved_vantage = "disadvantage"
         else:
             resolved_vantage = "normal"
+        if steady_aim_requested:
+            resolved_vantage = "advantage"
 
         self._ensure_sneak_attack_allowed(
             encounter=encounter,
@@ -160,6 +175,8 @@ class AttackRollRequest:
             resolved_vantage=resolved_vantage,
             request_class_feature_options=request_class_feature_options,
         )
+        if steady_aim_requested:
+            self._apply_steady_aim(encounter=encounter, actor=actor)
 
         melee_auto_crit = (
             attack_kind == "melee_weapon"
@@ -207,6 +224,7 @@ class AttackRollRequest:
                 "studied_attacks_applied": "studied_attacks" in vantage_sources["advantage"],
                 "class_feature_options": request_class_feature_options,
                 "next_attack_advantage_turn_effect_ids": next_attack_advantage_turn_effect_ids,
+                "consumed_help_attack_effect_id": consumed_help_attack_effect_id,
             },
         )
 
@@ -391,10 +409,11 @@ class AttackRollRequest:
         weapon: dict,
         actor_runtime: ConditionRuntime,
         target_runtime: ConditionRuntime,
-    ) -> tuple[str, dict[str, list[str]], list[str]]:
+    ) -> tuple[str, dict[str, list[str]], list[str], str | None]:
         advantage_sources: list[str] = []
         disadvantage_sources: list[str] = []
         next_attack_advantage_turn_effect_ids: list[str] = []
+        consumed_help_attack_effect_id: str | None = None
 
         normalized_vantage = self._normalize_vantage(requested_vantage)
         if normalized_vantage == "advantage":
@@ -424,6 +443,15 @@ class AttackRollRequest:
         for condition in sorted(TARGET_ATTACK_DISADVANTAGE_CONDITIONS):
             if target_runtime.has(condition):
                 disadvantage_sources.append(f"target_{condition}")
+        if self._target_dodge_applies(actor=actor, target=target, target_runtime=target_runtime):
+            disadvantage_sources.append("dodge")
+
+        help_attack_effect = find_help_attack_effect(target=target, attacker=actor)
+        if help_attack_effect is not None:
+            advantage_sources.append("help_attack")
+            effect_id = help_attack_effect.get("effect_id")
+            if isinstance(effect_id, str) and effect_id.strip():
+                consumed_help_attack_effect_id = effect_id.strip()
 
         if target_runtime.has("prone"):
             if distance_to_target_feet <= 5:
@@ -473,6 +501,18 @@ class AttackRollRequest:
                     )
                 )
 
+        target_class_features = target.class_features if isinstance(target.class_features, dict) else {}
+        if isinstance(target_class_features.get("rogue"), dict):
+            rogue_runtime = ensure_rogue_runtime(target)
+            elusive = rogue_runtime.get("elusive")
+            if (
+                isinstance(elusive, dict)
+                and bool(elusive.get("enabled"))
+                and not any(target_runtime.has(condition) for condition in BLOCKED_ATTACK_CONDITIONS)
+                and advantage_sources
+            ):
+                advantage_sources = []
+
         if advantage_sources and disadvantage_sources:
             final_vantage = "normal"
         elif advantage_sources:
@@ -485,7 +525,25 @@ class AttackRollRequest:
         return final_vantage, {
             "advantage": advantage_sources,
             "disadvantage": disadvantage_sources,
-        }, next_attack_advantage_turn_effect_ids
+        }, next_attack_advantage_turn_effect_ids, consumed_help_attack_effect_id
+
+    def _target_dodge_applies(
+        self,
+        *,
+        actor: EncounterEntity,
+        target: EncounterEntity,
+        target_runtime: ConditionRuntime,
+    ) -> bool:
+        if not has_dodge_effect(target):
+            return False
+        if target_runtime.has("incapacitated"):
+            return False
+        if int(target.speed.get("walk", 0) or 0) <= 0:
+            return False
+        actor_runtime = ConditionRuntime(actor.conditions)
+        if actor_runtime.has("invisible"):
+            return False
+        return True
 
     def _normalize_vantage(self, vantage: str) -> str:
         normalized = str(vantage or "normal").lower()
@@ -507,10 +565,23 @@ class AttackRollRequest:
         normalized_class_feature_options: dict[str, Any],
     ) -> dict[str, Any]:
         request_class_feature_options: dict[str, Any] = {}
+        if self._should_apply_steady_aim(
+            actor=actor,
+            normalized_class_feature_options=normalized_class_feature_options,
+        ):
+            request_class_feature_options["steady_aim"] = True
         if bool(normalized_class_feature_options.get("sneak_attack")):
             if not self._weapon_qualifies_for_sneak_attack(weapon):
                 raise ValueError("sneak_attack_requires_finesse_or_ranged_weapon")
             request_class_feature_options["sneak_attack"] = True
+
+        raw_cunning_strike = normalized_class_feature_options.get("cunning_strike")
+        if raw_cunning_strike is not None:
+            request_class_feature_options["cunning_strike"] = self._normalize_cunning_strike_option(
+                actor=actor,
+                option=raw_cunning_strike,
+                sneak_attack_enabled=bool(request_class_feature_options.get("sneak_attack")),
+            )
 
         raw_stunning_strike = normalized_class_feature_options.get("stunning_strike")
         if raw_stunning_strike is None:
@@ -524,6 +595,122 @@ class AttackRollRequest:
                 option=raw_stunning_strike,
             )
         return request_class_feature_options
+
+    def _should_apply_steady_aim(
+        self,
+        *,
+        actor: EncounterEntity,
+        normalized_class_feature_options: dict[str, Any],
+    ) -> bool:
+        if not bool(normalized_class_feature_options.get("steady_aim")):
+            return False
+
+        rogue = ensure_rogue_runtime(actor)
+        steady_aim = rogue.get("steady_aim")
+        if not isinstance(steady_aim, dict) or not bool(steady_aim.get("enabled")):
+            raise ValueError("steady_aim_not_available")
+
+        combat_flags = actor.combat_flags if isinstance(actor.combat_flags, dict) else {}
+        movement_spent = combat_flags.get("movement_spent_feet", 0)
+        if isinstance(movement_spent, bool) or not isinstance(movement_spent, int):
+            movement_spent = 0
+        if movement_spent > 0:
+            raise ValueError("steady_aim_requires_no_movement")
+        if bool(actor.action_economy.get("bonus_action_used")):
+            raise ValueError("steady_aim_requires_bonus_action")
+        return True
+
+    def _apply_steady_aim(self, *, encounter: Encounter, actor: EncounterEntity) -> None:
+        rogue = ensure_rogue_runtime(actor)
+        steady_aim = rogue.setdefault("steady_aim", {})
+        steady_aim["used_this_turn"] = True
+        steady_aim["grants_advantage_on_next_attack"] = True
+        actor.action_economy["bonus_action_used"] = True
+        actor.speed["remaining"] = 0
+        self.encounter_repository.save(encounter)
+
+    def _normalize_cunning_strike_option(
+        self,
+        *,
+        actor: EncounterEntity,
+        option: Any,
+        sneak_attack_enabled: bool,
+    ) -> dict[str, Any]:
+        if not sneak_attack_enabled:
+            raise ValueError("cunning_strike_requires_sneak_attack")
+        if not isinstance(option, dict):
+            raise ValueError("cunning_strike_option_must_be_object")
+
+        rogue = ensure_rogue_runtime(actor)
+        cunning_strike = rogue.get("cunning_strike")
+        if not isinstance(cunning_strike, dict) or not bool(cunning_strike.get("enabled")):
+            raise ValueError("cunning_strike_not_available")
+
+        raw_effects = option.get("effects")
+        if not isinstance(raw_effects, list) or not raw_effects:
+            raise ValueError("cunning_strike_requires_effects")
+
+        normalized_effects: list[dict[str, Any]] = []
+        allowed_effects = self._allowed_cunning_strike_effects(rogue)
+        for item in raw_effects:
+            if isinstance(item, str):
+                effect_name = item.strip().lower()
+                effect_payload: dict[str, Any] = {"effect": effect_name}
+            elif isinstance(item, dict) and isinstance(item.get("effect"), str):
+                effect_name = item["effect"].strip().lower()
+                effect_payload = dict(item)
+                effect_payload["effect"] = effect_name
+            else:
+                raise ValueError("invalid_cunning_strike_effect")
+            if effect_name not in allowed_effects:
+                raise ValueError("unsupported_cunning_strike_effect")
+            normalized_effects.append(effect_payload)
+
+        max_effects = cunning_strike.get("max_effects_per_hit", 0)
+        if isinstance(max_effects, bool) or not isinstance(max_effects, int) or max_effects < 1:
+            raise ValueError("cunning_strike_runtime_invalid")
+        if len(normalized_effects) > max_effects:
+            if max_effects == 1:
+                raise ValueError("cunning_strike_allows_only_one_effect")
+            raise ValueError("too_many_cunning_strike_effects")
+
+        sneak_attack = rogue.get("sneak_attack")
+        damage_dice = sneak_attack.get("damage_dice") if isinstance(sneak_attack, dict) else None
+        available_dice = self._parse_dice_count(damage_dice)
+        spent_dice = sum(self._cunning_strike_cost(effect["effect"]) for effect in normalized_effects)
+        if spent_dice > available_dice:
+            raise ValueError("cunning_strike_spends_too_many_sneak_attack_dice")
+
+        return {
+            "effects": normalized_effects,
+            "spent_dice": spent_dice,
+        }
+
+    def _allowed_cunning_strike_effects(self, rogue: dict[str, Any]) -> set[str]:
+        level = rogue.get("level", 0)
+        if isinstance(level, bool) or not isinstance(level, int):
+            level = 0
+        allowed = {"poison", "trip", "withdraw"} if level >= 5 else set()
+        if level >= 14:
+            allowed.update({"daze", "knock_out", "obscure"})
+        return allowed
+
+    def _cunning_strike_cost(self, effect_name: str) -> int:
+        costs = {
+            "poison": 1,
+            "trip": 1,
+            "withdraw": 1,
+            "daze": 2,
+            "obscure": 3,
+            "knock_out": 6,
+        }
+        return costs.get(effect_name, 0)
+
+    def _parse_dice_count(self, formula: Any) -> int:
+        if not isinstance(formula, str) or "d" not in formula:
+            return 0
+        count_text = formula.split("d", 1)[0].strip()
+        return int(count_text) if count_text.isdigit() else 0
 
     def _normalize_stunning_strike_option(
         self,

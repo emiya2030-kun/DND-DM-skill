@@ -214,6 +214,22 @@ class GetEncounterState:
                     continue
                 effect_labels.append(self._format_spell_source_label(instance))
         effect_labels.extend(build_weapon_mastery_effect_labels(entity))
+        for effect in entity.turn_effects or []:
+            if not isinstance(effect, dict):
+                continue
+            effect_type = str(effect.get("effect_type") or "").strip().lower()
+            if effect_type == "disengage":
+                effect_labels.append("Disengage")
+            elif effect_type == "dodge":
+                effect_labels.append("Dodge")
+            elif effect_type == "help_attack":
+                source_name = effect.get("source_name") or "未知角色"
+                effect_labels.append(f"受到{source_name}的 Help（攻击）")
+            elif effect_type == "help_ability_check":
+                source_name = effect.get("source_name") or "未知角色"
+                help_check = effect.get("help_check") or {}
+                check_key = help_check.get("check_key") or "未知检定"
+                effect_labels.append(f"受到{source_name}的 Help（{check_key}）")
         return self._dedupe_preserve_order(effect_labels)
 
     def _build_retargetable_spell_actions(
@@ -836,6 +852,12 @@ class GetEncounterState:
                 for field in summary["fields"]
                 if field in bucket
             }
+            if class_id == "rogue" and int(bucket.get("level", 0) or 0) >= 2:
+                projected[class_id]["cunning_action"] = {
+                    "bonus_dash": True,
+                    "bonus_disengage": True,
+                    "bonus_hide": True,
+                }
             projected[class_id]["available_features"] = list(summary["available_features"])
 
         fighter = class_features.get("fighter")

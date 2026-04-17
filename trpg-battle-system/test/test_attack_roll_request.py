@@ -202,6 +202,104 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertEqual(request.context["next_attack_advantage_turn_effect_ids"], [effect["effect_id"]])
             repo.close()
 
+    def test_target_dodge_adds_disadvantage_against_visible_attacker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target()
+            target.turn_effects = [{"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}]
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["vantage"], "disadvantage")
+            self.assertIn("dodge", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
+    def test_help_attack_adds_advantage_when_ally_attacks_helped_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target()
+            target.turn_effects.append(
+                {
+                    "effect_id": "help_attack_1",
+                    "effect_type": "help_attack",
+                    "source_entity_id": "ent_helper_001",
+                    "source_side": "ally",
+                    "remaining_uses": 1,
+                }
+            )
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("help_attack", request.context["vantage_sources"]["advantage"])
+            self.assertEqual(request.context["consumed_help_attack_effect_id"], "help_attack_1")
+            repo.close()
+
+    def test_target_dodge_does_not_apply_against_invisible_attacker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(conditions=["invisible"])
+            target = build_target()
+            target.turn_effects = [{"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}]
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertNotIn("dodge", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
+    def test_target_dodge_does_not_apply_when_target_incapacitated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target(conditions=["incapacitated"])
+            target.turn_effects = [{"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}]
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertNotIn("dodge", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
+    def test_target_dodge_does_not_apply_when_target_speed_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target()
+            target.speed["walk"] = 0
+            target.speed["remaining"] = 0
+            target.turn_effects = [{"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}]
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertNotIn("dodge", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
     def test_execute_rejects_non_current_turn_actor(self) -> None:
         """测试显式传入的 actor 不是当前行动者时会被拒绝。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -246,6 +344,65 @@ class AttackRollRequestTests(unittest.TestCase):
                     target_id=target.entity_id,
                     weapon_id="rapier",
                 )
+            repo.close()
+
+    def test_execute_steady_aim_requires_no_prior_movement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 3}}
+            actor.combat_flags = {"movement_spent_feet": 5}
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "steady_aim_requires_no_movement"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="shortbow",
+                    class_feature_options={"steady_aim": True},
+                )
+            repo.close()
+
+    def test_execute_steady_aim_grants_advantage_and_sets_speed_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 3}}
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="shortbow",
+                class_feature_options={"steady_aim": True},
+            )
+
+            updated = repo.get("enc_attack_request_test")
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertEqual(request.context["class_feature_options"]["steady_aim"], True)
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 0)
+            self.assertTrue(updated.entities["ent_ally_eric_001"].action_economy["bonus_action_used"])
+            repo.close()
+
+    def test_execute_elusive_removes_advantage_against_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target()
+            target.side = "enemy"
+            target.class_features = {"rogue": {"level": 18}}
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                vantage="advantage",
+            )
+
+            self.assertEqual(request.context["vantage"], "normal")
+            self.assertEqual(request.context["vantage_sources"]["advantage"], [])
             repo.close()
 
     def test_execute_non_proficient_weapon_does_not_add_proficiency_bonus(self) -> None:
@@ -1468,6 +1625,59 @@ class AttackRollRequestTests(unittest.TestCase):
 
             self.assertTrue(request.context["class_feature_options"]["sneak_attack"])
             self.assertEqual(request.context["vantage"], "normal")
+            repo.close()
+
+    def test_execute_rejects_two_cunning_strikes_below_level_eleven(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 5}}
+            target = build_target()
+            ally = build_target(position=(4, 2), entity_id="ent_ally_fighter_001", name="Fighter")
+            ally.side = "ally"
+            ally.category = "pc"
+            ally.controller = "player"
+            repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            with self.assertRaisesRegex(ValueError, "cunning_strike_allows_only_one_effect"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id=target.entity_id,
+                    weapon_id="rapier",
+                    class_feature_options={
+                        "sneak_attack": True,
+                        "cunning_strike": {"effects": ["trip", "withdraw"]},
+                    },
+                )
+            repo.close()
+
+    def test_execute_improved_cunning_strike_allows_two_effects_at_level_eleven(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 11}}
+            target = build_target()
+            ally = build_target(position=(4, 2), entity_id="ent_ally_fighter_001", name="Fighter")
+            ally.side = "ally"
+            ally.category = "pc"
+            ally.controller = "player"
+            repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {"effects": ["trip", "withdraw"]},
+                },
+            )
+
+            cunning_strike = request.context["class_feature_options"]["cunning_strike"]
+            self.assertEqual(
+                [item["effect"] for item in cunning_strike["effects"]],
+                ["trip", "withdraw"],
+            )
             repo.close()
 
     def test_execute_rejects_sneak_attack_without_advantage_or_adjacent_ally(self) -> None:

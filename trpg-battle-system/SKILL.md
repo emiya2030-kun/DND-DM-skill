@@ -79,6 +79,70 @@
     - 看附近有没有埋伏 -> `{"command":"execute_ability_check","args":{"encounter_id":"enc_preview_demo","actor_id":"pc_sabur","check_type":"skill","check":"perception","dc":13}}`
     - 推门或搬石头 -> `{"command":"execute_ability_check","args":{"encounter_id":"enc_preview_demo","actor_id":"pc_sabur","check_type":"ability","check":"str","dc":12}}`
 
+- `use_disengage`
+  - 用途: 当前行动者执行 `Disengage` 动作
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 给该行动者附加本回合持续的 `Disengage` 效果
+    - 该效果生效期间,其移动不会触发借机攻击
+    - 返回动作结果与最新 `encounter_state`
+  - 调用约束:
+    - 如果玩家先声明“我要撤离再移动”,先调这个 command,再开始移动
+    - `Disengage` 只保护当前回合剩余时间内的移动,回合开始后会自动清除
+
+- `use_dodge`
+  - 用途: 当前行动者执行 `Dodge` 动作
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 给该行动者附加持续到其下个回合开始前的 `Dodge` 效果
+    - 该效果生效期间:
+      - 其他生物对其进行的攻击检定通常具有劣势
+      - 其敏捷豁免通常具有优势
+    - 返回动作结果与最新 `encounter_state`
+  - 调用约束:
+    - 若使用者陷入 `incapacitated` 或速度降为 0,这些增益会失效
+    - 若攻击者对其不可见,`Dodge` 不为该次攻击附加劣势
+    - 后续攻击或豁免描述,必须基于返回后的最新 `encounter_state`
+
+- `use_help_attack`
+  - 用途: 当前行动者对 5 尺内敌人执行 `Help(attack)`
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+    - `target_id`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 给目标敌人附加短时 `Help(攻击)` 效果
+    - 之后任意盟友对该目标的下一次攻击会自动获得优势并消耗该效果
+    - 若到施助者下个回合开始前仍未用掉,效果自动失效
+  - 调用约束:
+    - 目标必须是敌人且在 5 尺内
+    - 不要手动给后续攻击口头补优势,一律交给后端读取和消费
+
+- `use_help_ability_check`
+  - 用途: 当前行动者对盟友执行 `Help(ability)`
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+    - `ally_id`
+    - `check_type`
+    - `check_key`
+  - 默认行为:
+    - 消耗该行动者本回合的 `action`
+    - 给受助盟友附加一次性的对应检定协助效果
+    - 该盟友下一次匹配的检定会自动获得优势并消耗该效果
+    - 若到施助者下个回合开始前仍未用掉,效果自动失效
+  - 调用约束:
+    - 先由 LLM 判断场景上是否真的帮得上忙,再调用
+    - 当前版 `check_type` 主要按 `skill` / `tool` 使用
+    - 后续检定不要手动补优势,一律交给后端读取和消费
+
 阅读顺序:
 
 - `trpg-battle-system/combat-runtime/references/runtime-protocol.md`

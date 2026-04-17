@@ -4,8 +4,10 @@ import random
 from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.combat.actions import find_help_ability_check_effect, remove_turn_effect_by_id
 from tools.services.checks.ability_check_request import AbilityCheckRequest
 from tools.services.checks.ability_check_result import AbilityCheckResult
+from tools.services.checks.check_catalog import normalize_check_name
 from tools.services.checks.resolve_ability_check import ResolveAbilityCheck
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
@@ -35,17 +37,35 @@ class ExecuteAbilityCheck:
         reason: str | None = None,
         include_encounter_state: bool = False,
     ) -> dict[str, Any]:
+        encounter = self.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found")
+        actor = encounter.entities.get(actor_id)
+        if actor is None:
+            raise ValueError(f"actor '{actor_id}' not found in encounter")
+
+        normalized_check_type = str(check_type).strip().lower()
+        normalized_check = normalize_check_name(normalized_check_type, str(check))
+        help_effect = find_help_ability_check_effect(
+            actor=actor,
+            check_type=normalized_check_type,
+            check_key=normalized_check,
+        )
+        effective_vantage = vantage
+        if help_effect is not None and str(vantage or "normal").strip().lower() == "normal":
+            effective_vantage = "advantage"
+
         request = self.request_service.execute(
             encounter_id=encounter_id,
             actor_id=actor_id,
             check_type=check_type,
             check=check,
             dc=dc,
-            vantage=vantage,
+            vantage=effective_vantage,
             reason=reason,
         )
         base_rolls = [random.randint(1, 20)]
-        if vantage in {"advantage", "disadvantage"}:
+        if effective_vantage in {"advantage", "disadvantage"}:
             base_rolls.append(random.randint(1, 20))
         roll_result = self.resolve_service.execute(
             encounter_id=encounter_id,
@@ -58,6 +78,15 @@ class ExecuteAbilityCheck:
             roll_request=request,
             roll_result=roll_result,
         )
+        if help_effect is not None:
+            updated = self.encounter_repository.get(encounter_id)
+            if updated is not None:
+                updated_actor = updated.entities.get(actor_id)
+                if updated_actor is not None:
+                    effect_id = help_effect.get("effect_id")
+                    if isinstance(effect_id, str) and effect_id.strip():
+                        remove_turn_effect_by_id(updated_actor, effect_id.strip())
+                        self.encounter_repository.save(updated)
 
         result: dict[str, Any] = {
             "encounter_id": encounter_id,

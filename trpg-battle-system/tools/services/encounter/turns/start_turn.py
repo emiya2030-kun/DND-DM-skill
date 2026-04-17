@@ -37,6 +37,7 @@ class StartTurn:
             raise ValueError(f"encounter '{encounter_id}' not found")
 
         updated = start_turn(encounter)
+        _expire_source_turn_help_effects(updated, updated.current_entity_id)
         remove_expired_weapon_mastery_effects(
             encounter=updated,
             source_entity_id=updated.current_entity_id,
@@ -119,3 +120,19 @@ def _has_knockout_protection(entity: EncounterEntity) -> bool:
         if isinstance(effect, dict) and effect.get("effect_type") == "knockout_protection":
             return True
     return False
+
+
+def _expire_source_turn_help_effects(encounter: Encounter, source_entity_id: str | None) -> None:
+    if not isinstance(source_entity_id, str) or not source_entity_id:
+        return
+    for entity in encounter.entities.values():
+        entity.turn_effects = [
+            effect
+            for effect in entity.turn_effects
+            if not (
+                isinstance(effect, dict)
+                and effect.get("effect_type") in {"help_attack", "help_ability_check"}
+                and effect.get("source_entity_id") == source_entity_id
+                and effect.get("expires_on") == "source_next_turn_start"
+            )
+        ]

@@ -337,6 +337,28 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_rogue_cunning_action_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["rogue"] = {
+                "level": 3,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            rogue = state["current_turn_entity"]["resources"]["class_features"]["rogue"]
+
+            self.assertIn("cunning_action", rogue["available_features"])
+            self.assertEqual(
+                rogue["cunning_action"],
+                {"bonus_dash": True, "bonus_disengage": True, "bonus_hide": True},
+            )
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -1083,6 +1105,59 @@ class GetEncounterStateTests(unittest.TestCase):
                 goblin["conditions"],
                 ["paralyzed", "来自Eric的Hold Person"],
             )
+            repo.close()
+
+    def test_execute_projects_turn_action_effects_into_ongoing_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            goblin = encounter.entities["ent_enemy_goblin_001"]
+            player.turn_effects = [
+                {"effect_id": "effect_disengage_001", "effect_type": "disengage", "name": "Disengage"},
+            ]
+            goblin.turn_effects.append(
+                {"effect_id": "effect_dodge_001", "effect_type": "dodge", "name": "Dodge"}
+            )
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+
+            self.assertIn("Disengage", state["current_turn_entity"]["ongoing_effects"])
+            self.assertIn("Dodge", state["turn_order"][1]["ongoing_effects"])
+            repo.close()
+
+    def test_execute_projects_help_effect_labels_into_ongoing_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            goblin = encounter.entities["ent_enemy_goblin_001"]
+            archer = encounter.entities["ent_enemy_archer_001"]
+            goblin.turn_effects.append(
+                {
+                    "effect_id": "help_attack_1",
+                    "effect_type": "help_attack",
+                    "source_entity_id": player.entity_id,
+                    "source_name": player.name,
+                }
+            )
+            archer.side = "ally"
+            archer.turn_effects.append(
+                {
+                    "effect_id": "help_check_1",
+                    "effect_type": "help_ability_check",
+                    "source_entity_id": player.entity_id,
+                    "source_name": player.name,
+                    "help_check": {"check_type": "skill", "check_key": "investigation"},
+                }
+            )
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+
+            self.assertIn("受到Eric的 Help（攻击）", state["turn_order"][1]["ongoing_effects"])
+            self.assertIn("受到Eric的 Help（investigation）", state["turn_order"][2]["ongoing_effects"])
             repo.close()
 
 
