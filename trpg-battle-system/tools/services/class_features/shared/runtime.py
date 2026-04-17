@@ -36,6 +36,14 @@ def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     return ensure_class_runtime(entity_or_class_features, "monk")
 
 
+def get_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    return get_class_runtime(entity_or_class_features, "barbarian")
+
+
+def ensure_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    return ensure_class_runtime(entity_or_class_features, "barbarian")
+
+
 def _read_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(entity_or_class_features, dict):
         class_features = entity_or_class_features.get("class_features")
