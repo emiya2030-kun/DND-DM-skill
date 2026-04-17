@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Any
 from uuid import uuid4
 
@@ -7,7 +8,8 @@ from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.rules.concentration.request_concentration_check import RequestConcentrationCheck
-from tools.services.encounter.get_encounter_state import GetEncounterState
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
+from tools.services.class_features.shared.proficiency_resolver import resolve_entity_save_proficiencies
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.end_concentration_spell_instances import end_concentration_spell_instances
 
@@ -58,6 +60,7 @@ class UpdateHp:
         hp_before = target.hp["current"]
         temp_hp_before = target.hp["temp"]
         normalized_damage_type = self._normalize_damage_type(damage_type)
+        class_feature_resolution: dict[str, Any] = {}
 
         if hp_change > 0:
             adjusted_damage, damage_adjustment = self._adjust_damage_by_traits(
@@ -69,6 +72,13 @@ class UpdateHp:
             result["original_hp_change"] = hp_change
             result["adjusted_hp_change"] = adjusted_damage
             result["damage_adjustment"] = damage_adjustment
+            relentless_rage = self._maybe_apply_relentless_rage(
+                target=target,
+                adjusted_damage=adjusted_damage,
+            )
+            if relentless_rage is not None:
+                class_feature_resolution["relentless_rage"] = relentless_rage
+                result["hp_after"] = target.hp["current"]
             event_type = "damage_applied"
         elif hp_change < 0:
             if bool(target.combat_flags.get("is_dead")):
@@ -162,6 +172,8 @@ class UpdateHp:
             response["zero_hp_followup"] = zero_hp_followup
         if retarget_updates:
             response["retarget_updates"] = retarget_updates
+        if class_feature_resolution:
+            response["class_feature_resolution"] = class_feature_resolution
         concentration_check_request = self._maybe_request_concentration_check(
             encounter_id=encounter_id,
             target=target,
@@ -172,8 +184,61 @@ class UpdateHp:
         if concentration_check_request is not None:
             response["concentration_check_request"] = concentration_check_request.to_dict()
         if include_encounter_state:
+            from tools.services.encounter.get_encounter_state import GetEncounterState
+
             response["encounter_state"] = GetEncounterState(self.encounter_repository).execute(encounter_id)
         return response
+
+    def _maybe_apply_relentless_rage(
+        self,
+        *,
+        target: EncounterEntity,
+        adjusted_damage: int,
+    ) -> dict[str, Any] | None:
+        if int(target.hp.get("current", 0) or 0) != 0:
+            return None
+
+        barbarian = ensure_barbarian_runtime(target)
+        rage = barbarian.get("rage")
+        relentless_rage = barbarian.get("relentless_rage")
+        if not isinstance(rage, dict) or not bool(rage.get("active")):
+            return None
+        if not isinstance(relentless_rage, dict) or not bool(relentless_rage.get("enabled")):
+            return None
+        if adjusted_damage >= int(target.hp.get("max", 0) or 0):
+            return None
+
+        current_dc = relentless_rage.get("current_dc", 10)
+        if isinstance(current_dc, bool) or not isinstance(current_dc, int) or current_dc < 0:
+            current_dc = 10
+
+        base_roll = random.randint(1, 20)
+        con_modifier = int(target.ability_mods.get("con", 0) or 0)
+        is_proficient = "con" in resolve_entity_save_proficiencies(target)
+        proficiency_bonus = int(target.proficiency_bonus or 0) if is_proficient else 0
+        save_total = base_roll + con_modifier + proficiency_bonus
+
+        relentless_rage["current_dc"] = current_dc + 5
+        success = save_total >= current_dc
+        if success:
+            level = barbarian.get("level", 0)
+            if isinstance(level, bool) or not isinstance(level, int) or level < 0:
+                level = 0
+            restored_hp = level * 2
+            target.hp["current"] = restored_hp
+            target.combat_flags["is_dead"] = False
+            target.combat_flags["is_defeated"] = False
+
+        return {
+            "triggered": True,
+            "success": success,
+            "save_dc": current_dc,
+            "base_roll": base_roll,
+            "save_total": save_total,
+            "save_bonus": con_modifier + proficiency_bonus,
+            "next_dc": relentless_rage["current_dc"],
+            "hp_after": target.hp["current"],
+        }
 
     def _adjust_damage_by_traits(
         self,

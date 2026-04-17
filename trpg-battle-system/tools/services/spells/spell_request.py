@@ -6,6 +6,7 @@ from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
 
@@ -61,6 +62,11 @@ class SpellRequest:
             spell_definition = repository_spell_definition
         else:
             spell_definition = self._normalize_fallback_spell_definition(known_spell=known_spell, spell_id=spell_id)
+
+        barbarian_error = self._validate_barbarian_rage_spell_restriction(actor=actor)
+        if barbarian_error is not None:
+            return barbarian_error
+
         base_level = self._resolve_base_level(spell_definition=spell_definition, known_spell=known_spell)
         is_cantrip = base_level == 0
 
@@ -290,6 +296,19 @@ class SpellRequest:
                 "ok": False,
                 "error_code": "reaction_already_used",
                 "message": "该施法者本轮反应已用完",
+            }
+        return None
+
+    def _validate_barbarian_rage_spell_restriction(self, *, actor: Any) -> dict[str, Any] | None:
+        if not actor.class_features.get("barbarian"):
+            return None
+        barbarian = ensure_barbarian_runtime(actor)
+        rage = barbarian.get("rage")
+        if isinstance(rage, dict) and bool(rage.get("active")):
+            return {
+                "ok": False,
+                "error_code": "cannot_cast_spells_while_raging",
+                "message": "狂暴期间不能施法",
             }
         return None
 

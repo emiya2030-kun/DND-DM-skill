@@ -30,6 +30,7 @@ from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
 )
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
@@ -97,6 +98,21 @@ class AttackRollRequest:
         self._validate_monk_attack_mode(actor=actor, attack_mode=normalized_attack_mode, weapon_id=weapon_id)
 
         modifier = self._resolve_modifier_name(actor, weapon, normalized_attack_mode)
+        reckless_attack_requested = self._should_apply_reckless_attack(
+            actor=actor,
+            modifier=modifier,
+            normalized_class_feature_options=normalized_class_feature_options,
+        )
+        if reckless_attack_requested:
+            request_class_feature_options["reckless_attack"] = True
+        raw_brutal_strike = normalized_class_feature_options.get("brutal_strike")
+        if raw_brutal_strike is not None:
+            request_class_feature_options["brutal_strike"] = self._normalize_brutal_strike_option(
+                actor=actor,
+                modifier=modifier,
+                option=raw_brutal_strike,
+                reckless_attack_requested=reckless_attack_requested,
+            )
         modifier_value = actor.ability_mods.get(modifier, 0)
         proficiency_bonus = actor.proficiency_bonus if bool(weapon.get("is_proficient", True)) else 0
         attack_kind = self._resolve_attack_kind(weapon, normalized_attack_mode)
@@ -152,6 +168,8 @@ class AttackRollRequest:
             vantage_sources["disadvantage"].extend(mastery_modifiers["disadvantage_sources"])
         if steady_aim_requested:
             vantage_sources["advantage"].append("steady_aim")
+        if reckless_attack_requested and not bool(request_class_feature_options.get("brutal_strike")):
+            vantage_sources["advantage"].append("barbarian_reckless_attack")
         if actor_armor_profile["wearing_untrained_armor"] and modifier in {"str", "dex"}:
             vantage_sources["disadvantage"].append("armor_untrained")
         if (
@@ -159,6 +177,10 @@ class AttackRollRequest:
             and has_unconsumed_studied_attack_mark(actor.class_features, target.entity_id)
         ):
             vantage_sources["advantage"].append("studied_attacks")
+        self._apply_brutal_strike_vantage_adjustment(
+            request_class_feature_options=request_class_feature_options,
+            vantage_sources=vantage_sources,
+        )
         if vantage_sources["advantage"] and vantage_sources["disadvantage"]:
             resolved_vantage = "normal"
         elif vantage_sources["advantage"]:
@@ -179,6 +201,8 @@ class AttackRollRequest:
         )
         if steady_aim_requested:
             self._apply_steady_aim(encounter=encounter, actor=actor)
+        if reckless_attack_requested:
+            self._apply_reckless_attack(encounter=encounter, actor=actor)
 
         melee_auto_crit = (
             attack_kind == "melee_weapon"
@@ -602,6 +626,106 @@ class AttackRollRequest:
                 option=raw_stunning_strike,
             )
         return request_class_feature_options
+
+    def _normalize_brutal_strike_option(
+        self,
+        *,
+        actor: EncounterEntity,
+        modifier: str,
+        option: Any,
+        reckless_attack_requested: bool,
+    ) -> dict[str, Any]:
+        if modifier != "str":
+            raise ValueError("brutal_strike_requires_strength_attack")
+        if not isinstance(option, dict):
+            raise ValueError("brutal_strike_option_must_be_object")
+
+        barbarian = ensure_barbarian_runtime(actor)
+        brutal_strike = barbarian.get("brutal_strike")
+        if not isinstance(brutal_strike, dict) or not bool(brutal_strike.get("enabled")):
+            raise ValueError("brutal_strike_not_available")
+
+        reckless_attack = barbarian.get("reckless_attack")
+        reckless_declared = isinstance(reckless_attack, dict) and bool(reckless_attack.get("declared_this_turn"))
+        if not reckless_attack_requested and not reckless_declared:
+            raise ValueError("brutal_strike_requires_reckless_attack")
+
+        raw_effects = option.get("effects")
+        if not isinstance(raw_effects, list) or not raw_effects:
+            raise ValueError("brutal_strike_requires_effects")
+
+        normalized_effects: list[dict[str, Any]] = []
+        allowed_effects = self._allowed_brutal_strike_effects(actor=actor)
+        for item in raw_effects:
+            if isinstance(item, str):
+                effect_name = item.strip().lower()
+                effect_payload: dict[str, Any] = {"effect": effect_name}
+            elif isinstance(item, dict) and isinstance(item.get("effect"), str):
+                effect_name = item.get("effect", "").strip().lower()
+                effect_payload = dict(item)
+                effect_payload["effect"] = effect_name
+            else:
+                raise ValueError("invalid_brutal_strike_effect")
+            if effect_name not in allowed_effects:
+                raise ValueError("unsupported_brutal_strike_effect")
+            normalized_effects.append(effect_payload)
+
+        max_effects = brutal_strike.get("max_effects")
+        if isinstance(max_effects, bool) or not isinstance(max_effects, int) or max_effects < 1:
+            raise ValueError("brutal_strike_runtime_invalid")
+        if len(normalized_effects) > max_effects:
+            raise ValueError("too_many_brutal_strike_effects")
+
+        return {"effects": normalized_effects}
+
+    def _allowed_brutal_strike_effects(self, *, actor: EncounterEntity) -> set[str]:
+        barbarian = ensure_barbarian_runtime(actor)
+        level = barbarian.get("level", 0)
+        if isinstance(level, bool) or not isinstance(level, int):
+            level = 0
+        allowed = {"forceful_blow", "hamstring_blow"}
+        if level >= 13:
+            allowed.update({"staggering_blow", "sundering_blow"})
+        return allowed
+
+    def _apply_brutal_strike_vantage_adjustment(
+        self,
+        *,
+        request_class_feature_options: dict[str, Any],
+        vantage_sources: dict[str, list[str]],
+    ) -> None:
+        if not isinstance(request_class_feature_options.get("brutal_strike"), dict):
+            return
+        if vantage_sources["disadvantage"]:
+            raise ValueError("brutal_strike_cannot_be_used_with_disadvantage")
+        vantage_sources["advantage"] = []
+
+    def _should_apply_reckless_attack(
+        self,
+        *,
+        actor: EncounterEntity,
+        modifier: str,
+        normalized_class_feature_options: dict[str, Any],
+    ) -> bool:
+        if not bool(normalized_class_feature_options.get("reckless_attack")):
+            return False
+
+        barbarian = ensure_barbarian_runtime(actor)
+        reckless_attack = barbarian.get("reckless_attack")
+        if not isinstance(reckless_attack, dict) or not bool(reckless_attack.get("enabled")):
+            raise ValueError("reckless_attack_not_available")
+        if modifier != "str":
+            raise ValueError("reckless_attack_requires_strength_attack")
+        if bool(reckless_attack.get("declared_this_turn")):
+            raise ValueError("reckless_attack_already_declared")
+        return True
+
+    def _apply_reckless_attack(self, *, encounter: Encounter, actor: EncounterEntity) -> None:
+        barbarian = ensure_barbarian_runtime(actor)
+        reckless_attack = barbarian.setdefault("reckless_attack", {})
+        reckless_attack["declared_this_turn"] = True
+        reckless_attack["active_until_turn_start_of"] = actor.entity_id
+        self.encounter_repository.save(encounter)
 
     def _should_apply_steady_aim(
         self,

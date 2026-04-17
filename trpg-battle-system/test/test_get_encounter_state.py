@@ -318,6 +318,33 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_barbarian_high_level_feature_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["barbarian"] = {
+                "level": 18,
+                "rage": {"remaining": 1},
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            barbarian = state["current_turn_entity"]["resources"]["class_features"]["barbarian"]
+
+            self.assertEqual(barbarian["level"], 18)
+            self.assertEqual(barbarian["rage"]["max"], 6)
+            self.assertEqual(barbarian["rage_damage_bonus"], 4)
+            self.assertTrue(barbarian["brutal_strike"]["enabled"])
+            self.assertTrue(barbarian["relentless_rage"]["enabled"])
+            self.assertIn("brutal_strike", barbarian["available_features"])
+            self.assertIn("relentless_rage", barbarian["available_features"])
+            self.assertIn("persistent_rage", barbarian["available_features"])
+            self.assertIn("indomitable_might", barbarian["available_features"])
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_rogue_sneak_attack_growth_from_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

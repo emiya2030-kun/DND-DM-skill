@@ -19,6 +19,7 @@
    - `docs/skill-playbooks/fighter.md`
    - `docs/skill-playbooks/monk.md`
    - `docs/skill-playbooks/rogue.md`
+   - `docs/skill-playbooks/barbarian.md`
 
 常用 runtime command:
 
@@ -50,6 +51,24 @@
     - 普通攻击时,默认只能由当前行动者发起
     - 若返回 `invalid_attack`,这不是 transport error,而是规则非法,必须读取返回里的结构化结果并改口或改目标
     - 每次攻击结算后,后续判断一律基于返回的最新 `encounter_state`
+
+- `use_rage`
+  - 用途: 野蛮人进入狂暴、仅延长狂暴、或进入狂暴时附带 `Instinctive Pounce`
+  - 必填参数:
+    - `encounter_id`
+    - `entity_id`
+  - 常用可选参数:
+    - `extend_only`: 仅延长已激活狂暴时设为 `true`
+    - `pounce_path`: 进入狂暴时附带的半速免费移动路径
+  - 默认行为:
+    - 消耗附赠动作
+    - 正常进入狂暴时扣除一次 `Rage`
+    - `extend_only=true` 时不扣次数,只刷新持续状态
+    - 若传了 `pounce_path`,后端会把它当作 `Instinctive Pounce`
+  - 调用约束:
+    - 当前只允许在野蛮人自己的回合调用
+    - 若角色穿重甲,后端会拒绝
+    - 这不是自动攻击,调完后若还要攻击或移动,仍要继续走对应链路
 
 - `execute_ability_check`
   - 用途: 当玩家或 NPC 的意图本质上是“做一次属性检定或技能检定”时使用
@@ -184,6 +203,7 @@
 - `trpg-battle-system/docs/skill-playbooks/fighter.md`（当当前行动者是战士或正在使用战士职业特性时）
 - `trpg-battle-system/docs/skill-playbooks/monk.md`（当当前行动者是武僧或正在使用武僧职业特性时）
 - `trpg-battle-system/docs/skill-playbooks/rogue.md`（当当前行动者是盗贼或正在使用盗贼职业特性时）
+- `trpg-battle-system/docs/skill-playbooks/barbarian.md`（当当前行动者是野蛮人或正在使用野蛮人职业特性时）
 
 本地页面调试:
 

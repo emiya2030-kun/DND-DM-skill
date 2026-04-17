@@ -387,15 +387,34 @@ def _resolve_push(
 ) -> dict[str, Any]:
     if damage_dealt <= 0:
         return {"status": "no_effect", "reason": "no_damage"}
+    return resolve_linear_push(
+        encounter_id=encounter_id,
+        actor=actor,
+        target=target,
+        resolve_forced_movement=resolve_forced_movement,
+        steps=2,
+        reason="weapon_mastery_push",
+    )
+
+
+def resolve_linear_push(
+    *,
+    encounter_id: str,
+    actor: EncounterEntity,
+    target: EncounterEntity,
+    resolve_forced_movement: ResolveForcedMovement,
+    steps: int,
+    reason: str,
+) -> dict[str, Any]:
     if target.size not in {"tiny", "small", "medium", "large"}:
         return {"status": "no_effect", "reason": "target_too_large"}
 
-    path = _build_push_path(actor=actor, target=target, steps=2)
+    path = _build_push_path(actor=actor, target=target, steps=steps)
     forced_result = resolve_forced_movement.execute(
         encounter_id=encounter_id,
         entity_id=target.entity_id,
         path=path,
-        reason="weapon_mastery_push",
+        reason=reason,
         source_entity_id=actor.entity_id,
     )
     return {

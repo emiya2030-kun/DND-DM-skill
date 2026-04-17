@@ -29,12 +29,15 @@ class RollInitiativeAndStartEncounter:
             raise ValueError(f"encounter '{encounter_id}' not found")
 
         rolled_rows: list[dict[str, Any]] = []
-        metabolism_results: list[dict[str, Any]] = []
+        initiative_feature_results: list[dict[str, Any]] = []
         for entity_id, entity in encounter.entities.items():
+            persistent_rage_result = self._apply_persistent_rage_restore_if_available(entity=entity)
+            if persistent_rage_result is not None:
+                initiative_feature_results.append(persistent_rage_result)
             option = (initiative_options or {}).get(entity_id, {})
             metabolism_result = self._apply_uncanny_metabolism_if_requested(entity=entity, option=option)
             if metabolism_result is not None:
-                metabolism_results.append(metabolism_result)
+                initiative_feature_results.append(metabolism_result)
             modifier = int(entity.ability_mods.get("dex", 0))
             vantage = "normal"
             barbarian = ensure_barbarian_runtime(entity) if entity.class_features.get("barbarian") else {}
@@ -76,7 +79,7 @@ class RollInitiativeAndStartEncounter:
             "encounter_id": encounter_id,
             "turn_order": list(started.turn_order),
             "current_entity_id": started.current_entity_id,
-            "initiative_feature_results": metabolism_results,
+            "initiative_feature_results": initiative_feature_results,
             "initiative_results": [
                 {
                     "entity_id": row["entity_id"],
@@ -88,6 +91,32 @@ class RollInitiativeAndStartEncounter:
                 }
                 for row in rolled_rows
             ],
+        }
+
+    def _apply_persistent_rage_restore_if_available(self, *, entity: Any) -> dict[str, Any] | None:
+        if not entity.class_features.get("barbarian"):
+            return None
+
+        barbarian = ensure_barbarian_runtime(entity)
+        rage = barbarian.get("rage")
+        if not isinstance(rage, dict) or not bool(rage.get("persistent_rage")):
+            return None
+        if bool(rage.get("restored_on_initiative_this_long_rest")):
+            return None
+
+        max_uses = rage.get("max")
+        remaining = rage.get("remaining")
+        if not isinstance(max_uses, int) or not isinstance(remaining, int):
+            return None
+        if remaining >= max_uses:
+            return None
+
+        rage["remaining"] = max_uses
+        rage["restored_on_initiative_this_long_rest"] = True
+        return {
+            "entity_id": entity.entity_id,
+            "feature_id": "barbarian.persistent_rage",
+            "rage_restored_to": max_uses,
         }
 
     def execute_with_state(

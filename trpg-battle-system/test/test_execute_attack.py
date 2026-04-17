@@ -113,6 +113,49 @@ def build_fighter_actor_for_extra_attack(
     )
 
 
+def build_barbarian_actor(
+    *,
+    level: int = 2,
+    reckless_declared: bool = False,
+    rage_active: bool = False,
+    rage_damage_bonus: int = 2,
+) -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_barbarian_001",
+        name="Barbarian",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 35, "max": 35, "temp": 0},
+        ac=15,
+        speed={"walk": 30, "remaining": 30},
+        initiative=15,
+        ability_scores={"str": 16, "dex": 12, "con": 16, "int": 8, "wis": 10, "cha": 10},
+        ability_mods={"str": 3, "dex": 1, "con": 3, "int": -1, "wis": 0, "cha": 0},
+        proficiency_bonus=2,
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": False},
+        weapons=[
+            {
+                "weapon_id": "greataxe",
+                "name": "Greataxe",
+                "damage": [{"formula": "1d12+3", "type": "slashing"}],
+                "properties": ["heavy", "two_handed"],
+                "range": {"normal": 5, "long": 5},
+                "kind": "melee",
+            }
+        ],
+        class_features={
+            "barbarian": {
+                "level": level,
+                "rage": {"max": 2, "remaining": 1, "active": rage_active},
+                "rage_damage_bonus": rage_damage_bonus,
+                "reckless_attack": {"declared_this_turn": reckless_declared},
+            }
+        },
+    )
+
+
 def build_target() -> EncounterEntity:
     """构造完整攻击测试里的目标."""
     return EncounterEntity(
@@ -3456,6 +3499,229 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertNotIn("damage_resolution", result["resolution"])
             self.assertNotIn("hp_update", result["resolution"])
             self.assertEqual(updated.entities["ent_enemy_goblin_001"].hp["current"], 9)
+
+    def test_execute_applies_barbarian_rage_damage_on_strength_hit(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_barbarian_actor(rage_active=True, rage_damage_bonus=2)
+            target = build_target()
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="greataxe",
+                final_total=15,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:greataxe:part_0", "rolls": [6]}],
+            )
+
+            parts = result["resolution"]["damage_resolution"]["parts"]
+            rage_part = next((part for part in parts if part.get("source") == "barbarian_rage_damage"), None)
+            self.assertIsNotNone(rage_part)
+            self.assertEqual(rage_part["adjusted_total"], 2)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 11)
+
+    def test_execute_applies_reckless_attack_defense_penalty_effect(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_barbarian_actor(rage_active=False)
+            target = build_target()
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="greataxe",
+                final_total=15,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:greataxe:part_0", "rolls": [6]}],
+                class_feature_options={"reckless_attack": True},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            actor_after = updated.entities[actor.entity_id]
+            penalty_effect = next(
+                (
+                    effect
+                    for effect in actor_after.turn_effects
+                    if effect.get("effect_type") == "barbarian_reckless_defense_penalty"
+                ),
+                None,
+            )
+            self.assertIsNotNone(penalty_effect)
+            self.assertEqual(penalty_effect["source_entity_id"], actor.entity_id)
+            self.assertEqual(penalty_effect["expires_on"], "start_of_source_turn")
+
+    def test_execute_brutal_strike_forceful_blow_pushes_target_fifteen_feet(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_barbarian_actor(level=9, rage_active=True, rage_damage_bonus=3)
+            actor.class_features["barbarian"]["rage"]["remaining"] = 4
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="greataxe",
+                final_total=17,
+                dice_rolls={"base_rolls": [13], "modifier": 4},
+                damage_rolls=[
+                    {"source": "weapon:greataxe:part_0", "rolls": [6]},
+                    {"source": "barbarian_rage_damage", "rolls": []},
+                    {"source": "barbarian_brutal_strike", "rolls": [7]},
+                ],
+                class_feature_options={
+                    "reckless_attack": True,
+                    "brutal_strike": {"effects": ["forceful_blow"]},
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            brutal = result["resolution"]["brutal_strike"]
+            self.assertEqual(brutal["effects_applied"], ["forceful_blow"])
+            self.assertEqual(brutal["extra_damage_formula"], "1d10")
+            self.assertEqual(brutal["forceful_blow"]["moved_feet"], 15)
+            self.assertEqual(brutal["forceful_blow"]["free_movement_after_forceful_blow"]["feet"], 15)
+            self.assertTrue(
+                brutal["forceful_blow"]["free_movement_after_forceful_blow"]["ignore_opportunity_attacks"]
+            )
+            self.assertEqual(updated.entities[target.entity_id].position, {"x": 6, "y": 2})
+
+    def test_execute_brutal_strike_hamstring_blow_applies_speed_penalty_effect(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_barbarian_actor(level=9, rage_active=True, rage_damage_bonus=3)
+            actor.class_features["barbarian"]["rage"]["remaining"] = 4
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="greataxe",
+                final_total=17,
+                dice_rolls={"base_rolls": [13], "modifier": 4},
+                damage_rolls=[
+                    {"source": "weapon:greataxe:part_0", "rolls": [6]},
+                    {"source": "barbarian_rage_damage", "rolls": []},
+                    {"source": "barbarian_brutal_strike", "rolls": [5]},
+                ],
+                class_feature_options={
+                    "reckless_attack": True,
+                    "brutal_strike": {"effects": ["hamstring_blow"]},
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            target_after = updated.entities[target.entity_id]
+            hamstring = next(
+                (
+                    effect
+                    for effect in target_after.turn_effects
+                    if effect.get("effect_type") == "barbarian_hamstring_blow"
+                ),
+                None,
+            )
+            self.assertEqual(result["resolution"]["brutal_strike"]["effects_applied"], ["hamstring_blow"])
+            self.assertIsNotNone(hamstring)
+            self.assertEqual(hamstring["speed_penalty_feet"], 15)
+            self.assertEqual(hamstring["expires_on"], "start_of_source_turn")
+
+    def test_execute_brutal_strike_level_seventeen_allows_two_effects(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_barbarian_actor(level=17, rage_active=True, rage_damage_bonus=4)
+            actor.class_features["barbarian"]["rage"]["remaining"] = 6
+            target = build_target()
+            target.hp = {"current": 40, "max": 40, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="greataxe",
+                final_total=17,
+                dice_rolls={"base_rolls": [13], "modifier": 4},
+                damage_rolls=[
+                    {"source": "weapon:greataxe:part_0", "rolls": [6]},
+                    {"source": "barbarian_rage_damage", "rolls": []},
+                    {"source": "barbarian_brutal_strike", "rolls": [6, 4]},
+                ],
+                class_feature_options={
+                    "reckless_attack": True,
+                    "brutal_strike": {"effects": ["forceful_blow", "sundering_blow"]},
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            target_after = updated.entities[target.entity_id]
+            sundering = next(
+                (
+                    effect
+                    for effect in target_after.turn_effects
+                    if effect.get("effect_type") == "barbarian_sundering_blow"
+                ),
+                None,
+            )
+            brutal = result["resolution"]["brutal_strike"]
+            self.assertEqual(brutal["extra_damage_formula"], "2d10")
+            self.assertEqual(brutal["effects_applied"], ["forceful_blow", "sundering_blow"])
+            self.assertIsNotNone(sundering)
+            self.assertEqual(sundering["next_attack_bonus"], 5)
+            self.assertEqual(updated.entities[target.entity_id].position, {"x": 6, "y": 2})
 
 
 if __name__ == "__main__":

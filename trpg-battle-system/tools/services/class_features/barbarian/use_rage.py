@@ -46,11 +46,11 @@ class UseRage:
                 raise ValueError("rage_no_remaining_uses")
             rage["remaining"] = remaining - 1
             rage["active"] = True
-            actor.combat_flags["rage_extended_by_bonus_action_this_turn"] = True
             if bool(actor.combat_flags.get("is_concentrating")):
                 actor.combat_flags["is_concentrating"] = False
 
         actor.action_economy["bonus_action_used"] = True
+        actor.combat_flags["rage_extended_by_bonus_action_this_turn"] = True
         rage["ends_at_turn_end_of"] = actor.entity_id
 
         if pounce_path:

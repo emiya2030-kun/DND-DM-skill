@@ -250,6 +250,65 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertIn("barbarian_danger_sense", request.context["vantage_sources"]["advantage"])
             repo.close()
 
+    def test_execute_rage_grants_advantage_on_strength_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_guard_001"]
+            target.ability_mods["str"] = 3
+            target.class_features = {"barbarian": {"level": 1, "rage": {"active": True}}}
+            repo.save(encounter)
+
+            request = RollRequest(
+                request_id="req_strength_save_001",
+                encounter_id="enc_resolve_save_test",
+                actor_entity_id=target.entity_id,
+                target_entity_id=target.entity_id,
+                roll_type="saving_throw",
+                formula="1d20+save_modifier",
+                reason="Strength save test",
+                context={"save_ability": "str", "save_dc": 15, "vantage": "normal"},
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_rolls=[4, 16],
+            )
+
+            self.assertEqual(result.metadata["vantage"], "advantage")
+            self.assertEqual(result.metadata["chosen_roll"], 16)
+            self.assertEqual(result.final_total, 21)
+            repo.close()
+
+    def test_execute_indomitable_might_raises_strength_save_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_guard_001"]
+            target.ability_scores = {"str": 20, "dex": 14, "wis": 12}
+            target.ability_mods["str"] = 5
+            target.class_features = {"barbarian": {"level": 18, "indomitable_might": {"enabled": True}}}
+            repo.save(encounter)
+
+            request = RollRequest(
+                request_id="req_strength_save_002",
+                encounter_id="enc_resolve_save_test",
+                actor_entity_id=target.entity_id,
+                target_entity_id=target.entity_id,
+                roll_type="saving_throw",
+                formula="1d20+save_modifier",
+                reason="Strength save floor test",
+                context={"save_ability": "str", "save_dc": 18, "vantage": "normal"},
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=2,
+            )
+
+            self.assertEqual(result.final_total, 20)
+            repo.close()
+
     def test_execute_does_not_auto_fail_wis_save(self) -> None:
         """非 STR/DEX 豁免即使目标眩晕也能正常掷骰。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

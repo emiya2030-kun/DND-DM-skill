@@ -246,6 +246,50 @@ class SpellRequestTests(unittest.TestCase):
         self.assertEqual(result["action_cost"], "reaction")
         self.assertEqual(result["actor_id"], "ent_caster_001")
 
+    def test_execute_rejects_casting_spells_while_raging(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "magic_missile": {
+                        "id": "magic_missile",
+                        "name": "Magic Missile",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action"},
+                        "targeting": {"allowed_target_types": ["creature"]},
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "barbarian": {
+                "level": 5,
+                "rage": {"active": True},
+            }
+        }
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="magic_missile",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "ok": False,
+                "error_code": "cannot_cast_spells_while_raging",
+                "message": "狂暴期间不能施法",
+            },
+        )
+
     def test_execute_rejects_out_of_turn_non_reaction_spell_even_when_override_enabled(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(
             {

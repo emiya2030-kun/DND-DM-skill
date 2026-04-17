@@ -229,6 +229,102 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
             self.assertEqual(result["initiative_results"][0]["vantage"], "advantage")
             repo.close()
 
+    def test_execute_restores_all_rage_uses_once_for_persistent_rage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            barbarian = build_entity("ent_a", name="萨布尔", x=2, y=2)
+            barbarian.ability_mods = {"dex": 2}
+            barbarian.class_features = {
+                "barbarian": {
+                    "level": 15,
+                    "rage": {
+                        "remaining": 1,
+                        "restored_on_initiative_this_long_rest": False,
+                    },
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_persistent_rage_restore_test",
+                name="Persistent Rage Restore Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": barbarian},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", return_value=12):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.21):
+                    result = RollInitiativeAndStartEncounter(repo).execute("enc_persistent_rage_restore_test")
+
+            updated = repo.get("enc_persistent_rage_restore_test")
+            self.assertIsNotNone(updated)
+            rage = updated.entities["ent_a"].class_features["barbarian"]["rage"]
+            self.assertEqual(rage["remaining"], 5)
+            self.assertTrue(rage["restored_on_initiative_this_long_rest"])
+            self.assertEqual(
+                result["initiative_feature_results"],
+                [
+                    {
+                        "entity_id": "ent_a",
+                        "feature_id": "barbarian.persistent_rage",
+                        "rage_restored_to": 5,
+                    }
+                ],
+            )
+            repo.close()
+
+    def test_execute_does_not_restore_rage_twice_in_same_long_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            barbarian = build_entity("ent_a", name="萨布尔", x=2, y=2)
+            barbarian.ability_mods = {"dex": 2}
+            barbarian.class_features = {
+                "barbarian": {
+                    "level": 15,
+                    "rage": {
+                        "remaining": 1,
+                        "restored_on_initiative_this_long_rest": True,
+                    },
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_persistent_rage_spent_test",
+                name="Persistent Rage Spent Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": barbarian},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", return_value=12):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.21):
+                    result = RollInitiativeAndStartEncounter(repo).execute("enc_persistent_rage_spent_test")
+
+            updated = repo.get("enc_persistent_rage_spent_test")
+            self.assertIsNotNone(updated)
+            rage = updated.entities["ent_a"].class_features["barbarian"]["rage"]
+            self.assertEqual(rage["remaining"], 1)
+            self.assertEqual(result["initiative_feature_results"], [])
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

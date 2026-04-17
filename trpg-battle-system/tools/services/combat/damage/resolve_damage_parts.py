@@ -4,6 +4,7 @@ from typing import Tuple
 
 class ResolveDamageParts:
     _FORMULA_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
+    _FLAT_RE = re.compile(r"^[+]?(\d+)$")
 
     def execute(
         self,
@@ -79,17 +80,24 @@ class ResolveDamageParts:
 
     def _parse_formula(self, formula: str) -> Tuple[int, int, int]:
         match = self._FORMULA_RE.match(formula)
-        if not match:
-            raise ValueError("invalid_damage_formula")
+        if match:
+            dice_count = int(match.group(1))
+            die_size = int(match.group(2))
+            flat_bonus = int(match.group(3) or 0)
 
-        dice_count = int(match.group(1))
-        die_size = int(match.group(2))
-        flat_bonus = int(match.group(3) or 0)
+            if dice_count <= 0 or die_size <= 0:
+                raise ValueError("invalid_damage_formula")
 
-        if dice_count <= 0 or die_size <= 0:
-            raise ValueError("invalid_damage_formula")
+            return dice_count, die_size, flat_bonus
 
-        return dice_count, die_size, flat_bonus
+        flat_match = self._FLAT_RE.match(formula)
+        if flat_match:
+            flat_bonus = int(flat_match.group(1))
+            if flat_bonus < 0:
+                raise ValueError("invalid_damage_formula")
+            return 0, 1, flat_bonus
+
+        raise ValueError("invalid_damage_formula")
 
     def _normalize_trait_list(self, name: str, value):
         if value is None:
@@ -101,6 +109,8 @@ class ResolveDamageParts:
     def _format_resolved_formula(
         self, dice_count: int, die_size: int, flat_bonus: int
     ) -> str:
+        if dice_count == 0:
+            return str(flat_bonus)
         if flat_bonus > 0:
             bonus = f"+{flat_bonus}"
         elif flat_bonus < 0:

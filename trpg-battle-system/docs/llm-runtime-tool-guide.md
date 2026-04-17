@@ -177,6 +177,37 @@ window.applyEncounterState(nextState)
   - 它会以 `failed_save` 触发的反应窗口形式出现
   - 选择后由后端自动重掷豁免，并额外加上 `fighter_level`
 
+## 野蛮人职业特性运行时
+
+- `use_rage(...)`
+  - 这是野蛮人进入狂暴 / 延长狂暴的主动入口
+  - 新增参数使用 `entity_id`
+  - 支持:
+    - 正常进入狂暴
+    - `extend_only=true`
+    - `pounce_path` 进入狂暴时附带 `Instinctive Pounce`
+- `Reckless Attack`
+  - 不单独拆成 service
+  - 在 `execute_attack(...)` 中通过 `class_feature_options.reckless_attack = true` 声明
+  - 只允许基于力量的攻击
+- `Brutal Strike`
+  - 不单独拆成 service
+  - 在 `execute_attack(...)` 中通过 `class_feature_options.brutal_strike` 声明
+  - 需要本回合已声明或正在声明 `Reckless Attack`
+  - 当前效果:
+    - `forceful_blow`
+    - `hamstring_blow`
+    - 13级起再开放 `staggering_blow / sundering_blow`
+- 自动效果:
+  - `Rage Damage`
+  - `Danger Sense`
+  - `Fast Movement`
+  - `Feral Instinct`
+  - `Relentless Rage`
+  - `Persistent Rage`
+  - `Indomitable Might`
+  - 狂暴期间禁施法
+
 ### `GetEncounterState`
 
 用途：

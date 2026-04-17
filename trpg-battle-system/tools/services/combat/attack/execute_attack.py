@@ -12,6 +12,8 @@ from tools.services.combat.attack.attack_roll_result import AttackRollResult
 from tools.services.combat.attack.weapon_mastery_effects import (
     apply_weapon_mastery_on_hit,
     consume_attack_roll_weapon_mastery_effects,
+    get_weapon_mastery_speed_penalty,
+    resolve_linear_push,
 )
 from tools.services.combat.actions import remove_turn_effect_by_id
 from tools.services.class_features.shared import (
@@ -28,6 +30,7 @@ from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.resolve_forced_movement import ResolveForcedMovement
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 
 if TYPE_CHECKING:
     from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
@@ -38,6 +41,7 @@ class ExecuteAttack:
     """把一次完整武器攻击流程收口成一个统一入口。"""
 
     _FORMULA_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
+    _FLAT_DAMAGE_RE = re.compile(r"^[+]?(\d+)$")
 
     def __init__(
         self,
@@ -366,10 +370,18 @@ class ExecuteAttack:
             attack_context=request.context,
             resolution=resolution,
         )
+        self._apply_barbarian_brutal_strike_updates(
+            encounter_id=encounter_id,
+            actor_entity_id=request.actor_entity_id,
+            target_entity_id=request.target_entity_id,
+            attack_context=request.context,
+            resolution=resolution,
+        )
 
         self._mark_attack_resource_used(
             encounter_id=encounter_id,
             actor_entity_id=request.actor_entity_id,
+            target_entity_id=request.target_entity_id,
             weapon_id=weapon_id,
             attack_context=request.context,
             resolution=resolution,
@@ -630,6 +642,16 @@ class ExecuteAttack:
             attack_context=attack_context,
             damage_parts=damage_parts,
         )
+        self._maybe_append_barbarian_rage_damage_part(
+            actor=actor,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
+        self._maybe_append_barbarian_brutal_strike_damage_part(
+            actor=actor,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
         is_critical_hit = self._is_critical_hit(roll_result)
         if force_critical_on_hit:
             is_critical_hit = True
@@ -639,6 +661,10 @@ class ExecuteAttack:
                 is_critical_hit=is_critical_hit,
             )
         indexed_rolls = self._index_damage_rolls(damage_rolls)
+        self._supply_implicit_flat_damage_rolls(
+            indexed_rolls=indexed_rolls,
+            damage_parts=damage_parts,
+        )
         expected_sources = [part["source"] for part in damage_parts]
         self._validate_damage_roll_sources(expected_sources=expected_sources, actual_sources=list(indexed_rolls.keys()))
 
@@ -830,6 +856,64 @@ class ExecuteAttack:
         )
         return True
 
+    def _maybe_append_barbarian_rage_damage_part(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        barbarian_runtime = ensure_barbarian_runtime(actor)
+        rage = barbarian_runtime.get("rage")
+        if not isinstance(rage, dict) or not bool(rage.get("active")):
+            return False
+        if str(attack_context.get("modifier") or "").lower() != "str":
+            return False
+
+        rage_damage_bonus = barbarian_runtime.get("rage_damage_bonus")
+        if isinstance(rage_damage_bonus, bool) or not isinstance(rage_damage_bonus, int) or rage_damage_bonus <= 0:
+            return False
+
+        damage_parts.append(
+            {
+                "source": "barbarian_rage_damage",
+                "formula": str(rage_damage_bonus),
+                "damage_type": attack_context.get("primary_damage_type"),
+            }
+        )
+        return True
+
+    def _maybe_append_barbarian_brutal_strike_damage_part(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return False
+        brutal_strike = class_feature_options.get("brutal_strike")
+        if not isinstance(brutal_strike, dict):
+            return False
+
+        barbarian_runtime = ensure_barbarian_runtime(actor)
+        brutal_runtime = barbarian_runtime.get("brutal_strike")
+        if not isinstance(brutal_runtime, dict) or not bool(brutal_runtime.get("enabled")):
+            return False
+        extra_damage_dice = brutal_runtime.get("extra_damage_dice")
+        if not isinstance(extra_damage_dice, str) or not extra_damage_dice.strip():
+            return False
+
+        damage_parts.append(
+            {
+                "source": "barbarian_brutal_strike",
+                "formula": extra_damage_dice.strip(),
+                "damage_type": attack_context.get("primary_damage_type"),
+            }
+        )
+        return True
+
     def _build_auto_damage_rolls_from_parts(
         self,
         *,
@@ -839,7 +923,7 @@ class ExecuteAttack:
         auto_rolls: list[dict[str, Any]] = []
         for part in damage_parts:
             formula = str(part.get("formula") or "").strip()
-            dice_count, die_size = self._parse_damage_formula(formula)
+            dice_count, die_size = self._parse_damage_formula_or_flat(formula)
             effective_dice_count = dice_count * 2 if is_critical_hit else dice_count
             auto_rolls.append(
                 {
@@ -920,6 +1004,39 @@ class ExecuteAttack:
         if dice_count <= 0 or die_size <= 0:
             raise ValueError("invalid_damage_formula")
         return dice_count, die_size
+
+    def _parse_damage_formula_or_flat(self, formula: str) -> tuple[int, int]:
+        match = self._FORMULA_RE.match(formula)
+        if match is not None:
+            dice_count = int(match.group(1))
+            die_size = int(match.group(2))
+            if dice_count <= 0 or die_size <= 0:
+                raise ValueError("invalid_damage_formula")
+            return dice_count, die_size
+
+        flat_match = self._FLAT_DAMAGE_RE.match(formula)
+        if flat_match is not None:
+            flat_bonus = int(flat_match.group(1))
+            if flat_bonus < 0:
+                raise ValueError("invalid_damage_formula")
+            return 0, 1
+        raise ValueError("invalid_damage_formula")
+
+    def _supply_implicit_flat_damage_rolls(
+        self,
+        *,
+        indexed_rolls: dict[str, list[int]],
+        damage_parts: list[dict[str, Any]],
+    ) -> None:
+        for part in damage_parts:
+            if not isinstance(part, dict):
+                continue
+            source = str(part.get("source") or "").strip()
+            if not source or source in indexed_rolls:
+                continue
+            formula = str(part.get("formula") or "").strip()
+            if self._FLAT_DAMAGE_RE.match(formula):
+                indexed_rolls[source] = []
 
     def _resolve_cunning_strike_adjusted_sneak_attack_formula(
         self,
@@ -1488,6 +1605,7 @@ class ExecuteAttack:
         *,
         encounter_id: str,
         actor_entity_id: str,
+        target_entity_id: str,
         weapon_id: str,
         attack_context: dict[str, Any],
         resolution: dict[str, Any],
@@ -1503,6 +1621,7 @@ class ExecuteAttack:
             raise ValueError(
                 f"actor '{actor_entity_id}' not part of encounter '{encounter_id}' when marking attack resources"
             )
+        target = encounter.entities.get(target_entity_id)
         actor.action_economy = actor.action_economy if isinstance(actor.action_economy, dict) else {}
         actor.combat_flags = actor.combat_flags if isinstance(actor.combat_flags, dict) else {}
         attack_mode = str(attack_context.get("attack_mode") or "default").lower()
@@ -1532,7 +1651,276 @@ class ExecuteAttack:
             attack_context=attack_context,
             resolution=resolution,
         )
+        self._apply_reckless_attack_penalty_if_needed(
+            actor=actor,
+            attack_context=attack_context,
+        )
+        self._mark_barbarian_rage_extended_by_attack_if_needed(
+            actor=actor,
+            target=target,
+        )
         self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _apply_reckless_attack_penalty_if_needed(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+    ) -> None:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict) or not bool(class_feature_options.get("reckless_attack")):
+            return
+
+        actor.turn_effects = actor.turn_effects if isinstance(actor.turn_effects, list) else []
+        actor.turn_effects = [
+            effect
+            for effect in actor.turn_effects
+            if not (
+                isinstance(effect, dict)
+                and effect.get("effect_type") == "barbarian_reckless_defense_penalty"
+                and effect.get("source_entity_id") == actor.entity_id
+            )
+        ]
+        actor.turn_effects.append(
+            {
+                "effect_id": f"effect_reckless_attack_{uuid4().hex[:12]}",
+                "effect_type": "barbarian_reckless_defense_penalty",
+                "name": "Reckless Attack",
+                "source_entity_id": actor.entity_id,
+                "source_name": getattr(actor, "name", actor.entity_id),
+                "target_entity_id": actor.entity_id,
+                "grants_attack_advantage_against_target": True,
+                "expires_on": "start_of_source_turn",
+            }
+        )
+
+    def _mark_barbarian_rage_extended_by_attack_if_needed(
+        self,
+        *,
+        actor: Any,
+        target: Any,
+    ) -> None:
+        if target is None:
+            return
+        if getattr(actor, "side", None) == getattr(target, "side", None):
+            return
+        if not actor.class_features.get("barbarian"):
+            return
+        barbarian = ensure_barbarian_runtime(actor)
+        rage = barbarian.get("rage")
+        if isinstance(rage, dict) and bool(rage.get("active")):
+            actor.combat_flags["rage_extended_by_attack_this_turn"] = True
+
+    def _apply_barbarian_brutal_strike_updates(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        target_entity_id: str,
+        attack_context: dict[str, Any],
+        resolution: dict[str, Any],
+    ) -> None:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return
+        brutal_option = class_feature_options.get("brutal_strike")
+        if not isinstance(brutal_option, dict):
+            return
+
+        result_block: dict[str, Any] = {
+            "requested": True,
+            "status": "not_hit",
+            "effects_applied": [],
+        }
+        if not bool(resolution.get("hit")):
+            resolution["brutal_strike"] = result_block
+            return
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying brutal strike")
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            raise ValueError(f"actor '{actor_entity_id}' not found in encounter while applying brutal strike")
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            result_block["status"] = "target_removed"
+            resolution["brutal_strike"] = result_block
+            return
+
+        barbarian_runtime = ensure_barbarian_runtime(actor)
+        brutal_runtime = barbarian_runtime.get("brutal_strike")
+        if not isinstance(brutal_runtime, dict) or not bool(brutal_runtime.get("enabled")):
+            raise ValueError("brutal_strike_not_available")
+
+        result_block["status"] = "resolved"
+        result_block["extra_damage_formula"] = str(brutal_runtime.get("extra_damage_dice") or "")
+
+        effects = brutal_option.get("effects")
+        if not isinstance(effects, list):
+            raise ValueError("brutal_strike_requires_effects")
+
+        for effect in effects:
+            effect_name = str(effect.get("effect") if isinstance(effect, dict) else effect or "").strip().lower()
+            if not effect_name:
+                continue
+            result_block["effects_applied"].append(effect_name)
+            result_block[effect_name] = self._apply_single_barbarian_brutal_strike_effect(
+                encounter_id=encounter_id,
+                actor=actor,
+                target=target,
+                effect_name=effect_name,
+            )
+            if effect_name == "forceful_blow":
+                refreshed = self.attack_roll_request.encounter_repository.get(encounter_id)
+                if refreshed is None:
+                    raise ValueError(f"encounter '{encounter_id}' not found after forceful blow")
+                encounter = refreshed
+                actor = refreshed.entities.get(actor_entity_id)
+                target = refreshed.entities.get(target_entity_id)
+                if actor is None or target is None:
+                    raise ValueError("forceful_blow_refresh_failed")
+
+        resolution["brutal_strike"] = result_block
+        self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _apply_single_barbarian_brutal_strike_effect(
+        self,
+        *,
+        encounter_id: str,
+        actor: Any,
+        target: Any,
+        effect_name: str,
+    ) -> dict[str, Any]:
+        if effect_name == "forceful_blow":
+            push_result = resolve_linear_push(
+                encounter_id=encounter_id,
+                actor=actor,
+                target=target,
+                resolve_forced_movement=self.resolve_forced_movement,
+                steps=3,
+                reason="barbarian_brutal_strike_forceful_blow",
+            )
+            push_result["free_movement_after_forceful_blow"] = {
+                "feet": int(actor.speed.get("walk", 0) or 0) // 2,
+                "ignore_opportunity_attacks": True,
+            }
+            return push_result
+
+        if effect_name == "hamstring_blow":
+            self._remove_matching_barbarian_effects(
+                entity=target,
+                effect_type="barbarian_hamstring_blow",
+                source_entity_id=actor.entity_id,
+            )
+            effect = self._build_barbarian_turn_effect(
+                effect_type="barbarian_hamstring_blow",
+                name="Hamstring Blow",
+                actor=actor,
+                target=target,
+            )
+            effect["speed_penalty_feet"] = 15
+            target.turn_effects.append(effect)
+            self._apply_barbarian_speed_penalty_to_remaining(target=target, penalty_feet=15)
+            return {
+                "status": "applied",
+                "effect_id": effect["effect_id"],
+                "speed_penalty_feet": 15,
+                "expires_on": effect["expires_on"],
+            }
+
+        if effect_name == "staggering_blow":
+            self._remove_matching_barbarian_effects(
+                entity=target,
+                effect_type="barbarian_staggering_blow",
+                source_entity_id=actor.entity_id,
+            )
+            effect = self._build_barbarian_turn_effect(
+                effect_type="barbarian_staggering_blow",
+                name="Staggering Blow",
+                actor=actor,
+                target=target,
+            )
+            effect["next_save_disadvantage"] = True
+            effect["blocks_opportunity_attacks"] = True
+            target.turn_effects.append(effect)
+            return {
+                "status": "applied",
+                "effect_id": effect["effect_id"],
+                "next_save_disadvantage": True,
+                "blocks_opportunity_attacks": True,
+                "expires_on": effect["expires_on"],
+            }
+
+        if effect_name == "sundering_blow":
+            self._remove_matching_barbarian_effects(
+                entity=target,
+                effect_type="barbarian_sundering_blow",
+                source_entity_id=actor.entity_id,
+            )
+            effect = self._build_barbarian_turn_effect(
+                effect_type="barbarian_sundering_blow",
+                name="Sundering Blow",
+                actor=actor,
+                target=target,
+            )
+            effect["next_attack_bonus"] = 5
+            target.turn_effects.append(effect)
+            return {
+                "status": "applied",
+                "effect_id": effect["effect_id"],
+                "next_attack_bonus": 5,
+                "expires_on": effect["expires_on"],
+            }
+
+        raise ValueError("unsupported_brutal_strike_effect")
+
+    def _build_barbarian_turn_effect(
+        self,
+        *,
+        effect_type: str,
+        name: str,
+        actor: Any,
+        target: Any,
+    ) -> dict[str, Any]:
+        return {
+            "effect_id": f"effect_{effect_type}_{uuid4().hex[:12]}",
+            "effect_type": effect_type,
+            "name": name,
+            "source_entity_id": actor.entity_id,
+            "source_name": getattr(actor, "name", actor.entity_id),
+            "target_entity_id": target.entity_id,
+            "expires_on": "start_of_source_turn",
+        }
+
+    def _remove_matching_barbarian_effects(
+        self,
+        *,
+        entity: Any,
+        effect_type: str,
+        source_entity_id: str,
+    ) -> None:
+        entity.turn_effects = [
+            effect
+            for effect in getattr(entity, "turn_effects", [])
+            if not (
+                isinstance(effect, dict)
+                and effect.get("effect_type") == effect_type
+                and effect.get("source_entity_id") == source_entity_id
+            )
+        ]
+
+    def _apply_barbarian_speed_penalty_to_remaining(self, *, target: Any, penalty_feet: int) -> None:
+        target.combat_flags = target.combat_flags if isinstance(target.combat_flags, dict) else {}
+        tracked = target.combat_flags.get("movement_spent_feet")
+        if isinstance(tracked, bool) or not isinstance(tracked, int):
+            target.combat_flags["movement_spent_feet"] = max(
+                0,
+                int(target.speed.get("walk", 0) or 0)
+                - int(target.speed.get("remaining", 0) or 0)
+                - get_weapon_mastery_speed_penalty(target),
+            )
+        target.speed["remaining"] = max(0, int(target.speed.get("remaining", 0) or 0) - penalty_feet)
 
     def _consume_monk_flurry_focus_if_needed(self, *, actor: Any, attack_mode: str) -> None:
         if attack_mode != "flurry_of_blows":

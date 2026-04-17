@@ -17,6 +17,74 @@ from test.test_start_turn import build_encounter
 
 
 class EndTurnTests(unittest.TestCase):
+    def test_execute_keeps_rage_active_when_extended_by_attack_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_eric_001"]
+            actor.class_features = {
+                "barbarian": {
+                    "level": 5,
+                    "rage": {
+                        "active": True,
+                        "remaining": 2,
+                        "ends_at_turn_end_of": actor.entity_id,
+                    },
+                }
+            }
+            actor.combat_flags["rage_extended_by_attack_this_turn"] = True
+            repo.save(encounter)
+
+            updated = EndTurn(repo).execute("enc_start_turn_test")
+
+            self.assertTrue(updated.entities["ent_ally_eric_001"].class_features["barbarian"]["rage"]["active"])
+            repo.close()
+
+    def test_execute_ends_rage_when_no_extension_condition_was_met(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_eric_001"]
+            actor.class_features = {
+                "barbarian": {
+                    "level": 5,
+                    "rage": {
+                        "active": True,
+                        "remaining": 2,
+                        "ends_at_turn_end_of": actor.entity_id,
+                    },
+                }
+            }
+            repo.save(encounter)
+
+            updated = EndTurn(repo).execute("enc_start_turn_test")
+
+            self.assertFalse(updated.entities["ent_ally_eric_001"].class_features["barbarian"]["rage"]["active"])
+            repo.close()
+
+    def test_execute_persistent_rage_skips_extension_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_eric_001"]
+            actor.class_features = {
+                "barbarian": {
+                    "level": 15,
+                    "rage": {
+                        "active": True,
+                        "remaining": 0,
+                        "ends_at_turn_end_of": actor.entity_id,
+                        "persistent_rage": True,
+                    },
+                }
+            }
+            repo.save(encounter)
+
+            updated = EndTurn(repo).execute("enc_start_turn_test")
+
+            self.assertTrue(updated.entities["ent_ally_eric_001"].class_features["barbarian"]["rage"]["active"])
+            repo.close()
+
     def test_execute_keeps_current_entity_state_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

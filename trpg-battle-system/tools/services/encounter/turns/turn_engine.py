@@ -106,6 +106,8 @@ def end_turn(encounter: Encounter) -> Encounter:
         raise ValueError("cannot end turn without current_entity_id")
     if encounter.current_entity_id not in encounter.entities:
         raise ValueError("current_entity_id must exist in entities")
+    actor = encounter.entities[encounter.current_entity_id]
+    _resolve_barbarian_rage_at_turn_end(actor)
     return encounter
 
 
@@ -126,3 +128,76 @@ def advance_turn(encounter: Encounter) -> Encounter:
     else:
         encounter.current_entity_id = encounter.turn_order[next_index]
     return encounter
+
+
+def _resolve_barbarian_rage_at_turn_end(entity: EncounterEntity) -> None:
+    class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+    if "barbarian" not in class_features:
+        return
+
+    barbarian = ensure_barbarian_runtime(entity)
+    rage = barbarian.get("rage")
+    if not isinstance(rage, dict) or not bool(rage.get("active")):
+        _clear_barbarian_rage_extension_flags(entity)
+        return
+
+    if _is_wearing_heavy_armor(entity):
+        _end_rage(rage)
+        _clear_barbarian_rage_extension_flags(entity)
+        return
+
+    conditions = {str(condition).strip().lower() for condition in entity.conditions if isinstance(condition, str)}
+    combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
+    is_unconscious = "unconscious" in conditions
+    is_incapacitated = "incapacitated" in conditions or is_unconscious
+    is_dead = bool(combat_flags.get("is_dead"))
+    is_persistent = bool(rage.get("persistent_rage"))
+
+    if is_persistent:
+        if is_unconscious or is_dead:
+            _end_rage(rage)
+        else:
+            rage["ends_at_turn_end_of"] = entity.entity_id
+        _clear_barbarian_rage_extension_flags(entity)
+        return
+
+    if is_incapacitated or is_dead:
+        _end_rage(rage)
+        _clear_barbarian_rage_extension_flags(entity)
+        return
+
+    if _has_rage_extension_this_turn(combat_flags):
+        rage["ends_at_turn_end_of"] = entity.entity_id
+    else:
+        _end_rage(rage)
+
+    _clear_barbarian_rage_extension_flags(entity)
+
+
+def _is_wearing_heavy_armor(entity: EncounterEntity) -> bool:
+    armor = entity.equipped_armor
+    if not isinstance(armor, dict):
+        return False
+    category = armor.get("category")
+    return isinstance(category, str) and category.strip().lower() == "heavy"
+
+
+def _has_rage_extension_this_turn(combat_flags: dict[str, object]) -> bool:
+    return bool(
+        combat_flags.get("rage_extended_by_attack_this_turn")
+        or combat_flags.get("rage_extended_by_forced_save_this_turn")
+        or combat_flags.get("rage_extended_by_bonus_action_this_turn")
+    )
+
+
+def _clear_barbarian_rage_extension_flags(entity: EncounterEntity) -> None:
+    combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
+    combat_flags.pop("rage_extended_by_attack_this_turn", None)
+    combat_flags.pop("rage_extended_by_forced_save_this_turn", None)
+    combat_flags.pop("rage_extended_by_bonus_action_this_turn", None)
+    entity.combat_flags = combat_flags
+
+
+def _end_rage(rage: dict[str, object]) -> None:
+    rage["active"] = False
+    rage["ends_at_turn_end_of"] = None

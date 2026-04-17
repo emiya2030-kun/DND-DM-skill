@@ -200,6 +200,98 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_ally_sabur_001"].class_features["fighter"]["second_wind"]["remaining_uses"], 2)
             repo.close()
 
+    def test_execute_primal_knowledge_allows_strength_for_stealth_while_raging(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.skill_modifiers = {}
+            actor.ability_mods["str"] = 4
+            actor.ability_mods["dex"] = 1
+            actor.source_ref["skill_proficiencies"] = ["stealth"]
+            actor.class_features["barbarian"] = {
+                "level": 3,
+                "rage": {"active": True},
+            }
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="skill",
+                check="stealth",
+                dc=14,
+                class_feature_options={"primal_knowledge": True},
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_rolls=[6, 12],
+            )
+
+            self.assertEqual(result.metadata["vantage"], "advantage")
+            self.assertEqual(result.metadata["chosen_roll"], 12)
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["ability"], "str")
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["ability_modifier"], 4)
+            repo.close()
+
+    def test_execute_rage_grants_advantage_on_strength_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_sabur_001"].class_features["barbarian"] = {
+                "level": 1,
+                "rage": {"active": True},
+            }
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="ability",
+                check="str",
+                dc=14,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_rolls=[4, 16],
+            )
+
+            self.assertEqual(result.metadata["vantage"], "advantage")
+            self.assertEqual(result.metadata["chosen_roll"], 16)
+            self.assertEqual(result.final_total, 17)
+            repo.close()
+
+    def test_execute_indomitable_might_raises_strength_check_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.ability_scores = {"str": 20, "dex": 16, "wis": 14}
+            actor.ability_mods["str"] = 5
+            actor.class_features["barbarian"] = {
+                "level": 18,
+                "indomitable_might": {"enabled": True},
+            }
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="ability",
+                check="str",
+                dc=21,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_roll=2,
+            )
+
+            self.assertEqual(result.final_total, 20)
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

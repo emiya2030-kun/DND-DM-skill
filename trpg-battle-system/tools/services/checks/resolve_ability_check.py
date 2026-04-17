@@ -8,6 +8,7 @@ from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.check_catalog import SKILL_TO_ABILITY
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
     ensure_rogue_runtime,
     get_fighter_runtime,
@@ -39,9 +40,23 @@ class ResolveAbilityCheck:
         check_type = str(roll_request.context["check"])
         requested_check_type = str(roll_request.context["check_type"])
         requested_vantage = self._normalize_vantage(roll_request.context.get("vantage", "normal"))
+        class_feature_options = self._normalize_class_feature_options(
+            roll_request.context.get("class_feature_options"),
+        )
+        resolved_ability = self._resolve_check_ability(
+            actor=actor,
+            check_type=requested_check_type,
+            check=check_type,
+            class_feature_options=class_feature_options,
+        )
+        final_vantage = self._resolve_vantage(
+            actor=actor,
+            requested_vantage=requested_vantage,
+            resolved_ability=resolved_ability,
+        )
         normalized_rolls = self._normalize_base_rolls(base_roll, base_rolls)
-        self._ensure_roll_count_for_vantage(normalized_rolls, requested_vantage)
-        chosen_roll = self._choose_roll(normalized_rolls, requested_vantage)
+        self._ensure_roll_count_for_vantage(normalized_rolls, final_vantage)
+        chosen_roll = self._choose_roll(normalized_rolls, final_vantage)
         chosen_roll = self._apply_reliable_talent(
             actor=actor,
             check_type=requested_check_type,
@@ -55,8 +70,14 @@ class ResolveAbilityCheck:
             check_type=requested_check_type,
             check=check_type,
             additional_bonus=additional_bonus,
+            resolved_ability=resolved_ability,
         )
         final_total = chosen_roll + check_bonus - exhaustion_penalty
+        final_total = self._apply_indomitable_might(
+            actor=actor,
+            resolved_ability=resolved_ability,
+            current_total=final_total,
+        )
         dc = roll_request.context.get("dc")
         if not isinstance(dc, int):
             raise ValueError("roll_request.context.dc must be an integer")
@@ -66,7 +87,8 @@ class ResolveAbilityCheck:
             {
                 "check_type": requested_check_type,
                 "check": check_type,
-                "vantage": requested_vantage,
+                "vantage": final_vantage,
+                "requested_vantage": requested_vantage,
                 "chosen_roll": chosen_roll,
                 "check_bonus": check_bonus,
                 "check_bonus_breakdown": breakdown,
@@ -158,35 +180,37 @@ class ResolveAbilityCheck:
         check_type: str,
         check: str,
         additional_bonus: int,
+        resolved_ability: str,
     ) -> tuple[int, dict[str, Any]]:
         if not isinstance(additional_bonus, int):
             raise ValueError("additional_bonus must be an integer")
 
         if check_type == "ability":
-            ability_modifier = int(actor.ability_mods.get(check, 0))
+            ability_modifier = int(actor.ability_mods.get(resolved_ability, 0))
             return ability_modifier + additional_bonus, {
                 "source": "ability_modifier",
-                "ability": check,
+                "ability": resolved_ability,
                 "ability_modifier": ability_modifier,
                 "additional_bonus": additional_bonus,
             }
 
-        if check in actor.skill_modifiers and isinstance(actor.skill_modifiers[check], int):
+        default_ability = SKILL_TO_ABILITY[check]
+        if resolved_ability == default_ability and check in actor.skill_modifiers and isinstance(actor.skill_modifiers[check], int):
             skill_modifier = int(actor.skill_modifiers[check])
             return skill_modifier + additional_bonus, {
                 "source": "skill_modifier",
+                "ability": resolved_ability,
                 "skill_modifier": skill_modifier,
                 "additional_bonus": additional_bonus,
             }
 
-        ability = SKILL_TO_ABILITY[check]
-        ability_modifier = int(actor.ability_mods.get(ability, 0))
+        ability_modifier = int(actor.ability_mods.get(resolved_ability, 0))
         is_proficient = check in resolve_entity_skill_proficiencies(actor)
         proficiency_multiplier = 2 if is_proficient and self._has_expertise(actor=actor, skill=check) else 1
         proficiency_bonus = int(actor.proficiency_bonus) * proficiency_multiplier if is_proficient else 0
         return ability_modifier + proficiency_bonus + additional_bonus, {
             "source": "ability_plus_proficiency",
-            "ability": ability,
+            "ability": resolved_ability,
             "ability_modifier": ability_modifier,
             "is_proficient": is_proficient,
             "proficiency_multiplier": proficiency_multiplier,
@@ -245,6 +269,83 @@ class ResolveAbilityCheck:
         if vantage not in {"normal", "advantage", "disadvantage"}:
             raise ValueError("roll_request.context.vantage must be 'normal', 'advantage', or 'disadvantage'")
         return str(vantage)
+
+    def _normalize_class_feature_options(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
+
+    def _resolve_check_ability(
+        self,
+        *,
+        actor: EncounterEntity,
+        check_type: str,
+        check: str,
+        class_feature_options: dict[str, Any],
+    ) -> str:
+        if check_type == "ability":
+            return check
+
+        resolved_ability = SKILL_TO_ABILITY[check]
+        if not bool(class_feature_options.get("primal_knowledge")):
+            return resolved_ability
+
+        barbarian = ensure_barbarian_runtime(actor)
+        primal_knowledge = barbarian.get("primal_knowledge")
+        rage = barbarian.get("rage")
+        if not isinstance(primal_knowledge, dict) or not bool(primal_knowledge.get("enabled")):
+            return resolved_ability
+        if not isinstance(rage, dict) or not bool(rage.get("active")):
+            return resolved_ability
+
+        if check in {"acrobatics", "intimidation", "perception", "stealth", "survival"}:
+            return "str"
+        return resolved_ability
+
+    def _resolve_vantage(
+        self,
+        *,
+        actor: EncounterEntity,
+        requested_vantage: str,
+        resolved_ability: str,
+    ) -> str:
+        advantage_sources: list[str] = []
+        disadvantage_sources: list[str] = []
+        if requested_vantage == "advantage":
+            advantage_sources.append("requested_advantage")
+        elif requested_vantage == "disadvantage":
+            disadvantage_sources.append("requested_disadvantage")
+
+        barbarian = ensure_barbarian_runtime(actor)
+        rage = barbarian.get("rage")
+        if resolved_ability == "str" and isinstance(rage, dict) and bool(rage.get("active")):
+            advantage_sources.append("barbarian_rage_strength_advantage")
+
+        if advantage_sources and disadvantage_sources:
+            return "normal"
+        if advantage_sources:
+            return "advantage"
+        if disadvantage_sources:
+            return "disadvantage"
+        return "normal"
+
+    def _apply_indomitable_might(
+        self,
+        *,
+        actor: EncounterEntity,
+        resolved_ability: str,
+        current_total: int,
+    ) -> int:
+        if resolved_ability != "str":
+            return current_total
+        barbarian = ensure_barbarian_runtime(actor)
+        indomitable_might = barbarian.get("indomitable_might")
+        if not isinstance(indomitable_might, dict) or not bool(indomitable_might.get("enabled")):
+            return current_total
+        strength_score = actor.ability_scores.get("str")
+        if isinstance(strength_score, int) and not isinstance(strength_score, bool):
+            return max(current_total, strength_score)
+        return current_total
 
     def _normalize_base_rolls(self, base_roll: int | None, base_rolls: list[int] | None) -> list[int]:
         raw_rolls: list[int]

@@ -123,6 +123,23 @@ class AbilityCheckRequestTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_includes_class_feature_options_in_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_encounter())
+
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="skill",
+                check="隐匿",
+                dc=15,
+                class_feature_options={"primal_knowledge": True},
+            )
+
+            self.assertEqual(request.context["class_feature_options"], {"primal_knowledge": True})
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

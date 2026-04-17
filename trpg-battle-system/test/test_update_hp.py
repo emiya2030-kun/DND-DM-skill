@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -43,6 +44,33 @@ def build_player_target() -> EncounterEntity:
         speed={"walk": 30, "remaining": 30},
         initiative=15,
         combat_flags={"is_active": True, "is_defeated": False},
+    )
+
+
+def build_barbarian_player_target() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_barbarian_001",
+        name="Barbarian",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 8, "max": 30, "temp": 0},
+        ac=15,
+        speed={"walk": 30, "remaining": 30},
+        initiative=15,
+        ability_scores={"str": 18, "dex": 12, "con": 16, "int": 8, "wis": 10, "cha": 10},
+        ability_mods={"str": 4, "dex": 1, "con": 3, "int": -1, "wis": 0, "cha": 0},
+        proficiency_bonus=4,
+        save_proficiencies=["con"],
+        combat_flags={"is_active": True, "is_defeated": False},
+        class_features={
+            "barbarian": {
+                "level": 11,
+                "rage": {"active": True, "remaining": 2, "max": 4},
+                "relentless_rage": {"enabled": True, "current_dc": 10},
+            }
+        },
     )
 
 
@@ -160,6 +188,52 @@ def build_mark_spell_instance(*, spell_id: str, caster_entity_id: str, target_id
 
 
 class UpdateHpTests(unittest.TestCase):
+    def test_execute_relentless_rage_success_sets_hp_to_double_barbarian_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            target = build_barbarian_player_target()
+            encounter = Encounter(
+                encounter_id="enc_hp_test",
+                name="HP Test Encounter",
+                status="active",
+                round=1,
+                current_entity_id=target.entity_id,
+                turn_order=[target.entity_id],
+                entities={target.entity_id: target},
+                map=EncounterMap(
+                    map_id="map_hp_test",
+                    name="HP Test Map",
+                    description="A small combat room.",
+                    width=8,
+                    height=8,
+                ),
+            )
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(encounter_repo, AppendEvent(event_repo))
+            with patch("random.randint", return_value=10):
+                result = service.execute(
+                    encounter_id="enc_hp_test",
+                    target_id=target.entity_id,
+                    hp_change=10,
+                    reason="Relentless Rage test",
+                    damage_type="slashing",
+                )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            updated_target = updated.entities[target.entity_id]
+            relentless = result["class_feature_resolution"]["relentless_rage"]
+            self.assertEqual(updated_target.hp["current"], 22)
+            self.assertTrue(relentless["triggered"])
+            self.assertTrue(relentless["success"])
+            self.assertEqual(relentless["save_dc"], 10)
+            self.assertEqual(relentless["save_total"], 17)
+            self.assertEqual(updated_target.class_features["barbarian"]["relentless_rage"]["current_dc"], 15)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_marks_hex_instance_retargetable_when_target_drops_to_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

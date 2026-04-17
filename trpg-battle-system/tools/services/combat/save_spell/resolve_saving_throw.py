@@ -13,6 +13,7 @@ from tools.services.combat.rules.conditions import (
     DEX_SAVE_DISADVANTAGE_CONDITIONS,
 )
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import resolve_entity_save_proficiencies
 
 
@@ -60,6 +61,7 @@ class ResolveSavingThrow:
             requested_vantage,
             normalized_save_ability,
             runtime,
+            target,
         )
         normalized_rolls = self._normalize_base_rolls(base_roll, base_rolls)
         self._ensure_roll_count_for_vantage(normalized_rolls, final_vantage)
@@ -77,6 +79,11 @@ class ResolveSavingThrow:
             final_total = 0
         else:
             final_total = chosen_roll + save_bonus - exhaustion_penalty
+            final_total = self._apply_indomitable_might(
+                target=target,
+                save_ability=normalized_save_ability,
+                current_total=final_total,
+            )
 
         result_metadata = dict(metadata or {})
         result_metadata.update(
@@ -137,6 +144,7 @@ class ResolveSavingThrow:
         requested_vantage: str,
         save_ability: str,
         runtime: ConditionRuntime,
+        target: EncounterEntity,
     ) -> tuple[str, list[str]]:
         advantage_sources: list[str] = []
         disadvantage_sources: list[str] = []
@@ -152,6 +160,8 @@ class ResolveSavingThrow:
                 if runtime.has(condition):
                     disadvantage_sources.append(f"condition_{condition}")
                     condition_disadvantages.append(condition)
+        if self._has_barbarian_rage_strength_advantage(target=target, save_ability=save_ability):
+            advantage_sources.append("barbarian_rage_strength_save_advantage")
 
         if advantage_sources and disadvantage_sources:
             final_vantage = "normal"
@@ -163,6 +173,31 @@ class ResolveSavingThrow:
             final_vantage = "normal"
 
         return final_vantage, condition_disadvantages
+
+    def _has_barbarian_rage_strength_advantage(self, *, target: EncounterEntity, save_ability: str) -> bool:
+        if save_ability != "str":
+            return False
+        barbarian = ensure_barbarian_runtime(target)
+        rage = barbarian.get("rage")
+        return isinstance(rage, dict) and bool(rage.get("active"))
+
+    def _apply_indomitable_might(
+        self,
+        *,
+        target: EncounterEntity,
+        save_ability: str,
+        current_total: int,
+    ) -> int:
+        if save_ability != "str":
+            return current_total
+        barbarian = ensure_barbarian_runtime(target)
+        indomitable_might = barbarian.get("indomitable_might")
+        if not isinstance(indomitable_might, dict) or not bool(indomitable_might.get("enabled")):
+            return current_total
+        strength_score = target.ability_scores.get("str")
+        if isinstance(strength_score, int) and not isinstance(strength_score, bool):
+            return max(current_total, strength_score)
+        return current_total
 
     def _normalize_vantage(self, vantage: Any) -> str:
         if vantage not in {"normal", "advantage", "disadvantage"}:

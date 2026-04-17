@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 from tools.models.encounter import Encounter
@@ -23,6 +24,7 @@ class AbilityCheckRequest:
         dc: int,
         vantage: str = "normal",
         reason: str | None = None,
+        class_feature_options: dict[str, Any] | None = None,
     ) -> RollRequest:
         encounter = self._get_encounter_or_raise(encounter_id)
         actor = self._get_entity_or_raise(encounter, actor_id)
@@ -46,6 +48,7 @@ class AbilityCheckRequest:
                 "check": normalized_check,
                 "dc": dc,
                 "vantage": vantage,
+                "class_feature_options": dict(class_feature_options or {}),
             },
         )
 

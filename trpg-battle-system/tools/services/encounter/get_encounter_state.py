@@ -12,6 +12,7 @@ from tools.services.combat.attack.weapon_mastery_effects import (
     get_weapon_mastery_speed_penalty,
 )
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
+from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import ensure_rogue_runtime
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
@@ -41,7 +42,7 @@ MARTIAL_CLASS_SUMMARIES = {
         "available_features": ["divine_smite", "lay_on_hands"],
     },
     "barbarian": {
-        "fields": ["level", "rage"],
+        "fields": ["level", "rage", "rage_damage_bonus", "reckless_attack", "brutal_strike", "relentless_rage"],
         "available_features": ["rage", "reckless_attack", "danger_sense"],
     },
     "ranger": {
@@ -851,6 +852,8 @@ class GetEncounterState:
                 continue
             if class_id == "rogue":
                 bucket = ensure_rogue_runtime(entity)
+            elif class_id == "barbarian":
+                bucket = ensure_barbarian_runtime(entity)
             projected[class_id] = {
                 field: bucket[field]
                 for field in summary["fields"]
@@ -862,7 +865,18 @@ class GetEncounterState:
                     "bonus_disengage": True,
                     "bonus_hide": True,
                 }
-            projected[class_id]["available_features"] = list(summary["available_features"])
+            available_features = list(summary["available_features"])
+            if class_id == "barbarian":
+                level = int(bucket.get("level", 0) or 0)
+                if level >= 9:
+                    available_features.append("brutal_strike")
+                if level >= 11:
+                    available_features.append("relentless_rage")
+                if level >= 15:
+                    available_features.append("persistent_rage")
+                if level >= 18:
+                    available_features.append("indomitable_might")
+            projected[class_id]["available_features"] = available_features
 
         fighter = class_features.get("fighter")
         if isinstance(fighter, dict):

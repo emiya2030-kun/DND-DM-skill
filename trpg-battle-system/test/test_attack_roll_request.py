@@ -25,6 +25,7 @@ def build_actor(
     conditions: list[str] | None = None,
     action_economy: dict[str, bool] | None = None,
     ability_scores: dict[str, int] | None = None,
+    class_features: dict | None = None,
 ) -> EncounterEntity:
     """构造当前行动的攻击者。"""
     return EncounterEntity(
@@ -43,6 +44,7 @@ def build_actor(
         proficiency_bonus=2,
         conditions=conditions or [],
         action_economy=action_economy or {},
+        class_features=class_features or {},
         weapons=[
             {
                 "weapon_id": "rapier",
@@ -1865,6 +1867,157 @@ class AttackRollRequestTests(unittest.TestCase):
                     weapon_id="unarmed_strike",
                     attack_mode="flurry_of_blows",
                 )
+            repo.close()
+
+    def test_execute_applies_reckless_attack_advantage_for_strength_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                ability_scores={"str": 16, "dex": 12, "con": 14, "int": 10, "wis": 10, "cha": 8},
+                class_features={
+                    "barbarian": {
+                        "level": 2,
+                        "rage": {"max": 2, "remaining": 2, "active": False},
+                    }
+                },
+            )
+            actor.ability_mods = {"str": 3, "dex": 1, "con": 2, "int": 0, "wis": 0, "cha": -1}
+            actor.weapons = [
+                {
+                    "weapon_id": "greataxe",
+                    "name": "Greataxe",
+                    "damage": [{"formula": "1d12+3", "type": "slashing"}],
+                    "properties": ["heavy", "two_handed"],
+                    "range": {"normal": 5, "long": 5},
+                    "kind": "melee",
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="greataxe",
+                class_feature_options={"reckless_attack": True},
+            )
+
+            self.assertEqual(request.context["modifier"], "str")
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("barbarian_reckless_attack", request.context["vantage_sources"]["advantage"])
+            self.assertTrue(request.context["class_feature_options"]["reckless_attack"])
+            updated = repo.get("enc_attack_request_test")
+            self.assertIsNotNone(updated)
+            barbarian = updated.entities[actor.entity_id].class_features["barbarian"]
+            self.assertTrue(barbarian["reckless_attack"]["declared_this_turn"])
+            repo.close()
+
+    def test_execute_rejects_reckless_attack_after_it_has_already_been_declared_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                ability_scores={"str": 16, "dex": 12, "con": 14, "int": 10, "wis": 10, "cha": 8},
+                class_features={
+                    "barbarian": {
+                        "level": 2,
+                        "rage": {"max": 2, "remaining": 2, "active": False},
+                        "reckless_attack": {"declared_this_turn": True},
+                    }
+                },
+            )
+            actor.ability_mods = {"str": 3, "dex": 1, "con": 2, "int": 0, "wis": 0, "cha": -1}
+            actor.weapons = [
+                {
+                    "weapon_id": "greataxe",
+                    "name": "Greataxe",
+                    "damage": [{"formula": "1d12+3", "type": "slashing"}],
+                    "properties": ["heavy", "two_handed"],
+                    "range": {"normal": 5, "long": 5},
+                    "kind": "melee",
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "reckless_attack_already_declared"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="greataxe",
+                    class_feature_options={"reckless_attack": True},
+                )
+            repo.close()
+
+    def test_execute_rejects_brutal_strike_without_reckless_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                ability_scores={"str": 18, "dex": 12, "con": 14, "int": 10, "wis": 10, "cha": 8},
+                class_features={
+                    "barbarian": {
+                        "level": 9,
+                        "rage": {"max": 4, "remaining": 4, "active": True},
+                    }
+                },
+            )
+            actor.ability_mods = {"str": 4, "dex": 1, "con": 2, "int": 0, "wis": 0, "cha": -1}
+            actor.weapons = [
+                {
+                    "weapon_id": "greataxe",
+                    "name": "Greataxe",
+                    "damage": [{"formula": "1d12+4", "type": "slashing"}],
+                    "properties": ["heavy", "two_handed"],
+                    "range": {"normal": 5, "long": 5},
+                    "kind": "melee",
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "brutal_strike_requires_reckless_attack"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="greataxe",
+                    class_feature_options={"brutal_strike": {"effects": ["forceful_blow"]}},
+                )
+            repo.close()
+
+    def test_execute_accepts_brutal_strike_with_reckless_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                ability_scores={"str": 18, "dex": 12, "con": 14, "int": 10, "wis": 10, "cha": 8},
+                class_features={
+                    "barbarian": {
+                        "level": 17,
+                        "rage": {"max": 6, "remaining": 6, "active": True},
+                    }
+                },
+            )
+            actor.ability_mods = {"str": 4, "dex": 1, "con": 2, "int": 0, "wis": 0, "cha": -1}
+            actor.weapons = [
+                {
+                    "weapon_id": "greataxe",
+                    "name": "Greataxe",
+                    "damage": [{"formula": "1d12+4", "type": "slashing"}],
+                    "properties": ["heavy", "two_handed"],
+                    "range": {"normal": 5, "long": 5},
+                    "kind": "melee",
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="greataxe",
+                class_feature_options={
+                    "reckless_attack": True,
+                    "brutal_strike": {"effects": ["forceful_blow", "sundering_blow"]},
+                },
+            )
+
+            brutal = request.context["class_feature_options"]["brutal_strike"]
+            self.assertEqual([effect["effect"] for effect in brutal["effects"]], ["forceful_blow", "sundering_blow"])
+            self.assertEqual(request.context["vantage"], "normal")
             repo.close()
 
 
