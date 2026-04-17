@@ -1,28 +1,32 @@
-"""施法声明和法术相关 service。
+"""施法相关 service 顶层导出。
 
-当前这里先放两类法术运行时 service：
-
-1. `encounter_cast_spell.py`
-   - 校验当前行动者是否拥有该法术
-   - 根据施法等级扣法术位
-   - 记录 `spell_declared`
-
-2. `retarget_marked_spell.py`
-   - 把已经获得转移资格的单目标标记法术改挂到新目标
-   - 不重新施法，不再消耗法术位
-
-注意：
-
-- 这里不负责命中、豁免、伤害或 condition 的最终结算
-- 那些逻辑分别在 `combat/save_spell/` 和 `combat/shared/` 里
-
-这样分开以后：
-
-- `spells/` 更像“宣告使用某个法术”
-- `combat/save_spell/` 更像“这个法术如何进行规则结算”
+这里也改成按需加载，避免在只导入某个子模块时把完整施法链提前拉起，
+从而触发 `SavingThrowResult -> encounter.turns -> spells -> ExecuteSpell`
+这种包级循环引用。
 """
 
-from tools.services.spells.execute_spell import ExecuteSpell
-from tools.services.spells.spell_request import SpellRequest
+from __future__ import annotations
+
+from importlib import import_module
 
 __all__ = ["SpellRequest", "ExecuteSpell"]
+
+_LAZY_EXPORTS = {
+    "SpellRequest": ("tools.services.spells.spell_request", "SpellRequest"),
+    "ExecuteSpell": ("tools.services.spells.execute_spell", "ExecuteSpell"),
+}
+
+
+def __getattr__(name: str):
+    export = _LAZY_EXPORTS.get(name)
+    if export is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_path, attr_name = export
+    value = getattr(import_module(module_path), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals().keys()) | set(__all__))

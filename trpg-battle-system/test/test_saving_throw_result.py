@@ -456,6 +456,130 @@ class SavingThrowResultTests(unittest.TestCase):
             self.assertEqual(result["damage_resolution"]["total_damage"], 7)
             self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 11)
 
+    def test_execute_applies_evasion_on_successful_dex_half_damage_save(self) -> None:
+        """测试武僧 Evasion 会把敏捷成功半伤改成免伤。"""
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_iron_duster_001"]
+            target.class_features = {"monk": {"evasion": {"enabled": True}}}
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            result = service.execute(
+                encounter_id="enc_save_result_test",
+                roll_request=request,
+                roll_result=ResolveSavingThrow(encounter_repo).execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    base_roll=15,
+                ),
+                spell_definition=build_spell_definitions()["burning_hands"],
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+            )
+
+            updated = encounter_repo.get("enc_save_result_test")
+            self.assertIsNotNone(updated)
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["damage_resolution"]["total_damage"], 0)
+            self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 18)
+
+    def test_execute_applies_evasion_on_failed_dex_half_damage_save(self) -> None:
+        """测试武僧 Evasion 会把敏捷失败全伤改成半伤。"""
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_iron_duster_001"]
+            target.class_features = {"monk": {"evasion": {"enabled": True}}}
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            result = service.execute(
+                encounter_id="enc_save_result_test",
+                roll_request=request,
+                roll_result=ResolveSavingThrow(encounter_repo).execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    base_roll=6,
+                ),
+                spell_definition=build_spell_definitions()["burning_hands"],
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+            )
+
+            updated = encounter_repo.get("enc_save_result_test")
+            self.assertIsNotNone(updated)
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["damage_resolution"]["total_damage"], 7)
+            self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 11)
+
+    def test_execute_does_not_apply_evasion_when_target_is_incapacitated(self) -> None:
+        """测试失能状态下不能从 Evasion 获益。"""
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_iron_duster_001"]
+            target.class_features = {"monk": {"evasion": {"enabled": True}}}
+            target.conditions = ["incapacitated"]
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            result = service.execute(
+                encounter_id="enc_save_result_test",
+                roll_request=request,
+                roll_result=ResolveSavingThrow(encounter_repo).execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    base_roll=15,
+                ),
+                spell_definition=build_spell_definitions()["burning_hands"],
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+            )
+
+            updated = encounter_repo.get("enc_save_result_test")
+            self.assertIsNotNone(updated)
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["damage_resolution"]["total_damage"], 7)
+            self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 11)
+
     def test_execute_resolves_failed_outcome_condition_only(self) -> None:
         """测试失败 outcome 仅状态时不会出现伤害分解。"""
         with make_repositories() as (encounter_repo, event_repo):

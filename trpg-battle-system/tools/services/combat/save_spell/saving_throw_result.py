@@ -6,6 +6,7 @@ from typing import Any
 from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.combat.rules.conditions import INCAPACITATING_CONDITIONS
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.shared.update_conditions import UpdateConditions
 from tools.services.combat.shared.update_encounter_notes import UpdateEncounterNotes
@@ -139,6 +140,14 @@ class SavingThrowResult:
                 target=target,
             )
             if damage_resolution is not None:
+                damage_resolution = self._maybe_apply_evasion(
+                    target=target,
+                    roll_request=roll_request,
+                    success=success,
+                    spell_definition=spell_definition,
+                    outcome=outcome,
+                    damage_resolution=damage_resolution,
+                )
                 result["damage_resolution"] = damage_resolution
                 if self.update_hp is None:
                     raise ValueError("update_hp service is required when resolving spell outcome damage")
@@ -531,6 +540,80 @@ class SavingThrowResult:
 
         resolved["total_damage"] = total_damage
         return resolved
+
+    def _maybe_apply_evasion(
+        self,
+        *,
+        target: Any,
+        roll_request: RollRequest,
+        success: bool,
+        spell_definition: dict[str, Any],
+        outcome: dict[str, Any],
+        damage_resolution: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self._is_evasion_eligible(
+            target=target,
+            save_ability=roll_request.context.get("save_ability"),
+            spell_definition=spell_definition,
+            outcome=outcome,
+        ):
+            return damage_resolution
+
+        adjusted = {
+            **damage_resolution,
+            "parts": [dict(part) for part in damage_resolution.get("parts", [])],
+        }
+        for part in adjusted["parts"]:
+            adjusted_total = part.get("adjusted_total")
+            if not isinstance(adjusted_total, int):
+                raise ValueError("damage_resolution.parts[].adjusted_total must be an integer")
+            part["adjusted_total"] = 0 if success else adjusted_total // 2
+
+        adjusted["total_damage"] = sum(part["adjusted_total"] for part in adjusted["parts"])
+        adjusted["feature_adjustment"] = {
+            "feature_id": "monk.evasion",
+            "rule": "success_zero_failure_half",
+            "applied": True,
+        }
+        return adjusted
+
+    def _is_evasion_eligible(
+        self,
+        *,
+        target: Any,
+        save_ability: Any,
+        spell_definition: dict[str, Any],
+        outcome: dict[str, Any],
+    ) -> bool:
+        if str(save_ability).strip().lower() != "dex":
+            return False
+        monk_runtime = getattr(target, "class_features", {}).get("monk")
+        if not isinstance(monk_runtime, dict):
+            return False
+        evasion_runtime = monk_runtime.get("evasion")
+        if not isinstance(evasion_runtime, dict) or not bool(evasion_runtime.get("enabled")):
+            return False
+        if any(condition in INCAPACITATING_CONDITIONS for condition in getattr(target, "conditions", [])):
+            return False
+        if self._is_success_half_damage_spell(spell_definition=spell_definition):
+            return True
+        damage_multiplier = outcome.get("damage_multiplier")
+        return damage_multiplier == 0.5
+
+    def _is_success_half_damage_spell(self, *, spell_definition: dict[str, Any]) -> bool:
+        selected_outcome: dict[str, Any] | None = None
+        on_cast = spell_definition.get("on_cast")
+        if isinstance(on_cast, dict):
+            maybe_outcome = on_cast.get("on_successful_save")
+            if isinstance(maybe_outcome, dict):
+                selected_outcome = maybe_outcome
+        if selected_outcome is None:
+            maybe_outcome = spell_definition.get("successful_save_outcome")
+            if isinstance(maybe_outcome, dict):
+                selected_outcome = maybe_outcome
+        if selected_outcome is None:
+            return False
+        return selected_outcome.get("damage_multiplier") == 0.5
 
     def _maybe_apply_turn_effects(
         self,

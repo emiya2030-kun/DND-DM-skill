@@ -1218,6 +1218,87 @@ class ExecuteSpellTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_fireball_applies_evasion_to_monk_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_fireball_save_damage_spell_definition(spell_repo_path)
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_fireball_save_damage_encounter()
+            encounter.entities["ent_fireball_target_failed_001"].class_features = {
+                "monk": {"evasion": {"enabled": True}}
+            }
+            encounter.entities["ent_fireball_target_success_001"].class_features = {
+                "monk": {"evasion": {"enabled": True}}
+            }
+            encounter_repo.save(encounter)
+
+            ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_fireball_save_damage_test",
+                actor_id="ent_fireball_caster_001",
+                spell_id="fireball",
+                cast_level=4,
+                target_point={"x": 5, "y": 5},
+                declared_action_cost="action",
+                save_rolls=[
+                    {"target_id": "ent_fireball_target_failed_001", "base_roll": 10},
+                    {"target_id": "ent_fireball_target_success_001", "base_roll": 14},
+                ],
+                damage_rolls=[6, 5, 4, 3, 2, 1, 6, 5],
+            )
+
+            updated = encounter_repo.get("enc_execute_fireball_save_damage_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_fireball_target_failed_001"].hp["current"], 24)
+            self.assertEqual(updated.entities["ent_fireball_target_success_001"].hp["current"], 40)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_fireball_does_not_apply_evasion_when_monk_is_incapacitated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_fireball_save_damage_spell_definition(spell_repo_path)
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_fireball_save_damage_encounter()
+            encounter.entities["ent_fireball_target_success_001"].class_features = {
+                "monk": {"evasion": {"enabled": True}}
+            }
+            encounter.entities["ent_fireball_target_success_001"].conditions = ["incapacitated"]
+            encounter_repo.save(encounter)
+
+            ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_fireball_save_damage_test",
+                actor_id="ent_fireball_caster_001",
+                spell_id="fireball",
+                cast_level=4,
+                target_point={"x": 5, "y": 5},
+                declared_action_cost="action",
+                save_rolls=[
+                    {"target_id": "ent_fireball_target_failed_001", "base_roll": 10},
+                    {"target_id": "ent_fireball_target_success_001", "base_roll": 14},
+                ],
+                damage_rolls=[6, 5, 4, 3, 2, 1, 6, 5],
+            )
+
+            updated = encounter_repo.get("enc_execute_fireball_save_damage_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_fireball_target_success_001"].hp["current"], 24)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_hold_person_applies_paralyzed_and_spell_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
