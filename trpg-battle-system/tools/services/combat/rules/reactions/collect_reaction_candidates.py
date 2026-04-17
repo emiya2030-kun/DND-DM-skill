@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 import math
 
 from tools.models import Encounter
-from tools.services.class_features.shared import get_class_runtime, get_fighter_runtime, get_monk_runtime
+from tools.services.class_features.shared import get_class_runtime, get_fighter_runtime, get_monk_runtime, has_fighting_style
 from tools.services.encounter.movement_rules import get_center_position
 
 if TYPE_CHECKING:
@@ -66,6 +66,36 @@ class CollectReactionCandidates:
                             "reaction_definition": definition,
                         }
                     )
+            source = self._resolve_attack_source(encounter, trigger_event)
+            for entity in encounter.entities.values():
+                if entity.entity_id == target.entity_id:
+                    continue
+                if source is not None and entity.entity_id == source.entity_id:
+                    continue
+                for definition in definitions:
+                    reaction_type = definition.get("reaction_type")
+                    if reaction_type == "interception" and self._eligible_for_interception(
+                        entity=entity,
+                        target=target,
+                        source=source,
+                    ):
+                        candidates.append(
+                            {
+                                "actor_entity_id": entity.entity_id,
+                                "reaction_definition": definition,
+                            }
+                        )
+                    elif reaction_type == "protection" and self._eligible_for_protection(
+                        entity=entity,
+                        target=target,
+                        source=source,
+                    ):
+                        candidates.append(
+                            {
+                                "actor_entity_id": entity.entity_id,
+                                "reaction_definition": definition,
+                            }
+                        )
             return candidates
 
         if trigger_type == "leave_reach":
@@ -214,6 +244,32 @@ class CollectReactionCandidates:
         host_snapshot = trigger_event.get("host_action_snapshot")
         return isinstance(host_snapshot, dict) and isinstance(host_snapshot.get("actor_id"), str)
 
+    def _eligible_for_interception(self, *, entity: Any, target: Any, source: Any) -> bool:
+        if source is None:
+            return False
+        if not self._reaction_available(entity):
+            return False
+        if entity.side != target.side or entity.side == source.side:
+            return False
+        if not self._within_five_feet(entity, target):
+            return False
+        if not has_fighting_style(entity, "interception"):
+            return False
+        return self._has_interception_equipment(entity)
+
+    def _eligible_for_protection(self, *, entity: Any, target: Any, source: Any) -> bool:
+        if source is None:
+            return False
+        if not self._reaction_available(entity):
+            return False
+        if entity.side != target.side or entity.side == source.side:
+            return False
+        if not self._within_five_feet(entity, target):
+            return False
+        if not has_fighting_style(entity, "protection"):
+            return False
+        return isinstance(getattr(entity, "equipped_shield", None), dict)
+
     def _eligible_for_indomitable(self, entity: Any) -> bool:
         class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
         fighter = class_features.get("fighter")
@@ -300,6 +356,32 @@ class CollectReactionCandidates:
         except (KeyError, TypeError):
             return False
         return distance <= 60
+
+    def _within_five_feet(self, entity: Any, target: Any) -> bool:
+        try:
+            return self._distance_feet(entity, target) <= 5
+        except (KeyError, TypeError):
+            return False
+
+    def _has_interception_equipment(self, entity: Any) -> bool:
+        if isinstance(getattr(entity, "equipped_shield", None), dict):
+            return True
+        for weapon in getattr(entity, "weapons", []) or []:
+            if not isinstance(weapon, dict):
+                continue
+            category = str(weapon.get("category") or "").strip().lower()
+            if category in {"simple", "martial"}:
+                return True
+        return False
+
+    def _resolve_attack_source(self, encounter: Encounter, trigger_event: dict[str, Any]) -> Any:
+        host_snapshot = trigger_event.get("host_action_snapshot")
+        if not isinstance(host_snapshot, dict):
+            return None
+        actor_id = host_snapshot.get("actor_id")
+        if not isinstance(actor_id, str):
+            return None
+        return encounter.entities.get(actor_id)
 
     def _distance_feet(self, source: Any, target: Any) -> int:
         source_center = get_center_position(source)

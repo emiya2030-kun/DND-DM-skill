@@ -588,6 +588,24 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertEqual(request.context["attack_bonus_breakdown"]["fighting_style_bonus"], 2)
             repo.close()
 
+    def test_execute_archery_style_adds_two_to_ranged_attack_bonus_for_paladin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"paladin": {"level": 2, "fighting_style": {"style_id": "archery"}}}
+            target = build_target(position=(6, 2))
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="shortbow",
+            )
+
+            self.assertEqual(request.context["attack_bonus"], 7)
+            self.assertEqual(request.context["attack_bonus_breakdown"]["fighting_style_bonus"], 2)
+            repo.close()
+
     def test_execute_non_fighter_without_explicit_proficiency_keeps_legacy_default_proficiency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -1927,6 +1945,33 @@ class AttackRollRequestTests(unittest.TestCase):
         weapon = WeaponProfileResolver().resolve(actor, "shortsword")
 
         self.assertEqual(weapon["damage"][0]["formula"], "1d10+3")
+
+    def test_resolve_unarmed_fighting_uses_d8_with_both_hands_free(self) -> None:
+        actor = build_actor(class_features={"fighter": {"level": 1, "fighting_style": {"style_id": "unarmed_fighting"}}})
+        actor.weapons = []
+
+        weapon = WeaponProfileResolver().resolve(actor, "unarmed_strike")
+
+        self.assertEqual(weapon["damage"][0]["formula"], "1d8+1")
+
+    def test_resolve_unarmed_fighting_uses_d6_when_other_hand_is_occupied(self) -> None:
+        actor = build_actor(class_features={"fighter": {"level": 1, "fighting_style": {"style_id": "unarmed_fighting"}}})
+        actor.weapons = [
+            {
+                "weapon_id": "club",
+                "name": "Club",
+                "category": "simple",
+                "kind": "melee",
+                "damage": [{"formula": "1d4+1", "type": "bludgeoning"}],
+                "properties": ["light"],
+                "range": {"normal": 5, "long": 5},
+                "slot": "main_hand",
+            }
+        ]
+
+        weapon = WeaponProfileResolver().resolve(actor, "unarmed_strike")
+
+        self.assertEqual(weapon["damage"][0]["formula"], "1d6+1")
 
     def test_execute_rejects_flurry_of_blows_when_no_focus_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

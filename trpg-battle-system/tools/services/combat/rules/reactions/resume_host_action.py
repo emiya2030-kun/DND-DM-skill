@@ -43,6 +43,7 @@ class ResumeHostAction:
             raise ValueError("host_action_snapshot_missing")
 
         if host_action_type == "attack":
+            force_replay_attack_roll = bool(snapshot.get("force_replay_attack_roll"))
             return {
                 "status": "resumed",
                 "encounter_id": encounter_id,
@@ -51,8 +52,8 @@ class ResumeHostAction:
                     actor_id=snapshot.get("actor_id"),
                     target_id=snapshot.get("target_id"),
                     weapon_id=snapshot.get("weapon_id"),
-                    final_total=snapshot.get("final_total"),
-                    dice_rolls=snapshot.get("dice_rolls"),
+                    final_total=None if force_replay_attack_roll else snapshot.get("final_total"),
+                    dice_rolls=None if force_replay_attack_roll else snapshot.get("dice_rolls"),
                     damage_rolls=snapshot.get("damage_rolls"),
                     vantage=snapshot.get("vantage", "normal") or "normal",
                     description=snapshot.get("description"),
@@ -61,6 +62,7 @@ class ResumeHostAction:
                     allow_out_of_turn_actor=bool(snapshot.get("allow_out_of_turn_actor", False)),
                     consume_action=bool(snapshot.get("consume_action", True)),
                     consume_reaction=bool(snapshot.get("consume_reaction", False)),
+                    pending_flat_damage_reduction=snapshot.get("pending_flat_damage_reduction"),
                     pending_damage_multiplier=snapshot.get("pending_damage_multiplier"),
                     host_action_id=snapshot.get("attack_id"),
                     skip_reaction_window=True,

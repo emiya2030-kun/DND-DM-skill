@@ -9,7 +9,9 @@ from tools.services.combat.rules.reactions.close_reaction_window import CloseRea
 from tools.services.combat.rules.reactions.definitions.counterspell import ResolveCounterspellReaction
 from tools.services.combat.rules.reactions.definitions.deflect_attacks import ResolveDeflectAttacksReaction
 from tools.services.combat.rules.reactions.definitions.indomitable import ResolveIndomitableReaction
+from tools.services.combat.rules.reactions.definitions.interception import ResolveInterceptionReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
+from tools.services.combat.rules.reactions.definitions.protection import ResolveProtectionReaction
 from tools.services.combat.rules.reactions.definitions.shield import ResolveShieldReaction
 from tools.services.combat.rules.reactions.definitions.tactical_mind import ResolveTacticalMindReaction
 from tools.services.combat.rules.reactions.definitions.uncanny_dodge import ResolveUncannyDodgeReaction
@@ -49,6 +51,8 @@ class ResolveReactionOption:
         )
         self.deflect_attacks_resolver = ResolveDeflectAttacksReaction(encounter_repository)
         self.uncanny_dodge_resolver = ResolveUncannyDodgeReaction(encounter_repository)
+        self.interception_resolver = ResolveInterceptionReaction(encounter_repository)
+        self.protection_resolver = ResolveProtectionReaction(encounter_repository)
         self.indomitable_resolver = ResolveIndomitableReaction(encounter_repository)
         self.tactical_mind_resolver = ResolveTacticalMindReaction(encounter_repository)
         encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
@@ -302,6 +306,18 @@ class ResolveReactionOption:
             )
         if reaction_type == "uncanny_dodge":
             return self.uncanny_dodge_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                option_payload=option_payload,
+            )
+        if reaction_type == "interception":
+            return self.interception_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                option_payload=option_payload,
+            )
+        if reaction_type == "protection":
+            return self.protection_resolver.execute(
                 encounter_id=encounter_id,
                 request=request,
                 option_payload=option_payload,

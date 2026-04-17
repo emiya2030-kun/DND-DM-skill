@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import random
+
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import has_fighting_style
+from tools.services.combat.grapple.shared import get_active_grapple_target
 from tools.services.combat.attack.weapon_mastery_effects import remove_expired_weapon_mastery_effects
 from tools.services.combat.grapple.shared import release_grapple_if_invalid
 from tools.services.combat.rules.death_saves.resolve_death_save import resolve_death_save
@@ -59,6 +63,9 @@ class StartTurn:
         current_entity = updated.entities.get(updated.current_entity_id)
         if current_entity is not None and _should_resolve_death_save(current_entity):
             resolutions.append(resolve_death_save(target=current_entity))
+        grapple_resolution = _apply_unarmed_fighting_grapple_damage(updated, updated.current_entity_id)
+        if grapple_resolution is not None:
+            resolutions.append(grapple_resolution)
         saved = self.repository.save(updated)
         self._append_turn_effect_events(saved, resolutions)
         self._append_zone_effect_events(saved, zone_resolutions)
@@ -134,8 +141,47 @@ def _expire_source_turn_help_effects(encounter: Encounter, source_entity_id: str
             for effect in entity.turn_effects
             if not (
                 isinstance(effect, dict)
-                and effect.get("effect_type") in {"help_attack", "help_ability_check"}
+                and effect.get("effect_type") in {"help_attack", "help_ability_check", "protection"}
                 and effect.get("source_entity_id") == source_entity_id
                 and effect.get("expires_on") == "source_next_turn_start"
             )
         ]
+
+
+def _apply_unarmed_fighting_grapple_damage(
+    encounter: Encounter,
+    source_entity_id: str | None,
+) -> dict[str, object] | None:
+    if not isinstance(source_entity_id, str) or not source_entity_id:
+        return None
+    source = encounter.entities.get(source_entity_id)
+    if source is None or not has_fighting_style(source, "unarmed_fighting"):
+        return None
+    target = get_active_grapple_target(encounter, source)
+    if target is None:
+        return None
+    damage = random.randint(1, 4)
+    target.hp["current"] = max(0, int(target.hp["current"]) - damage)
+    return {
+        "effect_id": f"unarmed_fighting_grapple_{source.entity_id}",
+        "name": "Unarmed Fighting Grapple Damage",
+        "trigger": "start_of_turn",
+        "target_entity_id": target.entity_id,
+        "source_entity_id": source.entity_id,
+        "effect_removed": False,
+        "save": None,
+        "trigger_damage_resolution": {
+            "total_damage": damage,
+            "parts": [
+                {
+                    "source": "fighting_style:unarmed_fighting:grapple",
+                    "formula": "1d4",
+                    "adjusted_total": damage,
+                    "damage_type": "bludgeoning",
+                }
+            ],
+        },
+        "success_damage_resolution": None,
+        "failure_damage_resolution": None,
+        "condition_updates": [],
+    }

@@ -114,6 +114,60 @@ REACTION_DEFINITIONS = {
             "short_label": "Uncanny Dodge",
         },
     },
+    "interception": {
+        "reaction_type": "interception",
+        "template_type": "defensive_reaction_reduce_damage",
+        "name": "Interception",
+        "trigger_type": "attack_declared",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "before_damage_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "adjacent_ally",
+            "requires_visible_source": True,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_adjacent_ally_of_target",
+            "actor_has_interception",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_interception_reaction"},
+        "ui": {
+            "prompt": "Use Interception?",
+            "short_label": "Interception",
+        },
+    },
+    "protection": {
+        "reaction_type": "protection",
+        "template_type": "targeted_defense_rewrite",
+        "name": "Protection",
+        "trigger_type": "attack_declared",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "before_attack_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "adjacent_ally",
+            "requires_visible_source": True,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_adjacent_ally_of_target",
+            "actor_has_protection",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_protection_reaction"},
+        "ui": {
+            "prompt": "Use Protection?",
+            "short_label": "Protection",
+        },
+    },
     "absorb_elements": {
         "reaction_type": "absorb_elements",
         "template_type": "post_hit_damage_modifier",

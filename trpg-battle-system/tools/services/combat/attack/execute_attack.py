@@ -19,10 +19,12 @@ from tools.services.combat.actions import remove_turn_effect_by_id
 from tools.services.class_features.shared import (
     add_or_refresh_studied_attack_mark,
     consume_studied_attack_mark,
+    ensure_paladin_runtime,
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
     get_monk_runtime,
+    has_fighting_style,
     resolve_entity_save_proficiencies,
     resolve_extra_attack_count,
 )
@@ -102,6 +104,7 @@ class ExecuteAttack:
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
         host_action_id: str | None = None,
+        pending_flat_damage_reduction: int | None = None,
         pending_damage_multiplier: float | None = None,
         skip_reaction_window: bool = False,
     ) -> dict[str, Any]:
@@ -284,6 +287,12 @@ class ExecuteAttack:
             )
             if deflect_result is not None:
                 resolution["deflect_attacks"] = deflect_result
+            interception_result = self._apply_pending_flat_damage_reduction(
+                damage_resolution=damage_resolution,
+                pending_flat_damage_reduction=pending_flat_damage_reduction,
+            )
+            if interception_result is not None:
+                resolution["interception"] = interception_result
             uncanny_dodge_result = self._apply_pending_damage_multiplier(
                 damage_resolution=damage_resolution,
                 damage_multiplier=pending_damage_multiplier,
@@ -648,6 +657,12 @@ class ExecuteAttack:
             attack_context=attack_context,
             damage_parts=damage_parts,
         )
+        self._maybe_append_paladin_divine_smite_damage_part(
+            actor=actor,
+            target=target,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
         self._maybe_append_barbarian_brutal_strike_damage_part(
             actor=actor,
             attack_context=attack_context,
@@ -662,12 +677,22 @@ class ExecuteAttack:
                 is_critical_hit=is_critical_hit,
             )
         indexed_rolls = self._index_damage_rolls(damage_rolls)
+        self._apply_great_weapon_fighting_roll_adjustment(
+            actor=actor,
+            attack_context=attack_context,
+            indexed_rolls=indexed_rolls,
+        )
         self._supply_implicit_flat_damage_rolls(
             indexed_rolls=indexed_rolls,
             damage_parts=damage_parts,
         )
         expected_sources = [part["source"] for part in damage_parts]
         self._validate_damage_roll_sources(expected_sources=expected_sources, actual_sources=list(indexed_rolls.keys()))
+        self._consume_paladin_divine_smite_spell_slot(
+            actor=actor,
+            attack_context=attack_context,
+        )
+        self.attack_roll_request.encounter_repository.save(encounter)
 
         return self.resolve_damage_parts.execute(
             damage_parts=damage_parts,
@@ -759,6 +784,11 @@ class ExecuteAttack:
                     formula=resolved_formula,
                     modifier_value=modifier_value,
                     attack_mode=attack_mode,
+                    keep_light_bonus_modifier=self._should_keep_light_bonus_modifier(
+                        encounter_id=encounter_id,
+                        actor_entity_id=actor_entity_id,
+                        attack_context=attack_context,
+                    ),
                 )
                 if fighting_style_damage_bonus:
                     resolved_formula = self._add_flat_modifier_to_formula(
@@ -782,11 +812,18 @@ class ExecuteAttack:
         actor_entity_id: str,
         attack_context: dict[str, Any],
     ) -> int:
-        return self._resolve_dueling_bonus(
+        bonus = self._resolve_dueling_bonus(
             encounter_id=encounter_id,
             actor_entity_id=actor_entity_id,
             attack_context=attack_context,
         )
+        if self._is_thrown_weapon_fighting_attack(
+            encounter_id=encounter_id,
+            actor_entity_id=actor_entity_id,
+            attack_context=attack_context,
+        ):
+            bonus += 2
+        return bonus
 
     def _resolve_dueling_bonus(
         self,
@@ -803,22 +840,94 @@ class ExecuteAttack:
         actor = encounter.entities.get(actor_entity_id)
         if actor is None:
             return 0
-        fighter_runtime = get_class_runtime(actor, "fighter")
-        if not fighter_runtime:
-            return 0
-        fighting_style = fighter_runtime.get("fighting_style")
-        if not isinstance(fighting_style, dict):
-            return 0
-        style_id = str(fighting_style.get("style_id") or "").strip().lower()
-        if style_id != "dueling":
+        if not has_fighting_style(actor, "dueling"):
             return 0
         if str(attack_context.get("attack_kind") or "").lower() != "melee_weapon":
             return 0
         if str(attack_context.get("grip_mode") or "default").lower() == "two_handed":
             return 0
-        if actor.equipped_shield is not None:
+        if self._is_holding_other_weapon(actor=actor, current_weapon_id=str(attack_context.get("weapon_id") or "")):
             return 0
         return 2
+
+    def _is_thrown_weapon_fighting_attack(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        attack_context: dict[str, Any],
+    ) -> bool:
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            return False
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None or not has_fighting_style(actor, "thrown_weapon_fighting"):
+            return False
+        if str(attack_context.get("attack_mode") or "").lower() != "thrown":
+            return False
+        properties = {
+            str(entry).strip().lower()
+            for entry in attack_context.get("weapon_properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
+        return "thrown" in properties
+
+    def _should_keep_light_bonus_modifier(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        attack_context: dict[str, Any],
+    ) -> bool:
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            return False
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            return False
+        return has_fighting_style(actor, "two_weapon_fighting")
+
+    def _is_holding_other_weapon(self, *, actor: Any, current_weapon_id: str) -> bool:
+        current_id = str(current_weapon_id or "").strip().lower()
+        for weapon in getattr(actor, "weapons", []):
+            if not isinstance(weapon, dict):
+                continue
+            slot = str(weapon.get("slot") or "").strip().lower()
+            if slot not in {"main_hand", "off_hand", "both_hands"}:
+                continue
+            weapon_id = str(weapon.get("weapon_id") or "").strip().lower()
+            if weapon_id and weapon_id != current_id:
+                return True
+        return False
+
+    def _apply_great_weapon_fighting_roll_adjustment(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        indexed_rolls: dict[str, list[int]],
+    ) -> None:
+        if not has_fighting_style(actor, "great_weapon_fighting"):
+            return
+        if str(attack_context.get("attack_kind") or "").lower() != "melee_weapon":
+            return
+        if str(attack_context.get("grip_mode") or "").lower() != "two_handed":
+            return
+        properties = {
+            str(entry).strip().lower()
+            for entry in attack_context.get("weapon_properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
+        if "two_handed" not in properties and "versatile" not in properties:
+            return
+        weapon_id = str(attack_context.get("weapon_id") or "").strip()
+        if not weapon_id:
+            return
+        source = f"weapon:{weapon_id}:part_0"
+        rolls = indexed_rolls.get(source)
+        if not isinstance(rolls, list):
+            return
+        indexed_rolls[source] = [3 if roll in {1, 2} else roll for roll in rolls]
 
     def _maybe_append_rogue_sneak_attack_damage_part(
         self,
@@ -914,6 +1023,111 @@ class ExecuteAttack:
             }
         )
         return True
+
+    def _maybe_append_paladin_divine_smite_damage_part(
+        self,
+        *,
+        actor: Any,
+        target: Any,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return False
+        divine_smite = class_feature_options.get("divine_smite")
+        if not isinstance(divine_smite, dict):
+            return False
+
+        paladin_runtime = ensure_paladin_runtime(actor)
+        smite_runtime = paladin_runtime.get("divine_smite")
+        if not isinstance(smite_runtime, dict) or not bool(smite_runtime.get("enabled")):
+            return False
+
+        attack_kind = str(attack_context.get("attack_kind") or "").lower()
+        if attack_kind not in {"melee_weapon", "unarmed_strike"}:
+            return False
+
+        slot_level = divine_smite.get("slot_level")
+        if isinstance(slot_level, bool) or not isinstance(slot_level, int) or slot_level < 1:
+            raise ValueError("divine_smite_invalid_slot_level")
+        self._ensure_spell_slot_available(actor=actor, slot_level=slot_level)
+
+        damage_parts.append(
+            {
+                "source": "paladin_divine_smite",
+                "formula": self._resolve_divine_smite_formula(target=target, slot_level=slot_level),
+                "damage_type": "radiant",
+            }
+        )
+        return True
+
+    def _resolve_divine_smite_formula(self, *, target: Any, slot_level: int) -> str:
+        dice_count = 2 + max(0, slot_level - 1)
+        creature_type = self._resolve_target_creature_type(target)
+        if creature_type in {"fiend", "undead"}:
+            dice_count += 1
+        return f"{dice_count}d8"
+
+    def _resolve_target_creature_type(self, target: Any) -> str | None:
+        source_ref = getattr(target, "source_ref", {})
+        if isinstance(source_ref, dict):
+            creature_type = source_ref.get("creature_type")
+            if isinstance(creature_type, str) and creature_type.strip():
+                return creature_type.strip().lower()
+
+        category = getattr(target, "category", None)
+        if isinstance(category, str) and category.strip():
+            return category.strip().lower()
+        return None
+
+    def _ensure_spell_slot_available(self, *, actor: Any, slot_level: int) -> None:
+        resources = getattr(actor, "resources", {})
+        spell_slots = resources.get("spell_slots") if isinstance(resources, dict) else None
+        if not isinstance(spell_slots, dict):
+            raise ValueError("divine_smite_requires_spell_slots")
+
+        slot_key = str(slot_level)
+        slot_info = spell_slots.get(slot_key)
+        if not isinstance(slot_info, dict):
+            raise ValueError("divine_smite_slot_unavailable")
+        remaining = slot_info.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining <= 0:
+            raise ValueError("divine_smite_slot_unavailable")
+
+    def _consume_paladin_divine_smite_spell_slot(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return None
+        divine_smite = class_feature_options.get("divine_smite")
+        if not isinstance(divine_smite, dict):
+            return None
+
+        slot_level = divine_smite.get("slot_level")
+        if isinstance(slot_level, bool) or not isinstance(slot_level, int) or slot_level < 1:
+            raise ValueError("divine_smite_invalid_slot_level")
+
+        resources = getattr(actor, "resources", {})
+        spell_slots = resources.get("spell_slots") if isinstance(resources, dict) else None
+        if not isinstance(spell_slots, dict):
+            raise ValueError("divine_smite_requires_spell_slots")
+        slot_info = spell_slots.get(str(slot_level))
+        if not isinstance(slot_info, dict):
+            raise ValueError("divine_smite_slot_unavailable")
+        remaining = slot_info.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining <= 0:
+            raise ValueError("divine_smite_slot_unavailable")
+        slot_info["remaining"] = remaining - 1
+        return {
+            "slot_level": slot_level,
+            "remaining_before": remaining,
+            "remaining_after": slot_info["remaining"],
+        }
 
     def _build_auto_damage_rolls_from_parts(
         self,
@@ -1135,8 +1349,17 @@ class ExecuteAttack:
             return f"{formula}+{modifier_value}"
         return f"{formula}{modifier_value}"
 
-    def _resolve_primary_damage_formula(self, *, formula: str, modifier_value: int, attack_mode: str) -> str:
+    def _resolve_primary_damage_formula(
+        self,
+        *,
+        formula: str,
+        modifier_value: int,
+        attack_mode: str,
+        keep_light_bonus_modifier: bool = False,
+    ) -> str:
         if attack_mode != "light_bonus":
+            return self._append_modifier_to_formula_if_needed(formula, modifier_value)
+        if keep_light_bonus_modifier:
             return self._append_modifier_to_formula_if_needed(formula, modifier_value)
         if modifier_value <= 0:
             return self._append_modifier_to_formula_if_needed(formula, modifier_value)
@@ -1339,6 +1562,50 @@ class ExecuteAttack:
             "status": "damage_halved",
             "damage_multiplier": float(damage_multiplier),
             "original_damage": original_total,
+            "reduced_damage": reduced_total,
+        }
+
+    def _apply_pending_flat_damage_reduction(
+        self,
+        *,
+        damage_resolution: dict[str, Any],
+        pending_flat_damage_reduction: int | None,
+    ) -> dict[str, Any] | None:
+        if pending_flat_damage_reduction is None:
+            return None
+        if isinstance(pending_flat_damage_reduction, bool) or not isinstance(pending_flat_damage_reduction, int):
+            raise ValueError("pending_flat_damage_reduction_must_be_integer")
+        if pending_flat_damage_reduction <= 0:
+            return None
+
+        original_total = int(damage_resolution.get("total_damage", 0) or 0)
+        reduced_total = max(0, original_total - pending_flat_damage_reduction)
+        damage_resolution["total_damage"] = reduced_total
+
+        parts = damage_resolution.get("parts")
+        if isinstance(parts, list):
+            remaining = pending_flat_damage_reduction
+            adjusted_parts: list[dict[str, Any] | Any] = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    adjusted_parts.append(part)
+                    continue
+                updated_part = dict(part)
+                adjusted_total = updated_part.get("adjusted_total")
+                if isinstance(adjusted_total, int):
+                    reduced_part_total = max(0, adjusted_total - remaining)
+                    spent = adjusted_total - reduced_part_total
+                    remaining = max(0, remaining - spent)
+                    updated_part["adjusted_total"] = reduced_part_total
+                    if isinstance(updated_part.get("total"), int):
+                        updated_part["total"] = reduced_part_total
+                adjusted_parts.append(updated_part)
+            damage_resolution["parts"] = adjusted_parts
+
+        return {
+            "status": "damage_reduced",
+            "original_damage": original_total,
+            "damage_reduction": min(original_total, pending_flat_damage_reduction),
             "reduced_damage": reduced_total,
         }
 

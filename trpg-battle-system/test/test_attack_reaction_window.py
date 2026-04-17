@@ -84,6 +84,40 @@ def build_target(
     return target
 
 
+def build_protector(*, style_id: str, with_shield: bool = False, weapon_category: str | None = None) -> EncounterEntity:
+    protector = EncounterEntity(
+        entity_id=f"ent_ally_{style_id}_001",
+        name="Protector",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 4, "y": 2},
+        hp={"current": 20, "max": 20, "temp": 0},
+        ac=16,
+        speed={"walk": 30, "remaining": 30},
+        initiative=14,
+        proficiency_bonus=2,
+        action_economy={"reaction_used": False},
+        class_features={"fighter": {"level": 1, "fighting_style": {"style_id": style_id}}},
+    )
+    if with_shield:
+        protector.equipped_shield = {"armor_id": "shield"}
+    if weapon_category is not None:
+        protector.weapons = [
+            {
+                "weapon_id": "longsword",
+                "name": "Longsword",
+                "category": weapon_category,
+                "kind": "melee",
+                "damage": [{"formula": "1d8+2", "type": "slashing"}],
+                "properties": [],
+                "range": {"normal": 5, "long": 5},
+                "slot": "main_hand",
+            }
+        ]
+    return protector
+
+
 def build_encounter(
     *,
     with_shield: bool,
@@ -276,6 +310,70 @@ class AttackReactionWindowTests(unittest.TestCase):
             self.assertEqual(result["status"], "waiting_reaction")
             options = result["pending_reaction_window"]["choice_groups"][0]["options"]
             self.assertEqual(options[0]["reaction_type"], "uncanny_dodge")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_returns_waiting_reaction_when_adjacent_ally_can_interception(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter(with_shield=False)
+            protector = build_protector(style_id="interception", weapon_category="martial")
+            encounter.entities[protector.entity_id] = protector
+            encounter.turn_order.append(protector.entity_id)
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(encounter_repo, append_event, UpdateHp(encounter_repo, append_event)),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            choice_groups = result["pending_reaction_window"]["choice_groups"]
+            self.assertEqual(choice_groups[0]["actor_entity_id"], protector.entity_id)
+            self.assertEqual(choice_groups[0]["options"][0]["reaction_type"], "interception")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_returns_waiting_reaction_when_adjacent_ally_can_protection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter(with_shield=False)
+            protector = build_protector(style_id="protection", with_shield=True)
+            encounter.entities[protector.entity_id] = protector
+            encounter.turn_order.append(protector.entity_id)
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(encounter_repo, append_event, UpdateHp(encounter_repo, append_event)),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            choice_groups = result["pending_reaction_window"]["choice_groups"]
+            self.assertEqual(choice_groups[0]["actor_entity_id"], protector.entity_id)
+            self.assertEqual(choice_groups[0]["options"][0]["reaction_type"], "protection")
             encounter_repo.close()
             event_repo.close()
 

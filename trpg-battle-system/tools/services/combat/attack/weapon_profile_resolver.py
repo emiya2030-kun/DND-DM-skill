@@ -5,7 +5,7 @@ from typing import Any
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
-from tools.services.class_features.shared import get_monk_runtime, resolve_entity_proficiencies
+from tools.services.class_features.shared import get_monk_runtime, has_fighting_style, resolve_entity_proficiencies
 
 
 class WeaponProfileResolver:
@@ -159,6 +159,11 @@ class WeaponProfileResolver:
         }
 
     def _resolve_unarmed_damage_formula(self, actor: EncounterEntity) -> str:
+        if has_fighting_style(actor, "unarmed_fighting"):
+            has_both_hands_free = self._has_both_hands_free(actor)
+            die = "1d8" if has_both_hands_free else "1d6"
+            modifier = actor.ability_mods.get("str", 0)
+            return self._append_modifier_to_formula(die, modifier)
         monk_runtime = get_monk_runtime(actor)
         monk_die = monk_runtime.get("martial_arts_die")
         if isinstance(monk_die, str) and monk_die.strip():
@@ -167,6 +172,18 @@ class WeaponProfileResolver:
             return self._append_modifier_to_formula(die, modifier)
         modifier = actor.ability_mods.get("str", 0)
         return self._append_modifier_to_formula("1d4", modifier)
+
+    def _has_both_hands_free(self, actor: EncounterEntity) -> bool:
+        occupied: set[str] = set()
+        for runtime_weapon in actor.weapons:
+            slot = str(runtime_weapon.get("slot") or "").strip().lower()
+            if slot == "both_hands":
+                occupied.update({"main_hand", "off_hand"})
+            elif slot in {"main_hand", "off_hand"}:
+                occupied.add(slot)
+        if actor.equipped_shield is not None:
+            occupied.add("off_hand")
+        return "main_hand" not in occupied and "off_hand" not in occupied
 
     def _append_modifier_to_formula(self, formula: str, modifier: Any) -> str:
         if isinstance(modifier, bool) or not isinstance(modifier, int):

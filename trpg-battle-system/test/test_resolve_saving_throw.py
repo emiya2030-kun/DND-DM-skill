@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -66,6 +67,31 @@ def build_target() -> EncounterEntity:
         ability_mods={"dex": 2, "wis": 1},
         proficiency_bonus=2,
         save_proficiencies=["wis"],
+    )
+
+
+def build_paladin_ally(
+    *,
+    entity_id: str,
+    cha_mod: int,
+    position: tuple[int, int] = (4, 3),
+    conditions: Optional[list[str]] = None,
+) -> EncounterEntity:
+    return EncounterEntity(
+        entity_id=entity_id,
+        name="Paladin Ally",
+        side="enemy",
+        category="npc",
+        controller="gm",
+        position={"x": position[0], "y": position[1]},
+        hp={"current": 24, "max": 24, "temp": 0},
+        ac=18,
+        speed={"walk": 30, "remaining": 30},
+        initiative=11,
+        ability_mods={"cha": cha_mod},
+        proficiency_bonus=3,
+        conditions=conditions or [],
+        class_features={"paladin": {"level": 6}},
     )
 
 
@@ -356,6 +382,87 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertEqual(result.metadata["d20_penalty"], 4)
             self.assertEqual(result.final_total, 13)
             self.assertEqual(result.metadata["condition_disadvantages"], [])
+            repo.close()
+
+    def test_execute_applies_aura_of_protection_bonus_from_nearby_paladin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            paladin = build_paladin_ally(entity_id="ent_enemy_paladin_001", cha_mod=3)
+            encounter.entities[paladin.entity_id] = paladin
+            encounter.turn_order.append(paladin.entity_id)
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                target_id="ent_enemy_guard_001",
+                spell_id="hold_person",
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.metadata["aura_of_protection_bonus"], 3)
+            self.assertEqual(result.metadata["aura_of_protection_source"], paladin.entity_id)
+            self.assertEqual(result.final_total, 17)
+            repo.close()
+
+    def test_execute_uses_highest_aura_of_protection_bonus_when_multiple_paladins_cover_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            low_paladin = build_paladin_ally(entity_id="ent_enemy_paladin_low_001", cha_mod=2)
+            high_paladin = build_paladin_ally(entity_id="ent_enemy_paladin_high_001", cha_mod=4, position=(5, 2))
+            encounter.entities[low_paladin.entity_id] = low_paladin
+            encounter.entities[high_paladin.entity_id] = high_paladin
+            encounter.turn_order.extend([low_paladin.entity_id, high_paladin.entity_id])
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                target_id="ent_enemy_guard_001",
+                spell_id="hold_person",
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.metadata["aura_of_protection_bonus"], 4)
+            self.assertEqual(result.metadata["aura_of_protection_source"], high_paladin.entity_id)
+            self.assertEqual(result.final_total, 18)
+            repo.close()
+
+    def test_execute_ignores_incapacitated_paladin_aura_of_protection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            paladin = build_paladin_ally(
+                entity_id="ent_enemy_paladin_001",
+                cha_mod=4,
+                conditions=["incapacitated"],
+            )
+            encounter.entities[paladin.entity_id] = paladin
+            encounter.turn_order.append(paladin.entity_id)
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                target_id="ent_enemy_guard_001",
+                spell_id="hold_person",
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.metadata["aura_of_protection_bonus"], 0)
+            self.assertIsNone(result.metadata["aura_of_protection_source"])
+            self.assertEqual(result.final_total, 14)
             repo.close()
 
     def test_execute_uses_class_template_save_proficiencies(self) -> None:

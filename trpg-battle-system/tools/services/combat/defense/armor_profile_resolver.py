@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import get_class_runtime, get_monk_runtime, resolve_entity_proficiencies
+from tools.services.class_features.shared import (
+    get_class_runtime,
+    get_monk_runtime,
+    has_fighting_style,
+    resolve_entity_proficiencies,
+)
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
@@ -170,14 +175,9 @@ class ArmorProfileResolver:
         return total
 
     def _resolve_fighting_style_ac_bonus(self, actor: EncounterEntity, armor: dict[str, Any] | None) -> int:
-        fighter_runtime = get_class_runtime(actor, "fighter")
-        if not fighter_runtime or armor is None:
+        if armor is None:
             return 0
-        fighting_style = fighter_runtime.get("fighting_style")
-        if not isinstance(fighting_style, dict):
-            return 0
-        style_id = str(fighting_style.get("style_id") or "").strip().lower()
-        return 1 if style_id == "defense" else 0
+        return 1 if has_fighting_style(actor, "defense") else 0
 
     def _project_item(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
         if item is None:

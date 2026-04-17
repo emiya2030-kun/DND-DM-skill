@@ -13,7 +13,12 @@ from tools.services.combat.attack.weapon_mastery_effects import (
 )
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import ensure_monk_runtime, ensure_rogue_runtime
+from tools.services.class_features.shared import (
+    ensure_monk_runtime,
+    ensure_paladin_runtime,
+    ensure_rogue_runtime,
+    has_fighting_style,
+)
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
@@ -38,8 +43,8 @@ MARTIAL_CLASS_SUMMARIES = {
         "available_features": ["sneak_attack", "cunning_action"],
     },
     "paladin": {
-        "fields": ["level", "divine_smite"],
-        "available_features": ["divine_smite", "lay_on_hands"],
+        "fields": ["level", "divine_smite", "lay_on_hands", "aura_of_protection"],
+        "available_features": ["divine_smite", "lay_on_hands", "aura_of_protection"],
     },
     "barbarian": {
         "fields": ["level", "rage", "rage_damage_bonus", "reckless_attack", "brutal_strike", "relentless_rage"],
@@ -854,6 +859,8 @@ class GetEncounterState:
                 bucket = ensure_monk_runtime(entity)
             elif class_id == "rogue":
                 bucket = ensure_rogue_runtime(entity)
+            elif class_id == "paladin":
+                bucket = ensure_paladin_runtime(entity)
             elif class_id == "barbarian":
                 bucket = ensure_barbarian_runtime(entity)
             projected[class_id] = {
@@ -885,6 +892,8 @@ class GetEncounterState:
             fighter_view = dict(fighter)
             fighter_view.pop("weapon_proficiencies", None)
             fighter_view.pop("armor_training", None)
+            if has_fighting_style(entity, "blind_fighting"):
+                fighter_view["blindsight_feet"] = 10
             projected["fighter"] = fighter_view
 
         return projected

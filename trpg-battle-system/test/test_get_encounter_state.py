@@ -318,6 +318,30 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_paladin_lay_on_hands_and_aura_summary_from_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 6,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertEqual(paladin["level"], 6)
+            self.assertEqual(paladin["lay_on_hands"]["pool_max"], 30)
+            self.assertEqual(paladin["lay_on_hands"]["pool_remaining"], 30)
+            self.assertTrue(paladin["aura_of_protection"]["enabled"])
+            self.assertEqual(paladin["aura_of_protection"]["radius_feet"], 10)
+            self.assertIn("aura_of_protection", paladin["available_features"])
+
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_barbarian_high_level_feature_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -444,6 +468,22 @@ class GetEncounterStateTests(unittest.TestCase):
 
             self.assertTrue(fighter["tactical_mind"]["enabled"])
             self.assertEqual(fighter["fighting_style"]["style_id"], "archery")
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_blind_fighting_blindsight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["fighter"]["fighting_style"] = {"style_id": "blind_fighting"}
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            fighter = state["current_turn_entity"]["resources"]["class_features"]["fighter"]
+
+            self.assertEqual(fighter["blindsight_feet"], 10)
             repo.close()
             event_repo.close()
 

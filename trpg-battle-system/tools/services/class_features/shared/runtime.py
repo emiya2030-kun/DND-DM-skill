@@ -113,6 +113,35 @@ def ensure_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     return ensure_class_runtime(entity_or_class_features, "barbarian")
 
 
+def get_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "paladin")
+    if not runtime:
+        return {}
+    return ensure_paladin_runtime(entity_or_class_features)
+
+
+def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    paladin = ensure_class_runtime(entity_or_class_features, "paladin")
+    level = int(paladin.get("level", 0) or 0)
+
+    lay_on_hands = paladin.setdefault("lay_on_hands", {})
+    lay_on_hands["pool_max"] = level * 5 if level > 0 else int(lay_on_hands.get("pool_max", 0) or 0)
+    pool_remaining = lay_on_hands.get("pool_remaining")
+    lay_on_hands["pool_remaining"] = pool_remaining if isinstance(pool_remaining, int) else lay_on_hands["pool_max"]
+
+    divine_smite = paladin.setdefault("divine_smite", {})
+    explicit_divine_smite_enabled = divine_smite.get("enabled")
+    divine_smite["enabled"] = explicit_divine_smite_enabled if isinstance(explicit_divine_smite_enabled, bool) else level >= 2
+
+    aura_of_protection = paladin.setdefault("aura_of_protection", {})
+    explicit_aura_enabled = aura_of_protection.get("enabled")
+    aura_of_protection["enabled"] = explicit_aura_enabled if isinstance(explicit_aura_enabled, bool) else level >= 6
+    radius_feet = aura_of_protection.get("radius_feet")
+    aura_of_protection["radius_feet"] = radius_feet if isinstance(radius_feet, int) else 10
+
+    return paladin
+
+
 def _read_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(entity_or_class_features, dict):
         class_features = entity_or_class_features.get("class_features")

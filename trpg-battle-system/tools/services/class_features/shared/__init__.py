@@ -8,15 +8,21 @@ from tools.services.class_features.shared.proficiency_resolver import (
 from tools.services.class_features.shared.martial_feature_options import (
     normalize_class_feature_options,
 )
+from tools.services.class_features.shared.fighting_styles import (
+    has_fighting_style,
+    resolve_fighting_style_ids,
+)
 from tools.services.class_features.shared.runtime import (
     ensure_barbarian_runtime,
     ensure_class_runtime,
     ensure_fighter_runtime,
     ensure_monk_runtime,
+    ensure_paladin_runtime,
     get_barbarian_runtime,
     get_class_runtime,
     get_fighter_runtime,
     get_monk_runtime,
+    get_paladin_runtime,
 )
 from tools.services.class_features.shared.studied_attacks import (
     add_or_refresh_studied_attack_mark,
@@ -33,6 +39,7 @@ __all__ = [
     "ensure_class_runtime",
     "ensure_fighter_runtime",
     "ensure_monk_runtime",
+    "ensure_paladin_runtime",
     "ensure_rogue_runtime",
     "fighter_has_studied_attacks",
     "get_barbarian_runtime",
@@ -40,8 +47,11 @@ __all__ = [
     "get_class_runtime",
     "get_fighter_runtime",
     "get_monk_runtime",
+    "get_paladin_runtime",
+    "has_fighting_style",
     "has_unconsumed_studied_attack_mark",
     "normalize_class_feature_options",
+    "resolve_fighting_style_ids",
     "resolve_extra_attack_count",
     "resolve_entity_proficiencies",
     "resolve_entity_save_proficiencies",

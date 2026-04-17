@@ -16,6 +16,8 @@ from tools.repositories import EncounterRepository, EventRepository
 from tools.services import AppendEvent
 from tools.services.encounter.turns import StartTurn
 
+START_TURN_MODULE = importlib.import_module("tools.services.encounter.turns.start_turn")
+
 
 def build_entity(
     entity_id: str,
@@ -586,4 +588,21 @@ class StartTurnTests(unittest.TestCase):
 
             self.assertNotIn("active_grapple", updated.entities["ent_actor_001"].combat_flags)
             self.assertNotIn("grappled:ent_actor_001", updated.entities["ent_target_001"].conditions)
+            repo.close()
+
+    def test_start_turn_unarmed_fighting_deals_grapple_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_grapple_release_encounter()
+            grappler = encounter.entities["ent_actor_001"]
+            grappler.conditions = []
+            grappler.class_features = {"fighter": {"level": 1, "fighting_style": {"style_id": "unarmed_fighting"}}}
+            target = encounter.entities["ent_target_001"]
+            target.hp = {"current": 18, "max": 18, "temp": 0}
+            repo.save(encounter)
+
+            with patch.object(START_TURN_MODULE.random, "randint", return_value=4):
+                updated = StartTurn(repo).execute("enc_start_turn_grapple_test")
+
+            self.assertEqual(updated.entities["ent_target_001"].hp["current"], 14)
             repo.close()

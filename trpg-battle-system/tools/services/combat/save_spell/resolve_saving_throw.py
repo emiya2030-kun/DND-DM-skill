@@ -14,7 +14,7 @@ from tools.services.combat.rules.conditions import (
 )
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import resolve_entity_save_proficiencies
+from tools.services.class_features.shared import ensure_paladin_runtime, resolve_entity_save_proficiencies
 
 
 class ResolveSavingThrow:
@@ -71,7 +71,11 @@ class ResolveSavingThrow:
 
         is_proficient = normalized_save_ability in resolve_entity_save_proficiencies(target)
         proficiency_bonus_applied = target.proficiency_bonus if is_proficient else 0
-        save_bonus = ability_modifier + proficiency_bonus_applied + additional_bonus
+        aura_of_protection_bonus, aura_of_protection_source = self._resolve_aura_of_protection_bonus(
+            encounter=encounter,
+            target=target,
+        )
+        save_bonus = ability_modifier + proficiency_bonus_applied + additional_bonus + aura_of_protection_bonus
         chosen_roll = self._choose_roll(normalized_rolls, final_vantage)
         auto_fail = self._should_auto_fail(normalized_save_ability, runtime)
         exhaustion_penalty = runtime.get_d20_penalty()
@@ -98,11 +102,14 @@ class ResolveSavingThrow:
                 "chosen_roll": chosen_roll,
                 "save_bonus": save_bonus,
                 "d20_penalty": exhaustion_penalty,
+                "aura_of_protection_bonus": aura_of_protection_bonus,
+                "aura_of_protection_source": aura_of_protection_source,
                 "save_bonus_breakdown": {
                     "ability_modifier": ability_modifier,
                     "is_proficient": is_proficient,
                     "proficiency_bonus_applied": proficiency_bonus_applied,
                     "additional_bonus": additional_bonus,
+                    "aura_of_protection_bonus": aura_of_protection_bonus,
                 },
             }
         )
@@ -122,6 +129,7 @@ class ResolveSavingThrow:
                 "additional_bonus": additional_bonus,
                 "save_bonus": save_bonus,
                 "d20_penalty": exhaustion_penalty,
+                "aura_of_protection_bonus": aura_of_protection_bonus,
             },
             metadata=result_metadata,
             rolled_at=rolled_at,
@@ -180,6 +188,45 @@ class ResolveSavingThrow:
         barbarian = ensure_barbarian_runtime(target)
         rage = barbarian.get("rage")
         return isinstance(rage, dict) and bool(rage.get("active"))
+
+    def _resolve_aura_of_protection_bonus(
+        self,
+        *,
+        encounter: Encounter,
+        target: EncounterEntity,
+    ) -> tuple[int, str | None]:
+        best_bonus = 0
+        best_source: str | None = None
+
+        for entity in encounter.entities.values():
+            if entity.side != target.side:
+                continue
+
+            class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+            if "paladin" not in class_features:
+                continue
+            paladin = ensure_paladin_runtime(entity)
+            aura = paladin.get("aura_of_protection")
+            if not isinstance(aura, dict) or not bool(aura.get("enabled")):
+                continue
+            if self._safe_condition_runtime(entity.conditions).has("incapacitated"):
+                continue
+
+            radius_feet = aura.get("radius_feet", 10)
+            if not isinstance(radius_feet, int) or radius_feet < 0:
+                radius_feet = 10
+            if self._distance_feet(entity, target) > radius_feet:
+                continue
+
+            charisma_modifier = entity.ability_mods.get("cha", 0)
+            if isinstance(charisma_modifier, bool) or not isinstance(charisma_modifier, int):
+                charisma_modifier = 0
+            bonus = max(1, charisma_modifier)
+            if bonus > best_bonus:
+                best_bonus = bonus
+                best_source = entity.entity_id
+
+        return best_bonus, best_source
 
     def _apply_indomitable_might(
         self,
@@ -256,6 +303,11 @@ class ResolveSavingThrow:
         if save_ability not in {"str", "dex"}:
             return False
         return any(runtime.has(condition) for condition in AUTO_FAIL_STRENGTH_DEX_SAVES)
+
+    def _distance_feet(self, source: EncounterEntity, target: EncounterEntity) -> int:
+        dx = abs(source.position["x"] - target.position["x"])
+        dy = abs(source.position["y"] - target.position["y"])
+        return max(dx, dy) * 5
 
     def _get_entity_or_raise(self, encounter: Encounter, entity_id: str) -> EncounterEntity:
         entity = encounter.entities.get(entity_id)

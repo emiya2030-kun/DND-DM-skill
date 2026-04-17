@@ -36,6 +36,7 @@ from tools.services.class_features.shared import (
     fighter_has_studied_attacks,
     get_class_runtime,
     get_monk_runtime,
+    has_fighting_style,
     has_unconsumed_studied_attack_mark,
     normalize_class_feature_options,
     resolve_extra_attack_count,
@@ -224,6 +225,7 @@ class AttackRollRequest:
             reason=description or f"{weapon.get('name', weapon_id)} attack",
             context={
                 "attack_name": weapon.get("name"),
+                "weapon_id": weapon.get("weapon_id"),
                 "attack_kind": attack_kind,
                 "attack_mode": normalized_attack_mode,
                 "grip_mode": normalized_grip_mode,
@@ -506,6 +508,12 @@ class AttackRollRequest:
             for effect in turn_effects:
                 if not isinstance(effect, dict):
                     continue
+                if effect.get("effect_type") == "protection":
+                    source_id = str(effect.get("source_entity_id") or "").strip()
+                    source_entity = encounter.entities.get(source_id) if source_id else None
+                    if source_entity is not None and self._distance_feet(source_entity, target) <= 5:
+                        disadvantage_sources.append("protection")
+                    continue
                 if effect.get("effect_type") != "monk_stunning_strike_success":
                     continue
                 if effect.get("target_entity_id") != target.entity_id:
@@ -618,6 +626,9 @@ class AttackRollRequest:
             )
 
         raw_stunning_strike = normalized_class_feature_options.get("stunning_strike")
+        raw_divine_smite = normalized_class_feature_options.get("divine_smite")
+        if isinstance(raw_divine_smite, dict):
+            request_class_feature_options["divine_smite"] = dict(raw_divine_smite)
         if raw_stunning_strike is None:
             return request_class_feature_options
         if not isinstance(raw_stunning_strike, dict):
@@ -943,14 +954,7 @@ class AttackRollRequest:
         return max(base_reach, normal_range)
 
     def _resolve_fighting_style_attack_bonus(self, *, actor: EncounterEntity, attack_kind: str) -> int:
-        fighter_runtime = get_class_runtime(actor, "fighter")
-        if not fighter_runtime:
-            return 0
-        fighting_style = fighter_runtime.get("fighting_style")
-        if not isinstance(fighting_style, dict):
-            return 0
-        style_id = str(fighting_style.get("style_id") or "").strip().lower()
-        if style_id == "archery" and attack_kind == "ranged_weapon":
+        if has_fighting_style(actor, "archery") and attack_kind == "ranged_weapon":
             return 2
         return 0
 
