@@ -34,6 +34,40 @@ def build_actor() -> EncounterEntity:
 
 
 class ArmorProfileResolverTests(unittest.TestCase):
+    def test_resolve_unarmored_defense_for_monk_without_armor_or_shield(self) -> None:
+        actor = build_actor()
+        actor.ac = 12
+        actor.ability_mods["dex"] = 3
+        actor.ability_mods["wis"] = 2
+        actor.class_features = {"monk": {"level": 3}}
+
+        profile = ArmorProfileResolver().resolve(actor)
+
+        self.assertEqual(profile["base_ac"], 15)
+        self.assertEqual(profile["current_ac"], 15)
+
+    def test_resolve_unarmored_defense_does_not_apply_when_wearing_armor(self) -> None:
+        actor = build_actor()
+        actor.ability_mods["dex"] = 3
+        actor.ability_mods["wis"] = 2
+        actor.class_features = {"monk": {"level": 3}}
+        actor.equipped_armor = {"armor_id": "leather_armor"}
+
+        profile = ArmorProfileResolver().resolve(actor)
+
+        self.assertNotEqual(profile["base_ac"], 15)
+
+    def test_resolve_unarmored_defense_does_not_apply_when_using_shield(self) -> None:
+        actor = build_actor()
+        actor.ability_mods["dex"] = 3
+        actor.ability_mods["wis"] = 2
+        actor.class_features = {"monk": {"level": 3}}
+        actor.equipped_shield = {"armor_id": "shield"}
+
+        profile = ArmorProfileResolver().resolve(actor)
+
+        self.assertNotEqual(profile["base_ac"], 15)
+
     def test_resolve_chain_mail_and_shield_for_fighter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             knowledge_path = Path(tmp_dir) / "armor_definitions.json"

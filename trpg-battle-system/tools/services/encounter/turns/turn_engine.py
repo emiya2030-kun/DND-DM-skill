@@ -3,6 +3,7 @@ from __future__ import annotations
 from tools.models import Encounter, EncounterEntity
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
+from tools.services.class_features.shared import get_class_runtime
 
 
 def reset_turn_resources(entity: EncounterEntity) -> None:
@@ -12,9 +13,13 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         "reaction_used": False,
         "free_interaction_used": False,
     }
-    speed_penalty = get_weapon_mastery_speed_penalty(entity) + get_armor_speed_penalty(entity)
-    entity.speed["remaining"] = max(0, entity.speed["walk"] - speed_penalty)
     combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
+    base_walk_speed = _resolve_base_walk_speed(entity=entity, combat_flags=combat_flags)
+    current_walk_speed = max(0, base_walk_speed + _get_monk_unarmored_movement_bonus(entity))
+    entity.speed["walk"] = current_walk_speed
+    speed_penalty = get_weapon_mastery_speed_penalty(entity) + get_armor_speed_penalty(entity)
+    entity.speed["remaining"] = max(0, current_walk_speed - speed_penalty)
+    combat_flags["base_walk_speed"] = base_walk_speed
     combat_flags["movement_spent_feet"] = 0
     combat_flags.pop("light_bonus_trigger", None)
     entity.combat_flags = combat_flags
@@ -41,6 +46,26 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         stunning_strike = monk.get("stunning_strike")
         if isinstance(stunning_strike, dict):
             stunning_strike["uses_this_turn"] = 0
+
+
+def _resolve_base_walk_speed(*, entity: EncounterEntity, combat_flags: dict[str, object]) -> int:
+    tracked = combat_flags.get("base_walk_speed")
+    if isinstance(tracked, int) and tracked >= 0:
+        return tracked
+    current = entity.speed.get("walk", 0)
+    return current if isinstance(current, int) and current >= 0 else 0
+
+
+def _get_monk_unarmored_movement_bonus(entity: EncounterEntity) -> int:
+    monk_runtime = get_class_runtime(entity, "monk")
+    if not monk_runtime:
+        return 0
+    if entity.equipped_armor is not None or entity.equipped_shield is not None:
+        return 0
+    bonus = monk_runtime.get("unarmored_movement_bonus_feet")
+    if isinstance(bonus, int) and bonus > 0:
+        return bonus
+    return 0
 
 
 def start_turn(encounter: Encounter) -> Encounter:

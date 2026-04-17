@@ -268,3 +268,33 @@ class TurnEngineTests(unittest.TestCase):
 
         monk = updated.entities["ent_ally_eric_001"].class_features["monk"]
         self.assertEqual(monk["stunning_strike"]["uses_this_turn"], 0)
+
+    def test_start_turn_applies_monk_unarmored_movement_bonus(self) -> None:
+        encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+        entity = encounter.entities["ent_ally_eric_001"]
+        entity.class_features = {
+            "monk": {
+                "level": 6,
+                "unarmored_movement_bonus_feet": 15,
+            }
+        }
+        entity.speed["remaining"] = 0
+
+        updated = start_turn(encounter)
+
+        self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 45)
+
+    def test_start_turn_does_not_apply_monk_unarmored_movement_when_armored(self) -> None:
+        encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+        entity = encounter.entities["ent_ally_eric_001"]
+        entity.class_features = {
+            "monk": {
+                "level": 6,
+                "unarmored_movement_bonus_feet": 15,
+            }
+        }
+        entity.equipped_armor = {"armor_id": "leather_armor"}
+
+        updated = start_turn(encounter)
+
+        self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 30)

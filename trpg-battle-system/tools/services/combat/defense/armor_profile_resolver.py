@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.services.class_features.shared import resolve_entity_proficiencies
+from tools.services.class_features.shared import get_class_runtime, resolve_entity_proficiencies
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
@@ -21,9 +21,15 @@ class ArmorProfileResolver:
         armor = self._resolve_equipped_item(actor.equipped_armor)
         shield = self._resolve_equipped_item(actor.equipped_shield)
         temporary_ac_bonus = self._active_temporary_ac_bonus(actor)
+        unarmored_defense_base_ac = self._resolve_unarmored_defense_base_ac(actor)
 
         if armor is None and shield is None:
-            base_ac = max(0, actor.ac - temporary_ac_bonus)
+            base_ac = (
+                unarmored_defense_base_ac
+                if isinstance(unarmored_defense_base_ac, int)
+                else max(0, actor.ac - temporary_ac_bonus)
+            )
+            current_ac = base_ac + temporary_ac_bonus
             return {
                 "armor": None,
                 "shield": None,
@@ -33,12 +39,12 @@ class ArmorProfileResolver:
                 "speed_penalty_feet": 0,
                 "stealth_disadvantage_sources": [],
                 "base_ac": base_ac,
-                "current_ac": actor.ac,
+                "current_ac": current_ac,
                 "ac_breakdown": {
                     "base_armor_ac": base_ac,
                     "shield_bonus": 0,
                     "shield_spell_bonus_active": temporary_ac_bonus,
-                    "current_ac": actor.ac,
+                    "current_ac": current_ac,
                 },
             }
 
@@ -117,6 +123,14 @@ class ArmorProfileResolver:
 
     def _resolve_armor_training(self, actor: EncounterEntity) -> list[str]:
         return resolve_entity_proficiencies(actor)["armor_training"]
+
+    def _resolve_unarmored_defense_base_ac(self, actor: EncounterEntity) -> int | None:
+        monk_runtime = get_class_runtime(actor, "monk")
+        if not monk_runtime:
+            return None
+        if actor.equipped_armor is not None or actor.equipped_shield is not None:
+            return None
+        return 10 + self._ability_mod(actor, "dex") + self._ability_mod(actor, "wis")
 
     def _is_equipment_trained(
         self,
