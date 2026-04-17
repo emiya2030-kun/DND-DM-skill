@@ -9,6 +9,7 @@ from __future__ import annotations
 from importlib import import_module
 
 __all__ = [
+    "AbilityCheckRequest",
     "AppendEvent",
     "EncounterCastSpell",
     "ExecuteSpell",
@@ -46,6 +47,7 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "AbilityCheckRequest": ("tools.services.checks.ability_check_request", "AbilityCheckRequest"),
     "AppendEvent": ("tools.services.events.append_event", "AppendEvent"),
     "EncounterCastSpell": ("tools.services.spells.encounter_cast_spell", "EncounterCastSpell"),
     "ExecuteSpell": ("tools.services.spells.execute_spell", "ExecuteSpell"),
