@@ -2641,6 +2641,52 @@ class ExecuteAttackTests(unittest.TestCase):
             ]
             self.assertEqual(len(success_effects), 1)
 
+    def test_stunning_strike_advantage_consumes_turn_effect(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            target.turn_effects.append(
+                {
+                    "effect_id": "effect_stunning_strike_test",
+                    "effect_type": "monk_stunning_strike_success",
+                    "source_entity_id": actor.entity_id,
+                    "target_entity_id": target.entity_id,
+                    "next_attack_advantage_once": True,
+                    "trigger": "start_of_turn",
+                    "remove_after_trigger": True,
+                }
+            )
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=20,
+                dice_rolls={"base_rolls": [15], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertFalse(
+                any(
+                    effect.get("effect_type") == "monk_stunning_strike_success"
+                    for effect in updated.entities[target.entity_id].turn_effects
+                )
+            )
+
     def test_execute_stunning_strike_rejects_second_use_in_same_turn(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_actor()

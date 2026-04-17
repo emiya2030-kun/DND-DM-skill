@@ -120,7 +120,7 @@ class AttackRollRequest:
         self._ensure_actor_not_charmed(actor_runtime, target.entity_id)
         self._ensure_target_in_range(distance_to_target_feet, weapon, attack_kind, normalized_attack_mode)
         self._ensure_line_of_sight(encounter, actor, target)
-        resolved_vantage, vantage_sources = self._resolve_vantage(
+        resolved_vantage, vantage_sources, next_attack_advantage_turn_effect_ids = self._resolve_vantage(
             encounter=encounter,
             requested_vantage=vantage,
             actor=actor,
@@ -198,6 +198,7 @@ class AttackRollRequest:
                 "melee_auto_crit": melee_auto_crit,
                 "studied_attacks_applied": "studied_attacks" in vantage_sources["advantage"],
                 "class_feature_options": request_class_feature_options,
+                "next_attack_advantage_turn_effect_ids": next_attack_advantage_turn_effect_ids,
             },
         )
 
@@ -382,9 +383,10 @@ class AttackRollRequest:
         weapon: dict,
         actor_runtime: ConditionRuntime,
         target_runtime: ConditionRuntime,
-    ) -> tuple[str, dict[str, list[str]]]:
+    ) -> tuple[str, dict[str, list[str]], list[str]]:
         advantage_sources: list[str] = []
         disadvantage_sources: list[str] = []
+        next_attack_advantage_turn_effect_ids: list[str] = []
 
         normalized_vantage = self._normalize_vantage(requested_vantage)
         if normalized_vantage == "advantage":
@@ -429,6 +431,26 @@ class AttackRollRequest:
             if weapon_kind == "ranged" and self._get_ability_score(actor, "dex") < 13:
                 disadvantage_sources.append("heavy_ranged_low_dex")
 
+        turn_effects = getattr(target, "turn_effects", [])
+        if isinstance(turn_effects, list):
+            for effect in turn_effects:
+                if not isinstance(effect, dict):
+                    continue
+                if effect.get("effect_type") != "monk_stunning_strike_success":
+                    continue
+                if effect.get("target_entity_id") != target.entity_id:
+                    continue
+                if not bool(effect.get("next_attack_advantage_once")):
+                    continue
+                effect_id = effect.get("effect_id")
+                if not isinstance(effect_id, str) or not effect_id.strip():
+                    continue
+                effect_id = effect_id.strip()
+                if effect_id in next_attack_advantage_turn_effect_ids:
+                    continue
+                advantage_sources.append("monk_stunning_strike_success")
+                next_attack_advantage_turn_effect_ids.append(effect_id)
+
         if attack_kind == "ranged_weapon":
             range_block = weapon.get("thrown_range", {}) if attack_mode == "thrown" else weapon.get("range", {})
             normal_range = int(range_block.get("normal", 0) or 0)
@@ -455,7 +477,7 @@ class AttackRollRequest:
         return final_vantage, {
             "advantage": advantage_sources,
             "disadvantage": disadvantage_sources,
-        }
+        }, next_attack_advantage_turn_effect_ids
 
     def _normalize_vantage(self, vantage: str) -> str:
         normalized = str(vantage or "normal").lower()

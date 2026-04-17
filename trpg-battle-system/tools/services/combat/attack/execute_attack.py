@@ -140,6 +140,12 @@ class ExecuteAttack:
                 error=error,
             )
 
+        self._consume_next_attack_advantage_turn_effects(
+            encounter_id=encounter_id,
+            target_entity_id=request.target_entity_id,
+            effect_ids=request.context.get("next_attack_advantage_turn_effect_ids"),
+        )
+
         self._apply_tactical_master_override(
             encounter_id=encounter_id,
             actor_entity_id=request.actor_entity_id,
@@ -1098,6 +1104,8 @@ class ExecuteAttack:
                 "expires_on": "start_of_source_turn",
                 "next_attack_advantage_once": True,
                 "speed_multiplier": 0.5,
+                "trigger": "start_of_turn",
+                "remove_after_trigger": True,
             }
             target.turn_effects.append(success_effect)
             result_block["status"] = "successful_save"
@@ -1113,6 +1121,48 @@ class ExecuteAttack:
         result_block["focus_points_remaining"] = focus_points["remaining"]
         result_block["uses_this_turn"] = stunning_runtime["uses_this_turn"]
         resolution["stunning_strike"] = result_block
+        self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _consume_next_attack_advantage_turn_effects(
+        self,
+        *,
+        encounter_id: str,
+        target_entity_id: str,
+        effect_ids: list[str] | None,
+    ) -> None:
+        if not isinstance(effect_ids, list):
+            return
+        effect_id_set = {
+            effect_id.strip()
+            for effect_id in effect_ids
+            if isinstance(effect_id, str) and effect_id.strip()
+        }
+        if not effect_id_set:
+            return
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while consuming stunning strike advantage effects")
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            return
+
+        retained_effects: list[dict[str, Any]] = []
+        removed = False
+        for effect in getattr(target, "turn_effects", []):
+            if (
+                isinstance(effect, dict)
+                and effect.get("effect_type") == "monk_stunning_strike_success"
+                and effect.get("effect_id") in effect_id_set
+            ):
+                removed = True
+                continue
+            retained_effects.append(effect)
+
+        if not removed:
+            return
+
+        target.turn_effects = retained_effects
         self.attack_roll_request.encounter_repository.save(encounter)
 
     def _normalize_save_vantage(self, raw_vantage: Any) -> str:

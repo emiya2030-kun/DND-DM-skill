@@ -171,6 +171,32 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertIn("armor_untrained", request.context["vantage_sources"]["disadvantage"])
             repo.close()
 
+    def test_stunning_strike_success_grants_advantage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            target = build_target()
+            effect = {
+                "effect_id": "effect_stunning_strike_123",
+                "effect_type": "monk_stunning_strike_success",
+                "next_attack_advantage_once": True,
+                "source_entity_id": actor.entity_id,
+                "target_entity_id": target.entity_id,
+            }
+            target.turn_effects.append(effect)
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("monk_stunning_strike_success", request.context["vantage_sources"]["advantage"])
+            self.assertEqual(request.context["next_attack_advantage_turn_effect_ids"], [effect["effect_id"]])
+            repo.close()
+
     def test_execute_rejects_non_current_turn_actor(self) -> None:
         """测试显式传入的 actor 不是当前行动者时会被拒绝。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
