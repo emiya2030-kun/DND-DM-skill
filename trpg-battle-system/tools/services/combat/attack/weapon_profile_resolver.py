@@ -158,12 +158,55 @@ class WeaponProfileResolver:
             return explicit
 
         category = str(resolved_weapon.get("category") or "").strip().lower()
+        weapon_id = str(resolved_weapon.get("weapon_id") or runtime_weapon.get("weapon_id") or "").strip().lower()
+        properties = {
+            str(entry).strip().lower()
+            for entry in resolved_weapon.get("properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
         proficiencies = resolve_entity_proficiencies(actor)["weapon_proficiencies"]
         normalized = {entry.strip().lower() for entry in proficiencies if isinstance(entry, str)}
-        if category and category in normalized:
+        if self._matches_proficiency_selector(
+            category=category,
+            weapon_id=weapon_id,
+            properties=properties,
+            proficiencies=normalized,
+        ):
             return True
 
-        return self._looks_like_legacy_proficient_weapon(runtime_weapon=runtime_weapon, resolved_weapon=resolved_weapon)
+        if self._has_runtime_class_binding(actor):
+            return False
+
+        return self._looks_like_legacy_proficient_weapon(
+            runtime_weapon=runtime_weapon,
+            resolved_weapon=resolved_weapon,
+        )
+
+    def _matches_proficiency_selector(
+        self,
+        *,
+        category: str,
+        weapon_id: str,
+        properties: set[str],
+        proficiencies: set[str],
+    ) -> bool:
+        if category and category in proficiencies:
+            return True
+        if weapon_id and weapon_id in proficiencies:
+            return True
+        if category == "martial" and "martial_light" in proficiencies and "light" in properties:
+            return True
+        if (
+            category == "martial"
+            and "martial_finesse_or_light" in proficiencies
+            and ("finesse" in properties or "light" in properties)
+        ):
+            return True
+        return False
+
+    def _has_runtime_class_binding(self, actor: EncounterEntity) -> bool:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        return any(isinstance(value, dict) for value in class_features.values())
 
     def _looks_like_legacy_proficient_weapon(
         self,

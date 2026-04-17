@@ -7,6 +7,7 @@ from tools.models.encounter_entity import EncounterEntity
 from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import resolve_entity_save_proficiencies
 
 
 class ResolveConcentrationCheck:
@@ -38,7 +39,7 @@ class ResolveConcentrationCheck:
         if not isinstance(con_modifier, int):
             raise ValueError("ability_mods['con'] must be an integer")
 
-        is_proficient = "con" in target.save_proficiencies
+        is_proficient = "con" in resolve_entity_save_proficiencies(target)
         proficiency_bonus_applied = target.proficiency_bonus if is_proficient else 0
         check_bonus = con_modifier + proficiency_bonus_applied + additional_bonus
         chosen_roll = self._choose_roll(normalized_rolls, normalized_vantage)

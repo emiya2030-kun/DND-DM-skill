@@ -6,6 +6,7 @@ from typing import Any
 
 from tools.models import Encounter, EncounterEntity
 from tools.services.combat.damage import ResolveDamageParts
+from tools.services.class_features.shared import resolve_entity_save_proficiencies
 from tools.services.spells.end_concentration_spell_instances import end_concentration_spell_instances
 
 _FORMULA_RE = re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
@@ -356,7 +357,7 @@ def _resolve_effect_save(
         raise ValueError("save roll override must be an integer")
 
     save_bonus = int(target.ability_mods.get(ability, 0))
-    if ability in target.save_proficiencies:
+    if ability in resolve_entity_save_proficiencies(target):
         save_bonus += int(target.proficiency_bonus)
     total = base_roll + save_bonus
 

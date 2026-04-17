@@ -5,6 +5,7 @@ from typing import Any
 
 from tools.models import Encounter
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import resolve_entity_save_proficiencies
 
 
 class CastInterruptContest:
@@ -155,7 +156,7 @@ class CastInterruptContest:
         return con_mod
 
     def _resolve_target_save_proficiency_bonus(self, target: Any, ability: str) -> int:
-        save_proficiencies = target.save_proficiencies if isinstance(target.save_proficiencies, list) else []
+        save_proficiencies = resolve_entity_save_proficiencies(target)
         if ability not in save_proficiencies:
             return 0
         proficiency_bonus = getattr(target, "proficiency_bonus", 0)

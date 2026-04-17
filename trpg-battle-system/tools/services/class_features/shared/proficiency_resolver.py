@@ -4,27 +4,47 @@ from __future__ import annotations
 
 from typing import Any
 
-_WEAPON_ORDER = ["simple", "martial"]
+from tools.repositories import ClassProficiencyDefinitionRepository
+
+_WEAPON_ORDER = ["simple", "martial", "martial_light", "martial_finesse_or_light"]
 _ARMOR_ORDER = ["light", "medium", "heavy", "shield"]
+_SAVE_ORDER = ["str", "dex", "con", "int", "wis", "cha"]
+_CLASS_PROFICIENCY_REPOSITORY = ClassProficiencyDefinitionRepository()
 
 
 def resolve_entity_proficiencies(entity_or_class_features: Any) -> dict[str, list[str]]:
     class_features = _extract_class_features(entity_or_class_features)
-    fighter = class_features.get("fighter")
 
     weapon_proficiencies: set[str] = set()
     armor_training: set[str] = set()
+    save_proficiencies: set[str] = set()
 
-    if isinstance(fighter, dict):
-        weapon_proficiencies.update(_WEAPON_ORDER)
-        armor_training.update(_ARMOR_ORDER)
-        _merge_string_list(weapon_proficiencies, fighter.get("weapon_proficiencies"))
-        _merge_string_list(armor_training, fighter.get("armor_training"))
+    for class_id, runtime_bucket in class_features.items():
+        if not isinstance(class_id, str) or not isinstance(runtime_bucket, dict):
+            continue
+        template = _CLASS_PROFICIENCY_REPOSITORY.get(class_id.strip().lower())
+        if not isinstance(template, dict):
+            continue
+
+        _merge_string_list(weapon_proficiencies, template.get("weapon_proficiencies"))
+        _merge_string_list(armor_training, template.get("armor_training"))
+        _merge_string_list(save_proficiencies, template.get("save_proficiencies"))
+
+        _merge_string_list(weapon_proficiencies, runtime_bucket.get("weapon_proficiencies"))
+        _merge_string_list(armor_training, runtime_bucket.get("armor_training"))
+        _merge_string_list(save_proficiencies, runtime_bucket.get("save_proficiencies"))
 
     return {
         "weapon_proficiencies": _ordered(weapon_proficiencies, _WEAPON_ORDER),
         "armor_training": _ordered(armor_training, _ARMOR_ORDER),
+        "save_proficiencies": _ordered(save_proficiencies, _SAVE_ORDER),
     }
+
+
+def resolve_entity_save_proficiencies(entity: Any) -> list[str]:
+    resolved = set(resolve_entity_proficiencies(entity)["save_proficiencies"])
+    _merge_string_list(resolved, _extract_save_proficiencies(entity))
+    return _ordered(resolved, _SAVE_ORDER)
 
 
 def _extract_class_features(entity_or_class_features: Any) -> dict[str, Any]:
@@ -38,6 +58,12 @@ def _extract_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(class_features, dict):
         return class_features
     return {}
+
+
+def _extract_save_proficiencies(entity: Any) -> Any:
+    if isinstance(entity, dict):
+        return entity.get("save_proficiencies")
+    return getattr(entity, "save_proficiencies", [])
 
 
 def _merge_string_list(target: set[str], values: Any) -> None:

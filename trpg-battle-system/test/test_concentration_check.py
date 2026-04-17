@@ -121,6 +121,32 @@ class ConcentrationCheckTests(unittest.TestCase):
             self.assertEqual(result.metadata["check_bonus"], 5)
             repo.close()
 
+    def test_resolve_concentration_check_uses_class_template_save_proficiency(self) -> None:
+        """测试职业模板提供的 CON 豁免熟练也会作用于专注检定。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_pc_eric_001"]
+            target.class_features = {"sorcerer": {"level": 1}}
+            target.save_proficiencies = []
+            repo.save(encounter)
+
+            request = RequestConcentrationCheck(repo).execute(
+                encounter_id="enc_concentration_test",
+                target_id="ent_pc_eric_001",
+                damage_taken=12,
+            )
+            result = ResolveConcentrationCheck(repo).execute(
+                encounter_id="enc_concentration_test",
+                roll_request=request,
+                base_rolls=[10],
+            )
+
+            self.assertEqual(result.final_total, 15)
+            self.assertTrue(result.metadata["check_bonus_breakdown"]["is_proficient"])
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 3)
+            repo.close()
+
     def test_resolve_concentration_result_breaks_concentration_on_failure(self) -> None:
         """测试专注检定失败时会把 is_concentrating 改成 False。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

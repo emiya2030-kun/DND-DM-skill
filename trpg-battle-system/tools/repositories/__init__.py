@@ -8,6 +8,7 @@ __all__ = [
     "EntityDefinitionRepository",
     "EventRepository",
     "ClassFeatureDefinitionRepository",
+    "ClassProficiencyDefinitionRepository",
     "SpellDefinitionRepository",
     "WeaponDefinitionRepository",
     "ZoneDefinitionRepository",
@@ -22,6 +23,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ClassFeatureDefinitionRepository": (
         "tools.repositories.class_feature_definition_repository",
         "ClassFeatureDefinitionRepository",
+    ),
+    "ClassProficiencyDefinitionRepository": (
+        "tools.repositories.class_proficiency_definition_repository",
+        "ClassProficiencyDefinitionRepository",
     ),
     "SpellDefinitionRepository": ("tools.repositories.spell_definition_repository", "SpellDefinitionRepository"),
     "WeaponDefinitionRepository": ("tools.repositories.weapon_definition_repository", "WeaponDefinitionRepository"),

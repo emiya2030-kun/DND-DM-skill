@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import Encounter, EncounterEntity, EncounterMap
+from tools.models.roll_request import RollRequest
 from tools.repositories import EncounterRepository
 from tools.services import ResolveSavingThrow, SavingThrowRequest
 
@@ -279,4 +280,35 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertEqual(result.metadata["d20_penalty"], 4)
             self.assertEqual(result.final_total, 13)
             self.assertEqual(result.metadata["condition_disadvantages"], [])
+            repo.close()
+
+    def test_execute_uses_class_template_save_proficiencies(self) -> None:
+        """测试职业模板提供的默认豁免熟练会参与结算。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_guard_001"]
+            target.class_features = {"fighter": {"level": 1}}
+            target.save_proficiencies = []
+            target.ability_mods["str"] = 0
+            repo.save(encounter)
+
+            request = RollRequest(
+                request_id="req_save_class_template",
+                encounter_id="enc_resolve_save_test",
+                actor_entity_id=target.entity_id,
+                target_entity_id=target.entity_id,
+                roll_type="saving_throw",
+                formula="1d20",
+                context={"save_ability": "str", "vantage": "normal"},
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.final_total, 13)
+            self.assertTrue(result.metadata["save_bonus_breakdown"]["is_proficient"])
+            self.assertEqual(result.metadata["save_bonus_breakdown"]["proficiency_bonus_applied"], 2)
             repo.close()

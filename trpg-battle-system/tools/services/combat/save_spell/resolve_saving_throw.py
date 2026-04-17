@@ -13,6 +13,7 @@ from tools.services.combat.rules.conditions import (
     DEX_SAVE_DISADVANTAGE_CONDITIONS,
 )
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
+from tools.services.class_features.shared import resolve_entity_save_proficiencies
 
 
 class ResolveSavingThrow:
@@ -66,7 +67,7 @@ class ResolveSavingThrow:
         if not isinstance(ability_modifier, int):
             raise ValueError(f"ability_mods['{normalized_save_ability}'] must be an integer")
 
-        is_proficient = normalized_save_ability in target.save_proficiencies
+        is_proficient = normalized_save_ability in resolve_entity_save_proficiencies(target)
         proficiency_bonus_applied = target.proficiency_bonus if is_proficient else 0
         save_bonus = ability_modifier + proficiency_bonus_applied + additional_bonus
         chosen_roll = self._choose_roll(normalized_rolls, final_vantage)

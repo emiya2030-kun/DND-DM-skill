@@ -1,0 +1,88 @@
+{
+  "class_proficiency_definitions": {
+    "barbarian": {
+      "class_id": "barbarian",
+      "name": "Barbarian",
+      "weapon_proficiencies": ["simple", "martial"],
+      "armor_training": ["light", "medium", "shield"],
+      "save_proficiencies": ["str", "con"]
+    },
+    "bard": {
+      "class_id": "bard",
+      "name": "Bard",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": ["light"],
+      "save_proficiencies": ["dex", "cha"]
+    },
+    "cleric": {
+      "class_id": "cleric",
+      "name": "Cleric",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": ["light", "medium", "shield"],
+      "save_proficiencies": ["wis", "cha"]
+    },
+    "druid": {
+      "class_id": "druid",
+      "name": "Druid",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": ["light", "medium", "shield"],
+      "save_proficiencies": ["int", "wis"]
+    },
+    "fighter": {
+      "class_id": "fighter",
+      "name": "Fighter",
+      "weapon_proficiencies": ["simple", "martial"],
+      "armor_training": ["light", "medium", "heavy", "shield"],
+      "save_proficiencies": ["str", "con"]
+    },
+    "monk": {
+      "class_id": "monk",
+      "name": "Monk",
+      "weapon_proficiencies": ["simple", "martial_light"],
+      "armor_training": [],
+      "save_proficiencies": ["str", "dex"]
+    },
+    "paladin": {
+      "class_id": "paladin",
+      "name": "Paladin",
+      "weapon_proficiencies": ["simple", "martial"],
+      "armor_training": ["light", "medium", "heavy", "shield"],
+      "save_proficiencies": ["wis", "cha"]
+    },
+    "ranger": {
+      "class_id": "ranger",
+      "name": "Ranger",
+      "weapon_proficiencies": ["simple", "martial"],
+      "armor_training": ["light", "medium", "shield"],
+      "save_proficiencies": ["str", "dex"]
+    },
+    "rogue": {
+      "class_id": "rogue",
+      "name": "Rogue",
+      "weapon_proficiencies": ["simple", "martial_finesse_or_light"],
+      "armor_training": ["light"],
+      "save_proficiencies": ["dex", "int"]
+    },
+    "sorcerer": {
+      "class_id": "sorcerer",
+      "name": "Sorcerer",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": [],
+      "save_proficiencies": ["con", "cha"]
+    },
+    "warlock": {
+      "class_id": "warlock",
+      "name": "Warlock",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": ["light"],
+      "save_proficiencies": ["wis", "cha"]
+    },
+    "wizard": {
+      "class_id": "wizard",
+      "name": "Wizard",
+      "weapon_proficiencies": ["simple"],
+      "armor_training": [],
+      "save_proficiencies": ["int", "wis"]
+    }
+  }
+}
