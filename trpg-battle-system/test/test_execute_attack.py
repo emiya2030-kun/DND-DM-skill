@@ -2352,6 +2352,36 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(result["resolution"]["hp_update"]["adjusted_hp_change"], 7)
             self.assertEqual(updated.entities["ent_enemy_goblin_001"].hp["current"], 2)
 
+    def test_execute_dueling_style_adds_two_damage_for_one_handed_melee_attack(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {"fighter": {"level": 1, "fighting_style": {"style_id": "dueling"}}}
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [4]}],
+            )
+
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 9)
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][0]["formula"], "1d8+5")
+
     def test_execute_resolves_multi_part_damage_on_critical_hit(self) -> None:
         """测试暴击会翻倍多段伤害并返回 resolved_formula."""
         with make_repositories() as (encounter_repo, event_repo):

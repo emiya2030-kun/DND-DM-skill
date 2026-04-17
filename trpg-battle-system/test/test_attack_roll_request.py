@@ -568,6 +568,24 @@ class AttackRollRequestTests(unittest.TestCase):
                 repo.close()
             repo.close()
 
+    def test_execute_archery_style_adds_two_to_ranged_attack_bonus(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"fighter": {"level": 1, "fighting_style": {"style_id": "archery"}}}
+            target = build_target(position=(6, 2))
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="shortbow",
+            )
+
+            self.assertEqual(request.context["attack_bonus"], 7)
+            self.assertEqual(request.context["attack_bonus_breakdown"]["fighting_style_bonus"], 2)
+            repo.close()
+
     def test_execute_non_fighter_without_explicit_proficiency_keeps_legacy_default_proficiency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

@@ -21,6 +21,7 @@ class ArmorProfileResolver:
         armor = self._resolve_equipped_item(actor.equipped_armor)
         shield = self._resolve_equipped_item(actor.equipped_shield)
         temporary_ac_bonus = self._active_temporary_ac_bonus(actor)
+        fighting_style_bonus = self._resolve_fighting_style_ac_bonus(actor, armor)
         unarmored_defense_base_ac = self._resolve_unarmored_defense_base_ac(actor)
 
         if armor is None and shield is None:
@@ -42,6 +43,7 @@ class ArmorProfileResolver:
                 "current_ac": current_ac,
                 "ac_breakdown": {
                     "base_armor_ac": base_ac,
+                    "fighting_style_bonus": 0,
                     "shield_bonus": 0,
                     "shield_spell_bonus_active": temporary_ac_bonus,
                     "current_ac": current_ac,
@@ -74,7 +76,7 @@ class ArmorProfileResolver:
             shield_ac = shield.get("ac") if isinstance(shield.get("ac"), dict) else {}
             shield_bonus = int(shield_ac.get("bonus", 0) or 0)
 
-        current_ac = base_armor_ac + shield_bonus + temporary_ac_bonus
+        current_ac = base_armor_ac + shield_bonus + fighting_style_bonus + temporary_ac_bonus
         strength_requirement = armor.get("strength_requirement") if armor else None
         strength_score = self._ability_score(actor, "str")
         speed_penalty_feet = 0
@@ -90,10 +92,11 @@ class ArmorProfileResolver:
             "shield_trained": shield_trained,
             "speed_penalty_feet": speed_penalty_feet,
             "stealth_disadvantage_sources": stealth_disadvantage_sources,
-            "base_ac": base_armor_ac + shield_bonus,
+            "base_ac": base_armor_ac + shield_bonus + fighting_style_bonus,
             "current_ac": current_ac,
             "ac_breakdown": {
                 "base_armor_ac": base_armor_ac,
+                "fighting_style_bonus": fighting_style_bonus,
                 "shield_bonus": shield_bonus,
                 "shield_spell_bonus_active": temporary_ac_bonus,
                 "current_ac": current_ac,
@@ -156,6 +159,16 @@ class ArmorProfileResolver:
             if isinstance(bonus, int):
                 total += bonus
         return total
+
+    def _resolve_fighting_style_ac_bonus(self, actor: EncounterEntity, armor: dict[str, Any] | None) -> int:
+        fighter_runtime = get_class_runtime(actor, "fighter")
+        if not fighter_runtime or armor is None:
+            return 0
+        fighting_style = fighter_runtime.get("fighting_style")
+        if not isinstance(fighting_style, dict):
+            return 0
+        style_id = str(fighting_style.get("style_id") or "").strip().lower()
+        return 1 if style_id == "defense" else 0
 
     def _project_item(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
         if item is None:

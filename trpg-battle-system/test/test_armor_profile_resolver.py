@@ -146,3 +146,31 @@ class ArmorProfileResolverTests(unittest.TestCase):
             self.assertFalse(profile["wearing_untrained_armor"])
             self.assertTrue(profile["shield_trained"])
             self.assertEqual(profile["current_ac"], 18)
+
+    def test_resolve_defense_style_adds_one_ac_while_wearing_armor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            knowledge_path = Path(tmp_dir) / "armor_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "leather_armor": {
+                                "armor_id": "leather_armor",
+                                "name": "皮甲",
+                                "category": "light",
+                                "ac": {"base": 11, "add_dex_modifier": True},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.equipped_armor = {"armor_id": "leather_armor"}
+            actor.class_features = {"fighter": {"level": 1, "fighting_style": {"style_id": "defense"}}}
+
+            profile = ArmorProfileResolver(ArmorDefinitionRepository(knowledge_path)).resolve(actor)
+
+            self.assertEqual(profile["current_ac"], 14)
+            self.assertEqual(profile["ac_breakdown"]["fighting_style_bonus"], 1)

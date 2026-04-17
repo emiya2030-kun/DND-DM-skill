@@ -618,6 +618,7 @@ class ExecuteAttack:
         weapon = self.attack_roll_request.resolve_weapon_or_raise(actor, weapon_id)
 
         damage_parts = self._build_weapon_damage_parts(
+            encounter_id=encounter_id,
             actor_entity_id=actor_entity_id,
             weapon_id=weapon_id,
             weapon=weapon,
@@ -674,6 +675,7 @@ class ExecuteAttack:
         weapon = self.attack_roll_request.resolve_weapon_or_raise(actor, weapon_id)
 
         damage_parts = self._build_weapon_damage_parts(
+            encounter_id=encounter_id,
             actor_entity_id=actor_entity_id,
             weapon_id=weapon_id,
             weapon=weapon,
@@ -696,6 +698,7 @@ class ExecuteAttack:
     def _build_weapon_damage_parts(
         self,
         *,
+        encounter_id: str,
         actor_entity_id: str,
         weapon_id: str,
         weapon: dict[str, Any],
@@ -712,6 +715,11 @@ class ExecuteAttack:
         damage_parts: list[dict[str, Any]] = []
         modifier_value = int(attack_context.get("modifier_value", 0) or 0)
         attack_mode = str(attack_context.get("attack_mode") or "default").lower()
+        fighting_style_damage_bonus = self._resolve_fighting_style_damage_bonus(
+            encounter_id=encounter_id,
+            actor_entity_id=actor_entity_id,
+            attack_context=attack_context,
+        )
         for index, part in enumerate(raw_parts):
             if not isinstance(part, dict):
                 raise ValueError(f"weapon '{weapon_id}' has invalid damage part at index {index}")
@@ -725,6 +733,11 @@ class ExecuteAttack:
                     modifier_value=modifier_value,
                     attack_mode=attack_mode,
                 )
+                if fighting_style_damage_bonus:
+                    resolved_formula = self._add_flat_modifier_to_formula(
+                        resolved_formula,
+                        fighting_style_damage_bonus,
+                    )
             damage_parts.append(
                 {
                     "source": f"weapon:{weapon_id}:part_{index}",
@@ -734,6 +747,51 @@ class ExecuteAttack:
             )
         damage_parts.extend(self._build_target_effect_damage_parts(actor_entity_id=actor_entity_id, target=target))
         return damage_parts
+
+    def _resolve_fighting_style_damage_bonus(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        attack_context: dict[str, Any],
+    ) -> int:
+        return self._resolve_dueling_bonus(
+            encounter_id=encounter_id,
+            actor_entity_id=actor_entity_id,
+            attack_context=attack_context,
+        )
+
+    def _resolve_dueling_bonus(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        attack_context: dict[str, Any],
+    ) -> int:
+        encounter = self.attack_roll_request.encounter_repository.get(attack_context.get("encounter_id", ""))
+        if encounter is None:
+            encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            return 0
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            return 0
+        fighter_runtime = get_class_runtime(actor, "fighter")
+        if not fighter_runtime:
+            return 0
+        fighting_style = fighter_runtime.get("fighting_style")
+        if not isinstance(fighting_style, dict):
+            return 0
+        style_id = str(fighting_style.get("style_id") or "").strip().lower()
+        if style_id != "dueling":
+            return 0
+        if str(attack_context.get("attack_kind") or "").lower() != "melee_weapon":
+            return 0
+        if str(attack_context.get("grip_mode") or "default").lower() == "two_handed":
+            return 0
+        if actor.equipped_shield is not None:
+            return 0
+        return 2
 
     def _maybe_append_rogue_sneak_attack_damage_part(
         self,
@@ -968,6 +1026,19 @@ class ExecuteAttack:
         if stripped_formula != formula and re.fullmatch(r"\d+d\d+", stripped_formula):
             return stripped_formula
         return formula if not re.fullmatch(r"\d+d\d+", formula) else formula
+
+    def _add_flat_modifier_to_formula(self, formula: str, bonus: int) -> str:
+        if bonus == 0:
+            return formula
+        match = re.fullmatch(r"(\d+d\d+)([+-]\d+)?", formula.strip())
+        if match is None:
+            return formula
+        base = match.group(1)
+        existing = int(match.group(2) or 0)
+        total = existing + bonus
+        if total == 0:
+            return base
+        return f"{base}+{total}" if total > 0 else f"{base}{total}"
 
     def _apply_deflect_attacks_pending_effect(
         self,

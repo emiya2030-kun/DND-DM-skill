@@ -99,6 +99,7 @@ class AttackRollRequest:
         modifier = self._resolve_modifier_name(actor, weapon, normalized_attack_mode)
         modifier_value = actor.ability_mods.get(modifier, 0)
         proficiency_bonus = actor.proficiency_bonus if bool(weapon.get("is_proficient", True)) else 0
+        attack_kind = self._resolve_attack_kind(weapon, normalized_attack_mode)
         attack_bonus_override = weapon.get("attack_bonus_override")
         explicit_attack_bonus = weapon.get("attack_bonus")
         if isinstance(attack_bonus_override, int):
@@ -107,10 +108,11 @@ class AttackRollRequest:
             base_attack_bonus = explicit_attack_bonus
         else:
             base_attack_bonus = modifier_value + proficiency_bonus
+        fighting_style_bonus = self._resolve_fighting_style_attack_bonus(actor=actor, attack_kind=attack_kind)
+        base_attack_bonus += fighting_style_bonus
         exhaustion_penalty = actor_runtime.get_d20_penalty()
         attack_bonus = base_attack_bonus - exhaustion_penalty
         distance_to_target_feet = self._distance_feet(actor, target)
-        attack_kind = self._resolve_attack_kind(weapon, normalized_attack_mode)
         light_bonus_uses_bonus_action = True
         if normalized_attack_mode == "light_bonus":
             light_bonus_trigger = self._ensure_light_bonus_attack_available(actor, weapon)
@@ -214,6 +216,11 @@ class AttackRollRequest:
                 "proficiency_bonus": proficiency_bonus,
                 "base_attack_bonus": base_attack_bonus,
                 "attack_bonus": attack_bonus,
+                "attack_bonus_breakdown": {
+                    "base_attack_bonus": base_attack_bonus,
+                    "fighting_style_bonus": fighting_style_bonus,
+                    "exhaustion_penalty": exhaustion_penalty,
+                },
                 "exhaustion_penalty": exhaustion_penalty,
                 "vantage": resolved_vantage,
                 "vantage_sources": vantage_sources,
@@ -807,6 +814,18 @@ class AttackRollRequest:
         base_reach = 10 if "reach" in properties else 5
         normal_range = int(weapon.get("range", {}).get("normal", 0) or 0)
         return max(base_reach, normal_range)
+
+    def _resolve_fighting_style_attack_bonus(self, *, actor: EncounterEntity, attack_kind: str) -> int:
+        fighter_runtime = get_class_runtime(actor, "fighter")
+        if not fighter_runtime:
+            return 0
+        fighting_style = fighter_runtime.get("fighting_style")
+        if not isinstance(fighting_style, dict):
+            return 0
+        style_id = str(fighting_style.get("style_id") or "").strip().lower()
+        if style_id == "archery" and attack_kind == "ranged_weapon":
+            return 2
+        return 0
 
     def _ensure_two_handed_hands_available(
         self,
