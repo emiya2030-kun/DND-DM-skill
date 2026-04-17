@@ -1680,6 +1680,30 @@ class AttackRollRequestTests(unittest.TestCase):
             )
             repo.close()
 
+    def test_execute_rejects_cunning_strike_poison_without_poisoners_kit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 5}}
+            target = build_target()
+            ally = build_target(position=(4, 2), entity_id="ent_ally_fighter_001", name="Fighter")
+            ally.side = "ally"
+            ally.category = "pc"
+            ally.controller = "player"
+            repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            with self.assertRaisesRegex(ValueError, "cunning_strike_poison_requires_poisoners_kit"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id=target.entity_id,
+                    weapon_id="rapier",
+                    class_feature_options={
+                        "sneak_attack": True,
+                        "cunning_strike": {"effects": ["poison"]},
+                    },
+                )
+            repo.close()
+
     def test_execute_rejects_sneak_attack_without_advantage_or_adjacent_ally(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

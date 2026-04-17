@@ -2764,6 +2764,229 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertIn("prone", updated.entities["ent_enemy_goblin_001"].conditions)
             self.assertEqual(result["resolution"]["cunning_strike"]["applied_effects"][0]["effect"], "trip")
 
+    def test_execute_cunning_strike_poison_applies_poisoned_with_repeat_save(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                }
+            }
+            actor.notes = ["tool:poisoners_kit"]
+            actor.ability_mods["dex"] = 4
+            actor.proficiency_bonus = 3
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            target.ability_mods["con"] = 1
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4]},
+                ],
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {
+                        "effects": [{"effect": "poison", "save_roll": 2}],
+                    },
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            poison = result["resolution"]["cunning_strike"]["applied_effects"][0]
+            self.assertEqual(poison["effect"], "poison")
+            self.assertEqual(poison["status"], "applied")
+            self.assertIn("poisoned", updated.entities[target.entity_id].conditions)
+            self.assertTrue(
+                any(
+                    effect.get("effect_type") == "cunning_strike_poison"
+                    for effect in updated.entities[target.entity_id].turn_effects
+                )
+            )
+
+    def test_execute_cunning_strike_knock_out_applies_unconscious(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 14,
+                }
+            }
+            actor.ability_mods["dex"] = 4
+            actor.proficiency_bonus = 5
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            target.ability_mods["con"] = 0
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3]},
+                ],
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {
+                        "effects": [{"effect": "knock_out", "save_roll": 1}],
+                    },
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            knock_out = result["resolution"]["cunning_strike"]["applied_effects"][0]
+            self.assertEqual(knock_out["effect"], "knock_out")
+            self.assertEqual(knock_out["status"], "applied")
+            self.assertIn("unconscious", updated.entities[target.entity_id].conditions)
+
+    def test_execute_cunning_strike_daze_applies_dazed(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 14}}
+            actor.ability_mods["dex"] = 4
+            actor.proficiency_bonus = 5
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            target.ability_mods["con"] = 0
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4, 5, 6, 2]},
+                ],
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {"effects": [{"effect": "daze", "save_roll": 1}]},
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            daze = result["resolution"]["cunning_strike"]["applied_effects"][0]
+            self.assertEqual(daze["effect"], "daze")
+            self.assertEqual(daze["status"], "applied")
+            self.assertIn("dazed", updated.entities[target.entity_id].conditions)
+
+    def test_execute_cunning_strike_obscure_applies_blinded(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {"rogue": {"level": 14}}
+            actor.ability_mods["dex"] = 4
+            actor.proficiency_bonus = 5
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            target.ability_mods["dex"] = 1
+            ally = build_humanoid_target(category="npc", hp_current=10)
+            ally.entity_id = "ent_ally_fighter_001"
+            ally.name = "Fighter"
+            ally.side = "ally"
+            ally.controller = "player"
+            ally.position = {"x": 4, "y": 2}
+            encounter_repo.save(build_encounter(actor=actor, target=target, extra_entities=[ally]))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4, 5, 6]},
+                ],
+                class_feature_options={
+                    "sneak_attack": True,
+                    "cunning_strike": {"effects": [{"effect": "obscure", "save_roll": 1}]},
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            obscure = result["resolution"]["cunning_strike"]["applied_effects"][0]
+            self.assertEqual(obscure["effect"], "obscure")
+            self.assertEqual(obscure["status"], "applied")
+            self.assertIn("blinded", updated.entities[target.entity_id].conditions)
+
     def test_execute_martial_arts_bonus_consumes_bonus_action(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_actor()

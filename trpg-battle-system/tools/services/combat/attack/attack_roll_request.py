@@ -664,6 +664,8 @@ class AttackRollRequest:
                 raise ValueError("invalid_cunning_strike_effect")
             if effect_name not in allowed_effects:
                 raise ValueError("unsupported_cunning_strike_effect")
+            if effect_name == "poison" and not self._actor_has_poisoners_kit(actor):
+                raise ValueError("cunning_strike_poison_requires_poisoners_kit")
             normalized_effects.append(effect_payload)
 
         max_effects = cunning_strike.get("max_effects_per_hit", 0)
@@ -685,6 +687,11 @@ class AttackRollRequest:
             "effects": normalized_effects,
             "spent_dice": spent_dice,
         }
+
+    def _actor_has_poisoners_kit(self, actor: EncounterEntity) -> bool:
+        notes = actor.notes if isinstance(actor.notes, list) else []
+        normalized_notes = {str(item).strip().lower() for item in notes if str(item).strip()}
+        return "tool:poisoners_kit" in normalized_notes
 
     def _allowed_cunning_strike_effects(self, rogue: dict[str, Any]) -> set[str]:
         level = rogue.get("level", 0)
