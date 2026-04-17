@@ -28,6 +28,14 @@ def ensure_fighter_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     return ensure_class_runtime(entity_or_class_features, "fighter")
 
 
+def get_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    return get_class_runtime(entity_or_class_features, "monk")
+
+
+def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    return ensure_class_runtime(entity_or_class_features, "monk")
+
+
 def _read_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(entity_or_class_features, dict):
         class_features = entity_or_class_features.get("class_features")

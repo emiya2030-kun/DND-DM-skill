@@ -11,8 +11,10 @@ from tools.services.class_features.shared.martial_feature_options import (
 from tools.services.class_features.shared.runtime import (
     ensure_class_runtime,
     ensure_fighter_runtime,
+    ensure_monk_runtime,
     get_class_runtime,
     get_fighter_runtime,
+    get_monk_runtime,
 )
 from tools.services.class_features.shared.studied_attacks import (
     add_or_refresh_studied_attack_mark,
@@ -27,11 +29,13 @@ __all__ = [
     "consume_studied_attack_mark",
     "ensure_class_runtime",
     "ensure_fighter_runtime",
+    "ensure_monk_runtime",
     "ensure_rogue_runtime",
     "fighter_has_studied_attacks",
     "get_unconsumed_studied_attack_mark",
     "get_class_runtime",
     "get_fighter_runtime",
+    "get_monk_runtime",
     "has_unconsumed_studied_attack_mark",
     "normalize_class_feature_options",
     "resolve_extra_attack_count",
