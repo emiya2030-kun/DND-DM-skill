@@ -60,6 +60,33 @@ REACTION_DEFINITIONS = {
             "short_label": "Shield",
         },
     },
+    "deflect_attacks": {
+        "reaction_type": "deflect_attacks",
+        "template_type": "defensive_reaction_reduce_damage",
+        "name": "Deflect Attacks",
+        "trigger_type": "attack_declared",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "before_damage_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": True,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_is_target_of_trigger",
+            "actor_has_deflect_attacks",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_deflect_attacks_reaction"},
+        "ui": {
+            "prompt": "Use Deflect Attacks?",
+            "short_label": "Deflect Attacks",
+        },
+    },
     "absorb_elements": {
         "reaction_type": "absorb_elements",
         "template_type": "post_hit_damage_modifier",

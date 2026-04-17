@@ -1641,6 +1641,129 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertTrue(updated.entities[actor.entity_id].action_economy["reaction_used"])
             self.assertTrue(result["resolution"]["hit"])
 
+    def test_execute_applies_deflect_attacks_pending_effect_before_hp_update(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.side = "ally"
+            target.controller = "player"
+            target.entity_id = "ent_ally_monk_001"
+            target.name = "Monk"
+            target.turn_effects = [
+                {
+                    "effect_id": "effect_deflect_001",
+                    "effect_type": "deflect_attacks_pending",
+                    "attack_id": "attack_deflect_001",
+                    "damage_reduction_total": 15,
+                }
+            ]
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            result = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            ).execute(
+                encounter_id="enc_execute_attack_test",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                host_action_id="attack_deflect_001",
+                skip_reaction_window=True,
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 0)
+            self.assertIsNone(result["resolution"].get("hp_update"))
+            self.assertEqual(updated.entities[target.entity_id].hp["current"], 9)
+            self.assertFalse(updated.entities[target.entity_id].turn_effects)
+
+    def test_execute_applies_deflect_attacks_redirect_when_damage_reduced_to_zero(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.side = "ally"
+            target.controller = "player"
+            target.entity_id = "ent_ally_monk_001"
+            target.name = "Monk"
+            target.ability_mods = {"dex": 3}
+            target.proficiency_bonus = 2
+            target.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 3},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            redirect_target = EncounterEntity(
+                entity_id="ent_enemy_orc_002",
+                name="Orc 2",
+                side="enemy",
+                category="monster",
+                controller="gm",
+                position={"x": 4, "y": 2},
+                hp={"current": 15, "max": 15, "temp": 0},
+                ac=12,
+                speed={"walk": 30, "remaining": 30},
+                initiative=9,
+                ability_mods={"dex": 1},
+            )
+            target.turn_effects = [
+                {
+                    "effect_id": "effect_deflect_001",
+                    "effect_type": "deflect_attacks_pending",
+                    "attack_id": "attack_deflect_001",
+                    "damage_reduction_total": 15,
+                    "redirect_requested": True,
+                    "redirect_target_id": redirect_target.entity_id,
+                    "redirect_save_roll": 7,
+                    "redirect_damage_rolls": [5, 4],
+                    "redirect_damage_type": "piercing",
+                }
+            ]
+            encounter = build_encounter(actor=actor, target=target)
+            encounter.entities[redirect_target.entity_id] = redirect_target
+            encounter.turn_order.append(redirect_target.entity_id)
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            result = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            ).execute(
+                encounter_id="enc_execute_attack_test",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                host_action_id="attack_deflect_001",
+                skip_reaction_window=True,
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 0)
+            self.assertEqual(
+                result["resolution"]["deflect_attacks"]["redirect_resolution"]["total_damage"],
+                12,
+            )
+            self.assertEqual(updated.entities[target.entity_id].class_features["monk"]["focus_points"]["remaining"], 2)
+            self.assertEqual(updated.entities[redirect_target.entity_id].hp["current"], 3)
+
     def test_execute_runs_full_flow_and_auto_applies_damage(self) -> None:
         """测试新主路径会串起请求、命中判定、事件写入和自动扣血."""
         with make_repositories() as (encounter_repo, event_repo):

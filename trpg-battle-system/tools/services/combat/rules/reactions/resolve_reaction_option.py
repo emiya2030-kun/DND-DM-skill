@@ -7,6 +7,7 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.attack.execute_attack import ExecuteAttack
 from tools.services.combat.rules.reactions.close_reaction_window import CloseReactionWindow
 from tools.services.combat.rules.reactions.definitions.counterspell import ResolveCounterspellReaction
+from tools.services.combat.rules.reactions.definitions.deflect_attacks import ResolveDeflectAttacksReaction
 from tools.services.combat.rules.reactions.definitions.indomitable import ResolveIndomitableReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
 from tools.services.combat.rules.reactions.definitions.shield import ResolveShieldReaction
@@ -44,6 +45,7 @@ class ResolveReactionOption:
         self.counterspell_resolver = ResolveCounterspellReaction(
             CastInterruptContest(encounter_repository),
         )
+        self.deflect_attacks_resolver = ResolveDeflectAttacksReaction(encounter_repository)
         self.indomitable_resolver = ResolveIndomitableReaction(encounter_repository)
         encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
         self.resume_host_action = resume_host_action or ResumeHostAction(
@@ -58,9 +60,10 @@ class ResolveReactionOption:
         window_id: str,
         group_id: str,
         option_id: str,
-        final_total: int,
-        dice_rolls: dict[str, Any],
+        final_total: int | None,
+        dice_rolls: dict[str, Any] | None,
         damage_rolls: list[dict[str, Any]] | None = None,
+        option_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
         pending_window = self._get_pending_window_or_raise(encounter, window_id)
@@ -81,6 +84,7 @@ class ResolveReactionOption:
             final_total=final_total,
             dice_rolls=dice_rolls,
             damage_rolls=damage_rolls,
+            option_payload=option_payload,
         )
 
     def _execute_with_mapping(
@@ -88,9 +92,10 @@ class ResolveReactionOption:
         *,
         encounter_id: str,
         mapping: dict[str, Any],
-        final_total: int,
-        dice_rolls: dict[str, Any],
+        final_total: int | None,
+        dice_rolls: dict[str, Any] | None,
         damage_rolls: list[dict[str, Any]] | None,
+        option_payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
         if mapping.get("persist_window", True):
@@ -115,6 +120,7 @@ class ResolveReactionOption:
             final_total=final_total,
             dice_rolls=dice_rolls,
             damage_rolls=damage_rolls,
+            option_payload=option_payload,
         )
 
         resolution_mode = resolution.get("resolution_mode")
@@ -191,8 +197,8 @@ class ResolveReactionOption:
         *,
         encounter_id: str,
         request_id: str,
-        final_total: int,
-        dice_rolls: dict[str, Any],
+        final_total: int | None,
+        dice_rolls: dict[str, Any] | None,
         damage_rolls: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
@@ -252,6 +258,7 @@ class ResolveReactionOption:
             final_total=final_total,
             dice_rolls=dice_rolls,
             damage_rolls=damage_rolls,
+            option_payload=None,
         )
 
     def _resolve_by_type(
@@ -260,9 +267,10 @@ class ResolveReactionOption:
         reaction_type: str,
         encounter_id: str,
         request: dict[str, Any],
-        final_total: int,
-        dice_rolls: dict[str, Any],
+        final_total: int | None,
+        dice_rolls: dict[str, Any] | None,
         damage_rolls: list[dict[str, Any]] | None,
+        option_payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
         if reaction_type == "opportunity_attack":
             return self.opportunity_attack_resolver.execute(
@@ -278,6 +286,12 @@ class ResolveReactionOption:
                 request=request,
                 final_total=final_total,
                 dice_rolls=dice_rolls,
+            )
+        if reaction_type == "deflect_attacks":
+            return self.deflect_attacks_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                option_payload=option_payload,
             )
         if reaction_type == "counterspell":
             return self.counterspell_resolver.execute(

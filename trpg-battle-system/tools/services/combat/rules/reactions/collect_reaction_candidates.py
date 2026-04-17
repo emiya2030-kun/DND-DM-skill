@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import math
 
 from tools.models import Encounter
+from tools.services.class_features.shared import get_class_runtime
 from tools.services.encounter.movement_rules import get_center_position
 
 if TYPE_CHECKING:
@@ -31,21 +32,31 @@ class CollectReactionCandidates:
             if not isinstance(target_id, str) or target_id not in encounter.entities:
                 return []
 
-            definitions = [definition for definition in definitions if definition.get("reaction_type") == "shield"]
-            if not definitions:
-                return []
-
             target = encounter.entities.get(target_id)
-            if target is None or not self._eligible_for_shield(target):
+            if target is None:
                 return []
 
-            return [
-                {
-                    "actor_entity_id": target_id,
-                    "reaction_definition": definition,
-                }
-                for definition in definitions
-            ]
+            candidates: list[dict[str, Any]] = []
+            for definition in definitions:
+                reaction_type = definition.get("reaction_type")
+                if reaction_type == "shield" and self._eligible_for_shield(target):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+                elif reaction_type == "deflect_attacks" and self._eligible_for_deflect_attacks(
+                    entity=target,
+                    trigger_event=trigger_event,
+                ):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+            return candidates
 
         if trigger_type == "leave_reach":
             actor_ids: list[str] = []
@@ -136,6 +147,27 @@ class CollectReactionCandidates:
             and self._has_spell_slot(entity, minimum_level=3)
             and self._within_counterspell_range(entity, caster)
         )
+
+    def _eligible_for_deflect_attacks(self, *, entity: Any, trigger_event: dict[str, Any]) -> bool:
+        if not self._reaction_available(entity):
+            return False
+        monk_runtime = get_class_runtime(entity, "monk")
+        if not monk_runtime:
+            return False
+        deflect_state = monk_runtime.get("deflect_attacks")
+        if not isinstance(deflect_state, dict) or not bool(deflect_state.get("enabled")):
+            return False
+        host_snapshot = trigger_event.get("host_action_snapshot")
+        if not isinstance(host_snapshot, dict):
+            return False
+        primary_damage_type = str(host_snapshot.get("primary_damage_type") or "").lower()
+        if primary_damage_type in {"bludgeoning", "piercing", "slashing"}:
+            return True
+        deflect_energy = monk_runtime.get("deflect_energy")
+        if isinstance(deflect_energy, dict) and bool(deflect_energy.get("enabled")):
+            return True
+        level = monk_runtime.get("level", 0)
+        return isinstance(level, int) and level >= 13
 
     def _eligible_for_indomitable(self, entity: Any) -> bool:
         class_features = entity.class_features if isinstance(entity.class_features, dict) else {}

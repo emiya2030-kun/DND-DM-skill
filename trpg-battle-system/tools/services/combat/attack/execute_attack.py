@@ -93,6 +93,7 @@ class ExecuteAttack:
         class_feature_options: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
+        host_action_id: str | None = None,
         skip_reaction_window: bool = False,
     ) -> dict[str, Any]:
         """执行一次完整攻击。
@@ -165,7 +166,7 @@ class ExecuteAttack:
         target_ac = request.context.get("target_ac")
         attack_hits = isinstance(target_ac, int) and resolved_attack_roll["final_total"] >= target_ac
         if not consume_reaction and not skip_reaction_window and attack_hits:
-            attack_id = f"atk_{uuid4().hex[:12]}"
+            attack_id = host_action_id or f"atk_{uuid4().hex[:12]}"
             trigger_event = {
                 "event_id": f"evt_attack_declared_{uuid4().hex[:12]}",
                 "trigger_type": "attack_declared",
@@ -189,8 +190,16 @@ class ExecuteAttack:
                     "allow_out_of_turn_actor": allow_out_of_turn_actor,
                     "consume_action": effective_consume_action,
                     "consume_reaction": consume_reaction,
+                    "primary_damage_type": request.context.get("primary_damage_type"),
                 },
                 "target_entity_id": request.target_entity_id,
+                "request_payloads": {
+                    request.target_entity_id: {
+                        "primary_damage_type": request.context.get("primary_damage_type"),
+                        "source_actor_id": request.actor_entity_id,
+                        "weapon_id": weapon_id,
+                    }
+                },
             }
             window_result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
             if window_result["status"] == "waiting_reaction":
@@ -253,18 +262,27 @@ class ExecuteAttack:
             if prepared_damage_resolution is None:
                 raise ValueError("structured_damage_resolution_missing")
             damage_resolution = prepared_damage_resolution
-            resolution["damage_resolution"] = damage_resolution
-            resolution["hp_update"] = self._apply_resolved_damage(
+            deflect_result = self._apply_deflect_attacks_pending_effect(
                 encounter_id=encounter_id,
-                target_id=target_id,
-                source_entity_id=request.actor_entity_id,
-                attack_name=request.context.get("attack_name") or "Attack",
+                target_entity_id=target_id,
+                host_action_id=host_action_id,
                 damage_resolution=damage_resolution,
-                is_critical_hit=resolution["is_critical_hit"],
-                concentration_vantage=concentration_vantage,
-                zero_hp_intent=zero_hp_intent,
-                attack_kind=request.context.get("attack_kind"),
             )
+            if deflect_result is not None:
+                resolution["deflect_attacks"] = deflect_result
+            resolution["damage_resolution"] = damage_resolution
+            if damage_resolution.get("total_damage", 0):
+                resolution["hp_update"] = self._apply_resolved_damage(
+                    encounter_id=encounter_id,
+                    target_id=target_id,
+                    source_entity_id=request.actor_entity_id,
+                    attack_name=request.context.get("attack_name") or "Attack",
+                    damage_resolution=damage_resolution,
+                    is_critical_hit=resolution["is_critical_hit"],
+                    concentration_vantage=concentration_vantage,
+                    zero_hp_intent=zero_hp_intent,
+                    attack_kind=request.context.get("attack_kind"),
+                )
         elif resolution["hit"] and hp_change is not None:
             resolution["hp_update"] = self._apply_legacy_damage(
                 encounter_id=encounter_id,
@@ -896,6 +914,147 @@ class ExecuteAttack:
         if stripped_formula != formula and re.fullmatch(r"\d+d\d+", stripped_formula):
             return stripped_formula
         return formula if not re.fullmatch(r"\d+d\d+", formula) else formula
+
+    def _apply_deflect_attacks_pending_effect(
+        self,
+        *,
+        encounter_id: str,
+        target_entity_id: str,
+        host_action_id: str | None,
+        damage_resolution: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying deflect attacks")
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            return None
+
+        matched_effect = None
+        remaining_effects: list[dict[str, Any]] = []
+        for effect in target.turn_effects:
+            if (
+                matched_effect is None
+                and isinstance(effect, dict)
+                and effect.get("effect_type") == "deflect_attacks_pending"
+                and (host_action_id is None or effect.get("attack_id") == host_action_id)
+            ):
+                matched_effect = dict(effect)
+                continue
+            remaining_effects.append(effect)
+        if matched_effect is None:
+            return None
+
+        target.turn_effects = remaining_effects
+        prevented = int(matched_effect.get("damage_reduction_total", 0) or 0)
+        total_damage = int(damage_resolution.get("total_damage", 0) or 0)
+        damage_resolution["total_damage"] = max(0, total_damage - prevented)
+        if isinstance(damage_resolution.get("parts"), list):
+            remaining_prevention = max(0, prevented)
+            for part in damage_resolution["parts"]:
+                if not isinstance(part, dict):
+                    continue
+                adjusted_total = part.get("adjusted_total")
+                if isinstance(adjusted_total, int):
+                    prevented_here = min(adjusted_total, remaining_prevention)
+                    part["adjusted_total"] = max(0, adjusted_total - prevented_here)
+                    remaining_prevention -= prevented_here
+                total = part.get("total")
+                if isinstance(total, int):
+                    part["total"] = max(part["adjusted_total"], 0) if isinstance(part.get("adjusted_total"), int) else total
+
+        result: dict[str, Any] = {
+            "status": "damage_reduced",
+            "damage_prevented": min(total_damage, prevented),
+            "remaining_damage": damage_resolution["total_damage"],
+        }
+        self.attack_roll_request.encounter_repository.save(encounter)
+        if damage_resolution["total_damage"] == 0 and bool(matched_effect.get("redirect_requested")):
+            redirect_resolution = self._resolve_deflect_attacks_redirect(
+                encounter=encounter,
+                monk_entity=target,
+                effect=matched_effect,
+            )
+            if redirect_resolution is not None:
+                result["redirect_resolution"] = redirect_resolution
+        return result
+
+    def _resolve_deflect_attacks_redirect(
+        self,
+        *,
+        encounter: Any,
+        monk_entity: Any,
+        effect: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        redirect_target_id = effect.get("redirect_target_id")
+        if not isinstance(redirect_target_id, str) or redirect_target_id not in encounter.entities:
+            return None
+        monk_runtime = get_class_runtime(monk_entity, "monk")
+        focus_points = monk_runtime.get("focus_points")
+        if not isinstance(focus_points, dict):
+            return None
+        remaining_focus = focus_points.get("remaining")
+        if not isinstance(remaining_focus, int) or remaining_focus <= 0:
+            return None
+
+        redirect_target = encounter.entities[redirect_target_id]
+        dex_mod = monk_entity.ability_mods.get("dex", 0)
+        proficiency_bonus = monk_entity.proficiency_bonus if isinstance(monk_entity.proficiency_bonus, int) else 0
+        if not isinstance(dex_mod, int):
+            dex_mod = 0
+        save_dc = 8 + proficiency_bonus + dex_mod
+        save_roll = effect.get("redirect_save_roll", 0)
+        save_total = save_roll + int(redirect_target.ability_mods.get("dex", 0) or 0) if isinstance(save_roll, int) else 0
+        success = save_total >= save_dc
+        if success:
+            return {
+                "save_dc": save_dc,
+                "save_total": save_total,
+                "success": True,
+                "total_damage": 0,
+            }
+
+        martial_arts_die = monk_runtime.get("martial_arts_die")
+        if not isinstance(martial_arts_die, str) or not martial_arts_die.strip():
+            return None
+        base_formula = self._double_die_formula(martial_arts_die.strip())
+        base_rolls = effect.get("redirect_damage_rolls")
+        if not isinstance(base_rolls, list) or not all(isinstance(item, int) for item in base_rolls):
+            base_rolls = self._roll_formula(base_formula)
+        total_damage = sum(int(item) for item in base_rolls) + max(0, dex_mod)
+        focus_points["remaining"] = remaining_focus - 1
+        self.attack_roll_request.encounter_repository.save(encounter)
+        self.update_hp.execute(
+            encounter_id=encounter.encounter_id,
+            target_id=redirect_target_id,
+            hp_change=total_damage,
+            reason="Deflect Attacks redirect",
+            damage_type=effect.get("redirect_damage_type"),
+            source_entity_id=monk_entity.entity_id,
+        )
+        return {
+            "save_dc": save_dc,
+            "save_total": save_total,
+            "success": False,
+            "damage_rolls": base_rolls,
+            "total_damage": total_damage,
+        }
+
+    def _double_die_formula(self, formula: str) -> str:
+        match = self._FORMULA_RE.match(formula)
+        if match is None:
+            raise ValueError("invalid_martial_arts_formula")
+        count = int(match.group(1)) * 2
+        sides = int(match.group(2))
+        return f"{count}d{sides}"
+
+    def _roll_formula(self, formula: str) -> list[int]:
+        match = self._FORMULA_RE.match(formula)
+        if match is None:
+            raise ValueError("invalid_formula")
+        count = int(match.group(1))
+        sides = int(match.group(2))
+        return [random.randint(1, sides) for _ in range(count)]
 
     def _mark_attack_resource_used(
         self,

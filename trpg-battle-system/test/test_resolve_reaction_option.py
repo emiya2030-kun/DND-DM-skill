@@ -99,6 +99,25 @@ def build_shield_target() -> EncounterEntity:
     return target
 
 
+def build_deflect_monk_target() -> EncounterEntity:
+    target = build_target()
+    target.side = "ally"
+    target.controller = "player"
+    target.entity_id = "ent_ally_monk_001"
+    target.name = "Monk"
+    target.ac = 14
+    target.action_economy = {"reaction_used": False}
+    target.class_features = {
+        "monk": {
+            "level": 5,
+            "focus_points": {"max": 5, "remaining": 3},
+            "deflect_attacks": {"enabled": True},
+            "martial_arts_die": "1d8",
+        }
+    }
+    return target
+
+
 def build_counterspell_actor() -> EncounterEntity:
     return EncounterEntity(
         entity_id="ent_ally_counter_001",
@@ -408,6 +427,119 @@ class ResolveReactionOptionTests(unittest.TestCase):
             self.assertEqual(result["reaction_result"]["save"]["final_total"], 17)
             self.assertEqual(fighter_state["indomitable"]["remaining_uses"], 0)
             self.assertTrue(updated.entities[fighter.entity_id].action_economy["reaction_used"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_resolves_deflect_attacks_and_arms_pending_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            attacker = build_attacker()
+            monk = build_deflect_monk_target()
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_deflect_option_test",
+                    name="Deflect Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=attacker.entity_id,
+                    turn_order=[attacker.entity_id, monk.entity_id],
+                    entities={attacker.entity_id: attacker, monk.entity_id: monk},
+                    map=EncounterMap(
+                        map_id="map_deflect_option_test",
+                        name="Deflect Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_deflect_001",
+                            "reaction_type": "deflect_attacks",
+                            "template_type": "defensive_reaction_reduce_damage",
+                            "trigger_type": "attack_declared",
+                            "status": "pending",
+                            "actor_entity_id": monk.entity_id,
+                            "target_entity_id": monk.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "primary_damage_type": "piercing",
+                                "source_actor_id": attacker.entity_id,
+                                "weapon_id": "rapier",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_attack_declared_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_attack_declared_001",
+                        "trigger_type": "attack_declared",
+                        "blocking": True,
+                        "host_action_type": "attack",
+                        "host_action_id": "attack_deflect_001",
+                        "host_action_snapshot": {
+                            "attack_id": "attack_deflect_001",
+                            "actor_id": attacker.entity_id,
+                            "target_id": monk.entity_id,
+                            "weapon_id": "rapier",
+                            "final_total": 18,
+                            "dice_rolls": {"base_rolls": [13], "modifier": 5},
+                            "damage_rolls": [{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                            "vantage": "normal",
+                            "consume_action": True,
+                            "consume_reaction": False,
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{monk.entity_id}",
+                                "actor_entity_id": monk.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "reaction",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": monk.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_deflect_001",
+                                        "reaction_type": "deflect_attacks",
+                                        "template_type": "defensive_reaction_reduce_damage",
+                                        "request_id": "react_deflect_001",
+                                        "label": "Deflect Attacks",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            result = self._build_service(encounter_repo, event_repo).execute(
+                encounter_id="enc_deflect_option_test",
+                window_id="rw_attack_declared_001",
+                group_id=f"rg_{monk.entity_id}",
+                option_id="opt_deflect_001",
+                final_total=0,
+                dice_rolls={},
+                option_payload={"reduction_roll": 7},
+            )
+
+            updated = encounter_repo.get("enc_deflect_option_test")
+            assert updated is not None
+            monk = updated.entities["ent_ally_monk_001"]
+            self.assertEqual(result["reaction_result"]["status"], "deflect_attacks_armed")
+            self.assertTrue(monk.action_economy["reaction_used"])
+            self.assertFalse(
+                any(effect.get("effect_type") == "deflect_attacks_pending" for effect in monk.turn_effects)
+            )
+            self.assertEqual(
+                result["host_action_result"]["resolution"]["deflect_attacks"]["status"],
+                "damage_reduced",
+            )
             encounter_repo.close()
             event_repo.close()
 

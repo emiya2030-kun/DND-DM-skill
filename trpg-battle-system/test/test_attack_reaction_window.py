@@ -14,7 +14,7 @@ from tools.repositories import EncounterRepository, EventRepository
 from tools.services import AppendEvent, AttackRollRequest, AttackRollResult, ExecuteAttack, UpdateHp
 
 
-def build_attacker() -> EncounterEntity:
+def build_attacker(*, damage_type: str = "piercing") -> EncounterEntity:
     return EncounterEntity(
         entity_id="ent_enemy_orc_001",
         name="Orc",
@@ -33,7 +33,7 @@ def build_attacker() -> EncounterEntity:
                 "weapon_id": "spear",
                 "name": "Spear",
                 "attack_bonus": 5,
-                "damage": [{"formula": "1d6+3", "type": "piercing"}],
+                "damage": [{"formula": "1d6+3", "type": damage_type}],
                 "properties": ["thrown"],
                 "range": {"normal": 5, "long": 20},
             }
@@ -41,11 +41,11 @@ def build_attacker() -> EncounterEntity:
     )
 
 
-def build_target(*, with_shield: bool) -> EncounterEntity:
+def build_target(*, with_shield: bool, with_deflect_attacks: bool = False) -> EncounterEntity:
     spells = [{"spell_id": "shield", "name": "Shield", "level": 1}] if with_shield else []
     resources = {"spell_slots": {"1": {"max": 1, "remaining": 1}}} if with_shield else {}
     action_economy = {"reaction_used": False} if with_shield else {"reaction_used": False}
-    return EncounterEntity(
+    target = EncounterEntity(
         entity_id="ent_ally_wizard_001",
         name="Wizard",
         side="ally",
@@ -60,11 +60,25 @@ def build_target(*, with_shield: bool) -> EncounterEntity:
         resources=resources,
         action_economy=action_economy,
     )
+    if with_deflect_attacks:
+        target.class_features = {
+            "monk": {
+                "level": 5,
+                "deflect_attacks": {"enabled": True},
+                "focus_points": {"max": 5, "remaining": 3},
+            }
+        }
+    return target
 
 
-def build_encounter(*, with_shield: bool) -> Encounter:
-    attacker = build_attacker()
-    target = build_target(with_shield=with_shield)
+def build_encounter(
+    *,
+    with_shield: bool,
+    with_deflect_attacks: bool = False,
+    damage_type: str = "piercing",
+) -> Encounter:
+    attacker = build_attacker(damage_type=damage_type)
+    target = build_target(with_shield=with_shield, with_deflect_attacks=with_deflect_attacks)
     return Encounter(
         encounter_id="enc_attack_reaction_test",
         name="Attack Reaction Test",
@@ -176,5 +190,69 @@ class AttackReactionWindowTests(unittest.TestCase):
             options = result["pending_reaction_window"]["choice_groups"][0]["options"]
             self.assertEqual(options[0]["reaction_type"], "shield")
             self.assertIn("encounter_state", result)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_returns_waiting_reaction_when_target_can_deflect_attacks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(build_encounter(with_shield=False, with_deflect_attacks=True))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            options = result["pending_reaction_window"]["choice_groups"][0]["options"]
+            self.assertEqual(options[0]["reaction_type"], "deflect_attacks")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_does_not_open_deflect_window_for_non_bps_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter_repo.save(
+                build_encounter(with_shield=False, with_deflect_attacks=True, damage_type="fire")
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_attack_reaction_test",
+                actor_id="ent_enemy_orc_001",
+                target_id="ent_ally_wizard_001",
+                weapon_id="spear",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+            )
+
+            self.assertIn("request", result)
+            self.assertIn("resolution", result)
+            self.assertNotIn("status", result)
             encounter_repo.close()
             event_repo.close()
