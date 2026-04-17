@@ -110,6 +110,93 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
             self.assertNotIn("initiative_tiebreak_decimal", result["initiative_results"][0])
             repo.close()
 
+    def test_execute_applies_uncanny_metabolism_when_declared(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            monk = build_entity("ent_a", name="米伦", x=2, y=2)
+            monk.hp["current"] = 9
+            monk.hp["max"] = 20
+            monk.ability_mods = {"dex": 3}
+            monk.class_features = {
+                "monk": {
+                    "level": 5,
+                    "martial_arts_die": "1d8",
+                    "focus_points": {"max": 5, "remaining": 1},
+                    "uncanny_metabolism": {"available": True},
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_uncanny_metabolism_test",
+                name="Uncanny Metabolism Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": monk},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", side_effect=[6, 12]):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.11):
+                    result = RollInitiativeAndStartEncounter(repo).execute(
+                        "enc_uncanny_metabolism_test",
+                        initiative_options={"ent_a": {"use_uncanny_metabolism": True}},
+                    )
+
+            updated = repo.get("enc_uncanny_metabolism_test")
+            self.assertIsNotNone(updated)
+            monk = updated.entities["ent_a"]
+            self.assertEqual(monk.class_features["monk"]["focus_points"]["remaining"], 5)
+            self.assertEqual(monk.hp["current"], 20)
+            self.assertFalse(monk.class_features["monk"]["uncanny_metabolism"]["available"])
+            self.assertEqual(result["initiative_results"][0]["initiative_total"], 15)
+            self.assertEqual(result["current_entity_id"], "ent_a")
+            repo.close()
+
+    def test_execute_rejects_uncanny_metabolism_when_already_spent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            monk = build_entity("ent_a", name="米伦", x=2, y=2)
+            monk.class_features = {
+                "monk": {
+                    "level": 5,
+                    "martial_arts_die": "1d8",
+                    "focus_points": {"max": 5, "remaining": 1},
+                    "uncanny_metabolism": {"available": False},
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_uncanny_metabolism_spent",
+                name="Uncanny Metabolism Spent Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": monk},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with self.assertRaisesRegex(ValueError, "uncanny_metabolism_unavailable"):
+                RollInitiativeAndStartEncounter(repo).execute(
+                    "enc_uncanny_metabolism_spent",
+                    initiative_options={"ent_a": {"use_uncanny_metabolism": True}},
+                )
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()
