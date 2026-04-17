@@ -3,7 +3,15 @@ from tools.services.class_features.shared.proficiency_resolver import (
     resolve_entity_proficiencies,
     resolve_entity_save_proficiencies,
 )
-from tools.services.class_features.shared.runtime import ensure_fighter_runtime, get_fighter_runtime
+from tools.services.class_features.shared.martial_feature_options import (
+    normalize_class_feature_options,
+)
+from tools.services.class_features.shared.runtime import (
+    ensure_class_runtime,
+    ensure_fighter_runtime,
+    get_class_runtime,
+    get_fighter_runtime,
+)
 from tools.services.class_features.shared.studied_attacks import (
     add_or_refresh_studied_attack_mark,
     consume_studied_attack_mark,
@@ -15,11 +23,14 @@ from tools.services.class_features.shared.studied_attacks import (
 __all__ = [
     "add_or_refresh_studied_attack_mark",
     "consume_studied_attack_mark",
+    "ensure_class_runtime",
     "ensure_fighter_runtime",
     "fighter_has_studied_attacks",
     "get_unconsumed_studied_attack_mark",
+    "get_class_runtime",
     "get_fighter_runtime",
     "has_unconsumed_studied_attack_mark",
+    "normalize_class_feature_options",
     "resolve_extra_attack_count",
     "resolve_entity_proficiencies",
     "resolve_entity_save_proficiencies",
