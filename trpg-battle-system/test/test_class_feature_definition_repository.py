@@ -37,3 +37,21 @@ class ClassFeatureDefinitionRepositoryTests(unittest.TestCase):
         self.assertIsNotNone(feature)
         self.assertEqual(feature["resource_model"]["linked_to_feature"], "fighter.second_wind")
         self.assertEqual(feature["trigger"]["feature_id"], "fighter.second_wind")
+
+    def test_get_returns_rogue_sneak_attack_definition(self) -> None:
+        repo = ClassFeatureDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/class_feature_definitions.json"))
+
+        feature = repo.get("rogue.sneak_attack")
+
+        self.assertIsNotNone(feature)
+        self.assertEqual(feature["template_type"], "damage_rider_once_per_turn")
+        self.assertEqual(feature["activation"], "passive")
+
+    def test_get_returns_monk_stunning_strike_definition(self) -> None:
+        repo = ClassFeatureDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/class_feature_definitions.json"))
+
+        feature = repo.get("monk.stunning_strike")
+
+        self.assertIsNotNone(feature)
+        self.assertEqual(feature["template_type"], "save_on_hit_control")
+        self.assertEqual(feature["resource_model"]["cost"], {"focus_points": 1})

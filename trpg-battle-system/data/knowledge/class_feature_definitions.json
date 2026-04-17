@@ -172,6 +172,270 @@
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
       }
+    },
+    "barbarian.rage": {
+      "id": "barbarian.rage",
+      "name": "Rage",
+      "class_id": "barbarian",
+      "level_required": 1,
+      "template_type": "stance_or_mode_toggle",
+      "activation": "bonus_action",
+      "resource_model": {
+        "recharge": "short_or_long_rest",
+        "uses_scaling": {
+          "barbarian_level_at_least_1": 2,
+          "barbarian_level_at_least_10": 3
+        }
+      },
+      "trigger": {
+        "type": "player_activated"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Enter a rage that bolsters damage and resistances for multiple turns.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.deflect_attacks": {
+      "id": "monk.deflect_attacks",
+      "name": "Deflect Attacks",
+      "class_id": "monk",
+      "level_required": 3,
+      "template_type": "defensive_reaction_reduce_damage",
+      "activation": "reaction",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_being_attacked"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Spend focus to reduce incoming damage and potentially redirect it.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.empowered_strikes": {
+      "id": "monk.empowered_strikes",
+      "name": "Empowered Strikes",
+      "class_id": "monk",
+      "level_required": 6,
+      "template_type": "conditional_damage_conversion",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_monk_damage"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Transform unarmed damage to radiant damage when empowered by ki.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.flurry_of_blows": {
+      "id": "monk.flurry_of_blows",
+      "name": "Flurry of Blows",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "bonus_attack_grant",
+      "activation": "bonus_action",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "after_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Spend ki to unleash two bonus-action unarmed strikes after your Attack action.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.martial_arts": {
+      "id": "monk.martial_arts",
+      "name": "Martial Arts",
+      "class_id": "monk",
+      "level_required": 1,
+      "template_type": "bonus_attack_grant",
+      "activation": "bonus_action",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "after_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Make one bonus-action unarmed strike while unarmored and unshielded.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.patient_defense": {
+      "id": "monk.patient_defense",
+      "name": "Patient Defense",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "defensive_bonus_action",
+      "activation": "bonus_action",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "player_activated"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Spend focus to gain Dodge and disengage benefits until your next turn.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.step_of_the_wind": {
+      "id": "monk.step_of_the_wind",
+      "name": "Step of the Wind",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "mobility_bonus",
+      "activation": "bonus_action",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "player_activated"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Spend ki to double your movement and take Disengage without provoking opportunity attacks.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.stunning_strike": {
+      "id": "monk.stunning_strike",
+      "name": "Stunning Strike",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "save_on_hit_control",
+      "activation": "bonus_action",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "after_attack_hit"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Spend ki to force a Constitution save, stunning the target on a failure.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "paladin.divine_smite": {
+      "id": "paladin.divine_smite",
+      "name": "Divine Smite",
+      "class_id": "paladin",
+      "level_required": 2,
+      "template_type": "damage_rider_on_hit",
+      "activation": "passive",
+      "resource_model": {
+        "cost": {
+          "spell_slots": 1
+        },
+        "recharge": "long_rest"
+      },
+      "trigger": {
+        "type": "after_attack_hit"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Spend a spell slot to add radiant damage to a melee hit.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "ranger.weapon_mastery_stub": {
+      "id": "ranger.weapon_mastery_stub",
+      "name": "Weapon Mastery Stub",
+      "class_id": "ranger",
+      "level_required": 1,
+      "template_type": "attack_mastery_override",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_weapon_attack_roll"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Placeholder for future ranger weapon mastery adjustments.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "rogue.sneak_attack": {
+      "id": "rogue.sneak_attack",
+      "name": "Sneak Attack",
+      "class_id": "rogue",
+      "level_required": 1,
+      "template_type": "damage_rider_once_per_turn",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "turn_start"
+      },
+      "trigger": {
+        "type": "on_attack_hit"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Add extra damage once per turn on a qualifying hit.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
     }
   }
 }
