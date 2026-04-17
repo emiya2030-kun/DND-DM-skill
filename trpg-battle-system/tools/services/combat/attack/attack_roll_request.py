@@ -31,6 +31,7 @@ from tools.services.combat.shared.turn_actor_guard import (
 )
 from tools.services.class_features.shared import (
     fighter_has_studied_attacks,
+    get_class_runtime,
     has_unconsumed_studied_attack_mark,
     normalize_class_feature_options,
     resolve_extra_attack_count,
@@ -87,6 +88,7 @@ class AttackRollRequest:
         target_runtime = ConditionRuntime(target.conditions)
         normalized_attack_mode = self._normalize_attack_mode(attack_mode)
         normalized_grip_mode = self._normalize_grip_mode(grip_mode)
+        self._validate_monk_attack_mode(actor=actor, attack_mode=normalized_attack_mode, weapon_id=weapon_id)
 
         modifier = self._resolve_modifier_name(actor, weapon, normalized_attack_mode)
         modifier_value = actor.ability_mods.get(modifier, 0)
@@ -109,6 +111,8 @@ class AttackRollRequest:
             light_bonus_uses_bonus_action = not bool(light_bonus_trigger.get("grants_nick"))
             if light_bonus_uses_bonus_action:
                 self._ensure_bonus_action_available(actor)
+        elif normalized_attack_mode in {"martial_arts_bonus", "flurry_of_blows"}:
+            self._ensure_bonus_action_available(actor)
         elif require_action_available:
             self._ensure_action_available(actor)
         self._ensure_two_handed_hands_available(actor, weapon, normalized_grip_mode)
@@ -227,6 +231,9 @@ class AttackRollRequest:
         return self.weapon_profile_resolver.resolve(actor, weapon_id)
 
     def _resolve_modifier_name(self, actor: EncounterEntity, weapon: dict, attack_mode: str) -> str:
+        if self._is_monk_unarmed_attack(actor=actor, weapon=weapon):
+            return "dex"
+
         properties = {str(prop).lower() for prop in weapon.get("properties", [])}
         normal_range = weapon.get("range", {}).get("normal", 0)
         kind = str(weapon.get("kind") or "").lower()
@@ -458,9 +465,38 @@ class AttackRollRequest:
 
     def _normalize_attack_mode(self, attack_mode: str | None) -> str:
         normalized = str(attack_mode or "default").lower()
-        if normalized not in {"default", "thrown", "light_bonus"}:
+        if normalized not in {"default", "thrown", "light_bonus", "martial_arts_bonus", "flurry_of_blows"}:
             raise ValueError("invalid_attack_mode")
         return normalized
+
+    def _validate_monk_attack_mode(self, *, actor: EncounterEntity, attack_mode: str, weapon_id: str) -> None:
+        if attack_mode not in {"martial_arts_bonus", "flurry_of_blows"}:
+            return
+
+        if weapon_id != "unarmed_strike":
+            if attack_mode == "martial_arts_bonus":
+                raise ValueError("martial_arts_bonus_requires_unarmed_strike")
+            raise ValueError("flurry_of_blows_requires_unarmed_strike")
+
+        monk_runtime = get_class_runtime(actor, "monk")
+        martial_arts_die = monk_runtime.get("martial_arts_die")
+        if not isinstance(martial_arts_die, str) or not martial_arts_die.strip():
+            raise ValueError("martial_arts_requires_monk_runtime")
+
+        if attack_mode == "flurry_of_blows":
+            focus_points = monk_runtime.get("focus_points")
+            if not isinstance(focus_points, dict):
+                raise ValueError("flurry_of_blows_requires_focus_points")
+            remaining = focus_points.get("remaining")
+            if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 1:
+                raise ValueError("flurry_of_blows_requires_focus_points")
+
+    def _is_monk_unarmed_attack(self, *, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
+        if str(weapon.get("weapon_id") or "").strip().lower() != "unarmed_strike":
+            return False
+        monk_runtime = get_class_runtime(actor, "monk")
+        martial_arts_die = monk_runtime.get("martial_arts_die")
+        return isinstance(martial_arts_die, str) and bool(martial_arts_die.strip())
 
     def _normalize_grip_mode(self, grip_mode: str | None) -> str:
         normalized = str(grip_mode or "default").lower()

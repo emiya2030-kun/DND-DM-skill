@@ -4,7 +4,7 @@ from typing import Any
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
-from tools.services.class_features.shared import resolve_entity_proficiencies
+from tools.services.class_features.shared import get_class_runtime, resolve_entity_proficiencies
 
 
 class WeaponProfileResolver:
@@ -14,6 +14,9 @@ class WeaponProfileResolver:
         self.weapon_definition_repository = weapon_definition_repository
 
     def resolve(self, actor: EncounterEntity, weapon_id: str) -> dict[str, Any]:
+        if weapon_id == "unarmed_strike":
+            return self._build_unarmed_strike_profile(actor)
+
         runtime_weapon = self._get_runtime_weapon_or_raise(actor, weapon_id)
         template = self._get_template(weapon_id)
 
@@ -135,6 +138,38 @@ class WeaponProfileResolver:
                     damage_parts.append(self._normalize_damage_part(part))
 
         return [part for part in damage_parts if part]
+
+    def _build_unarmed_strike_profile(self, actor: EncounterEntity) -> dict[str, Any]:
+        return {
+            "weapon_id": "unarmed_strike",
+            "name": "Unarmed Strike",
+            "category": "simple",
+            "kind": "melee",
+            "properties": [],
+            "is_proficient": True,
+            "damage": [{"formula": self._resolve_unarmed_damage_formula(actor), "type": "bludgeoning"}],
+            "range": {"normal": 5, "long": 5},
+            "hands": {"mode": "one_handed"},
+        }
+
+    def _resolve_unarmed_damage_formula(self, actor: EncounterEntity) -> str:
+        monk_runtime = get_class_runtime(actor, "monk")
+        monk_die = monk_runtime.get("martial_arts_die")
+        if isinstance(monk_die, str) and monk_die.strip():
+            die = monk_die.strip()
+            modifier = actor.ability_mods.get("dex", 0)
+            return self._append_modifier_to_formula(die, modifier)
+        modifier = actor.ability_mods.get("str", 0)
+        return self._append_modifier_to_formula("1d4", modifier)
+
+    def _append_modifier_to_formula(self, formula: str, modifier: Any) -> str:
+        if isinstance(modifier, bool) or not isinstance(modifier, int):
+            return formula
+        if modifier > 0:
+            return f"{formula}+{modifier}"
+        if modifier < 0:
+            return f"{formula}{modifier}"
+        return formula
 
     def _normalize_damage_part(self, part: dict[str, Any]) -> dict[str, Any]:
         formula = part.get("formula")

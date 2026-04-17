@@ -110,6 +110,9 @@ class ExecuteAttack:
         if normalized_attack_mode == "light_bonus":
             effective_consume_action = False
             effective_consume_bonus_action = True
+        elif normalized_attack_mode in {"martial_arts_bonus", "flurry_of_blows"}:
+            effective_consume_action = False
+            effective_consume_bonus_action = True
 
         try:
             request = self.attack_roll_request.execute(
@@ -923,8 +926,23 @@ class ExecuteAttack:
             }
         elif consume_action:
             actor.combat_flags.pop("light_bonus_trigger", None)
+        self._consume_monk_flurry_focus_if_needed(actor=actor, attack_mode=attack_mode)
         self._mark_rogue_sneak_attack_used_if_applied(actor=actor, resolution=resolution)
         self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _consume_monk_flurry_focus_if_needed(self, *, actor: Any, attack_mode: str) -> None:
+        if attack_mode != "flurry_of_blows":
+            return
+        monk_runtime = get_class_runtime(actor, "monk")
+        focus_points = monk_runtime.get("focus_points")
+        if not isinstance(focus_points, dict):
+            return
+        remaining = focus_points.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int):
+            return
+        if remaining <= 0:
+            return
+        focus_points["remaining"] = remaining - 1
 
     def _mark_rogue_sneak_attack_used_if_applied(self, *, actor: Any, resolution: dict[str, Any]) -> None:
         if not bool(resolution.get("hit")):

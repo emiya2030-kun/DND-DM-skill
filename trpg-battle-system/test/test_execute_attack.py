@@ -2467,6 +2467,89 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(second["resolution"]["damage_resolution"]["total_damage"], 8)
             self.assertEqual(len(second["resolution"]["damage_resolution"]["parts"]), 1)
 
+    def test_execute_martial_arts_bonus_consumes_bonus_action(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "bonus_action_used": False, "reaction_used": False}
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                attack_mode="martial_arts_bonus",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertFalse(updated.entities[actor.entity_id].action_economy["action_used"])
+            self.assertTrue(updated.entities[actor.entity_id].action_economy["bonus_action_used"])
+
+    def test_execute_flurry_of_blows_spends_focus_and_bonus_action(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "bonus_action_used": False, "reaction_used": False}
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                attack_mode="flurry_of_blows",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertFalse(updated.entities[actor.entity_id].action_economy["action_used"])
+            self.assertTrue(updated.entities[actor.entity_id].action_economy["bonus_action_used"])
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
+
     def test_execute_ignores_damage_rolls_when_attack_misses(self) -> None:
         """测试未命中时应忽略 damage_rolls，结果中不包含伤害分解."""
         with make_repositories() as (encounter_repo, event_repo):

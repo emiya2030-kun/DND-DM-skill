@@ -1388,6 +1388,54 @@ class AttackRollRequestTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_allows_martial_arts_bonus_unarmed_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="unarmed_strike",
+                attack_mode="martial_arts_bonus",
+            )
+
+            self.assertEqual(request.context["attack_mode"], "martial_arts_bonus")
+            self.assertEqual(request.context["primary_damage_type"], "bludgeoning")
+            self.assertEqual(request.context["modifier"], "dex")
+            self.assertEqual(request.context["attack_kind"], "melee_weapon")
+            repo.close()
+
+    def test_execute_rejects_flurry_of_blows_when_no_focus_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 0},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "flurry_of_blows_requires_focus_points"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="unarmed_strike",
+                    attack_mode="flurry_of_blows",
+                )
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()
