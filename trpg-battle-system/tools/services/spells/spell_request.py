@@ -7,7 +7,7 @@ from typing import Any
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
-from tools.services.encounter.movement_rules import get_center_position
+from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
 
 
 class SpellRequest:
@@ -133,6 +133,14 @@ class SpellRequest:
         )
         if target_validation_error is not None:
             return target_validation_error
+        single_target_error = self._validate_single_target_rules(
+            encounter=encounter,
+            actor=actor,
+            spell_definition=spell_definition,
+            target_entity_ids=normalized_target_ids,
+        )
+        if single_target_error is not None:
+            return single_target_error
 
         upcast_delta = 0 if is_cantrip else max(cast_level - base_level, 0)
         requires_concentration = bool(spell_definition.get("base", {}).get("concentration", False))
@@ -491,6 +499,50 @@ class SpellRequest:
             }
         return None
 
+    def _validate_single_target_rules(
+        self,
+        *,
+        encounter: Any,
+        actor: Any,
+        spell_definition: dict[str, Any],
+        target_entity_ids: list[str],
+    ) -> dict[str, Any] | None:
+        if len(target_entity_ids) != 1:
+            return None
+
+        targeting = spell_definition.get("targeting")
+        if not isinstance(targeting, dict):
+            return None
+        if targeting.get("type") != "single_target":
+            return None
+
+        target = encounter.entities.get(target_entity_ids[0])
+        if target is None:
+            return None
+
+        range_feet = targeting.get("range_feet")
+        if isinstance(range_feet, int) and range_feet > 0:
+            distance_feet = self._distance_feet(actor, target, encounter)
+            if distance_feet > range_feet:
+                return {
+                    "ok": False,
+                    "error_code": "target_out_of_range",
+                    "message": "该目标超出法术施法距离。",
+                }
+
+        if bool(targeting.get("requires_line_of_sight")) and not self._has_line_of_sight(
+            encounter=encounter,
+            actor=actor,
+            target=target,
+        ):
+            return {
+                "ok": False,
+                "error_code": "blocked_by_line_of_sight",
+                "message": "当前无法指定该目标，因为视线被阻挡。",
+            }
+
+        return None
+
     def _validate_target_point(
         self,
         *,
@@ -583,6 +635,41 @@ class SpellRequest:
         dy = abs(actor_center["y"] - target_point["y"])
         distance_feet = math.ceil(max(dx, dy)) * encounter.map.grid_size_feet
         return distance_feet <= range_feet
+
+    def _distance_feet(self, source: Any, target: Any, encounter: Any) -> int:
+        source_center = get_center_position(source)
+        target_center = get_center_position(target)
+        dx = abs(source_center["x"] - target_center["x"])
+        dy = abs(source_center["y"] - target_center["y"])
+        return math.ceil(max(dx, dy)) * encounter.map.grid_size_feet
+
+    def _has_line_of_sight(self, *, encounter: Any, actor: Any, target: Any) -> bool:
+        blocking_cells = {
+            (terrain["x"], terrain["y"])
+            for terrain in encounter.map.terrain
+            if isinstance(terrain.get("x"), int)
+            and isinstance(terrain.get("y"), int)
+            and (terrain.get("blocks_los") or terrain.get("type") == "wall")
+        }
+        if not blocking_cells:
+            return True
+
+        actor_cells = get_occupied_cells(actor)
+        target_cells = get_occupied_cells(target)
+        source = get_center_position(actor)
+        destination = get_center_position(target)
+        steps = max(int(math.ceil(max(abs(destination["x"] - source["x"]), abs(destination["y"] - source["y"])) * 4)), 1)
+
+        for index in range(1, steps):
+            ratio = index / steps
+            sample_x = source["x"] + (destination["x"] - source["x"]) * ratio
+            sample_y = source["y"] + (destination["y"] - source["y"]) * ratio
+            cell = (math.floor(sample_x + 0.5), math.floor(sample_y + 0.5))
+            if cell in actor_cells or cell in target_cells:
+                continue
+            if cell in blocking_cells:
+                return False
+        return True
 
     def _is_int_coordinate(self, value: Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)

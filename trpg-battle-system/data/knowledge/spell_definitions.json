@@ -234,6 +234,94 @@
         "note": null
       }
     },
+    "healing_word": {
+      "id": "healing_word",
+      "name": "Healing Word",
+      "level": 1,
+      "save_ability": null,
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "治愈真言",
+        "name_en": "Healing Word",
+        "rules_text_zh": "你指定施法距离内一个你能看见的生物并恢复其生命值，恢复量等于2d4+你的施法属性调整值。升环施法。使用的法术位每比一环高一环，此法术的治疗量就增加2d4点。",
+        "rules_text_en": "A creature of your choice that you can see within range regains hit points equal to 2d4 plus your spellcasting ability modifier. When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 2d4 for each slot level above 1st."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["吟游诗人", "牧师", "德鲁伊"],
+        "classes_en": ["Bard", "Cleric", "Druid"]
+      },
+      "base": {
+        "level": 1,
+        "school": "abjuration",
+        "school_zh": "防护",
+        "casting_time": "1 bonus action",
+        "casting_time_zh": "附赠动作",
+        "range": "60 feet",
+        "range_zh": "60尺",
+        "components": ["V"],
+        "components_zh": ["V"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "A creature of your choice that you can see within range regains hit points equal to 2d4 plus your spellcasting ability modifier."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 60,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "heal",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "bonus_action",
+        "healing_mode": "instant"
+      },
+      "on_cast": {
+        "healing_parts": [
+          {
+            "source": "spell:healing_word:base",
+            "formula": "2d4",
+            "include_spellcasting_modifier": true
+          }
+        ]
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": {
+          "base_slot_level": 1,
+          "additional_healing_parts": [
+            {
+              "source": "spell:healing_word:slot_scaling",
+              "formula_per_extra_level": "2d4"
+            }
+          ]
+        }
+      },
+      "special_rules": {
+        "heals_living_targets_only": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      }
+    },
     "shield": {
       "id": "shield",
       "name": "Shield",

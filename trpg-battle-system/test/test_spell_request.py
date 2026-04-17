@@ -734,6 +734,144 @@ class SpellRequestTests(unittest.TestCase):
         self.assertEqual(too_many_target_result["ok"], False)
         self.assertEqual(too_many_target_result["error_code"], "invalid_target_count")
 
+    def test_execute_accepts_healing_word_bonus_action_single_target(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "healing_word": {
+                        "id": "healing_word",
+                        "name": "Healing Word",
+                        "level": 1,
+                        "base": {
+                            "level": 1,
+                            "casting_time": "1 bonus action",
+                            "concentration": False,
+                        },
+                        "resolution": {"mode": "heal", "activation": "bonus_action"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 60,
+                            "requires_line_of_sight": True,
+                            "allowed_target_types": ["creature"],
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.spells.append({"spell_id": "healing_word", "name": "Healing Word", "level": 1})
+        caster.resources["spell_slots"] = {"1": {"max": 2, "remaining": 2}}
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="healing_word",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            declared_action_cost="bonus_action",
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action_cost"], "bonus_action")
+        self.assertEqual(result["target_entity_ids"], ["ent_target_humanoid_001"])
+
+    def test_execute_rejects_healing_word_target_out_of_range(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "healing_word": {
+                        "id": "healing_word",
+                        "name": "Healing Word",
+                        "level": 1,
+                        "base": {
+                            "level": 1,
+                            "casting_time": "1 bonus action",
+                            "concentration": False,
+                        },
+                        "resolution": {"mode": "heal", "activation": "bonus_action"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 60,
+                            "requires_line_of_sight": True,
+                            "allowed_target_types": ["creature"],
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.spells.append({"spell_id": "healing_word", "name": "Healing Word", "level": 1})
+        caster.resources["spell_slots"] = {"1": {"max": 2, "remaining": 2}}
+        encounter.entities["ent_target_humanoid_001"].position = {"x": 20, "y": 1}
+        encounter.map.width = 24
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="healing_word",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            declared_action_cost="bonus_action",
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "target_out_of_range")
+
+    def test_execute_rejects_healing_word_when_line_of_sight_blocked(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "healing_word": {
+                        "id": "healing_word",
+                        "name": "Healing Word",
+                        "level": 1,
+                        "base": {
+                            "level": 1,
+                            "casting_time": "1 bonus action",
+                            "concentration": False,
+                        },
+                        "resolution": {"mode": "heal", "activation": "bonus_action"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 60,
+                            "requires_line_of_sight": True,
+                            "allowed_target_types": ["creature"],
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.spells.append({"spell_id": "healing_word", "name": "Healing Word", "level": 1})
+        caster.resources["spell_slots"] = {"1": {"max": 2, "remaining": 2}}
+        encounter.entities["ent_target_humanoid_001"].position = {"x": 3, "y": 1}
+        encounter.map.width = 6
+        encounter.map.terrain = [{"terrain_id": "wall_01", "type": "wall", "x": 2, "y": 1, "blocks_los": True}]
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="healing_word",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            declared_action_cost="bonus_action",
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "blocked_by_line_of_sight")
+
     def test_execute_resolves_slot_duration_bonus_for_hex(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(
             {
