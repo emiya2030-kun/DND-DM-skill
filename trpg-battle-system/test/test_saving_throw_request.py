@@ -10,7 +10,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import Encounter, EncounterEntity, EncounterMap
-from tools.repositories import EncounterRepository
+import json
+
+from tools.repositories import ArmorDefinitionRepository, EncounterRepository
 from tools.services import SavingThrowRequest
 
 
@@ -81,6 +83,46 @@ def build_encounter() -> Encounter:
 
 
 class SavingThrowRequestTests(unittest.TestCase):
+    def test_execute_marks_disadvantage_for_untrained_armor_dex_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            armor_path = Path(tmp_dir) / "armor_definitions.json"
+            armor_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "chain_mail": {
+                                "armor_id": "chain_mail",
+                                "name": "链甲",
+                                "category": "heavy",
+                                "ac": {"base": 16},
+                                "strength_requirement": 13,
+                                "stealth_disadvantage": True,
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_iron_duster_001"].equipped_armor = {"armor_id": "chain_mail"}
+            repo.save(encounter)
+
+            request = SavingThrowRequest(
+                repo,
+                armor_definition_repository=ArmorDefinitionRepository(armor_path),
+            ).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                force_save_ability="dex",
+            )
+
+            self.assertEqual(request.context["vantage"], "disadvantage")
+            self.assertIn("armor_untrained", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
     def test_execute_builds_saving_throw_request(self) -> None:
         """测试会为目标生成带 save_dc 和施法者信息的豁免请求。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

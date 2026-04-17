@@ -10,6 +10,7 @@ from tools.services.combat.rules.conditions import ConditionRuntime
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
 from tools.services.combat.rules.opportunity_attacks import build_opportunity_request
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
+from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
 from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
@@ -305,8 +306,9 @@ class BeginMoveEncounterEntity:
         runtime = self._safe_condition_runtime(mover.conditions)
         exhaustion_penalty = runtime.get_speed_penalty_feet()
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(mover)
+        armor_speed_penalty = get_armor_speed_penalty(mover)
         distance_already_moved = self._movement_spent_feet(mover)
-        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty)
+        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
         total_available_movement = effective_walk_speed * (2 if use_dash else 1)
         available_movement = max(0, total_available_movement - distance_already_moved)
         if movement.feet_cost > available_movement:
@@ -333,7 +335,8 @@ class BeginMoveEncounterEntity:
         runtime = self._safe_condition_runtime(mover.conditions)
         exhaustion_penalty = runtime.get_speed_penalty_feet()
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(mover)
-        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty)
+        armor_speed_penalty = get_armor_speed_penalty(mover)
+        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
         spent_before = self._movement_spent_feet(mover)
         spent_after = spent_before + feet_spent_delta
         mover.combat_flags["movement_spent_feet"] = spent_after

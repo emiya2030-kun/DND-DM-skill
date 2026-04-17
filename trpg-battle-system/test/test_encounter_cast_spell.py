@@ -3,6 +3,7 @@
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -10,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import Encounter, EncounterEntity, EncounterMap
-from tools.repositories import EncounterRepository, EventRepository, SpellDefinitionRepository
+from tools.repositories import ArmorDefinitionRepository, EncounterRepository, EventRepository, SpellDefinitionRepository
 from tools.services import AppendEvent, EncounterCastSpell
 
 
@@ -92,6 +93,50 @@ def build_encounter() -> Encounter:
 
 
 class EncounterCastSpellTests(unittest.TestCase):
+    def test_execute_rejects_spellcasting_in_untrained_armor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            armor_path = Path(tmp_dir) / "armor_definitions.json"
+            armor_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "chain_mail": {
+                                "armor_id": "chain_mail",
+                                "name": "链甲",
+                                "category": "heavy",
+                                "ac": {"base": 16},
+                                "strength_requirement": 13,
+                                "stealth_disadvantage": True,
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].equipped_armor = {"armor_id": "chain_mail"}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(
+                encounter_repo,
+                AppendEvent(event_repo),
+                armor_definition_repository=ArmorDefinitionRepository(armor_path),
+            )
+
+            with self.assertRaisesRegex(ValueError, "armor_training_required_for_spellcasting"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="blindness_deafness",
+                    target_ids=["ent_enemy_iron_duster_001"],
+                    cast_level=3,
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_sustained_area_spell_creates_zone_and_links_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

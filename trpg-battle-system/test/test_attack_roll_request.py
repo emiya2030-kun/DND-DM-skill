@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import Encounter, EncounterEntity, EncounterMap
-from tools.repositories import EncounterRepository, WeaponDefinitionRepository
+from tools.repositories import ArmorDefinitionRepository, EncounterRepository, WeaponDefinitionRepository
 from tools.services import AttackRollRequest
 
 
@@ -130,6 +130,45 @@ def build_encounter(
 
 
 class AttackRollRequestTests(unittest.TestCase):
+    def test_execute_adds_disadvantage_for_untrained_armor_dex_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            armor_path = Path(tmp_dir) / "armor_definitions.json"
+            armor_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "chain_mail": {
+                                "armor_id": "chain_mail",
+                                "name": "链甲",
+                                "category": "heavy",
+                                "ac": {"base": 16},
+                                "strength_requirement": 13,
+                                "stealth_disadvantage": True,
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.equipped_armor = {"armor_id": "chain_mail"}
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(
+                repo,
+                armor_definition_repository=ArmorDefinitionRepository(armor_path),
+            ).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="shortbow",
+            )
+
+            self.assertEqual(request.context["vantage"], "disadvantage")
+            self.assertIn("armor_untrained", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
     def test_execute_rejects_non_current_turn_actor(self) -> None:
         """测试显式传入的 actor 不是当前行动者时会被拒绝。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

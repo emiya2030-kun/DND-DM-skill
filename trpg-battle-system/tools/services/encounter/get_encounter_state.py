@@ -4,12 +4,14 @@ from typing import Any
 
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
+from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.event_repository import EventRepository
 from tools.services.combat.attack.weapon_mastery_effects import (
     build_weapon_mastery_effect_labels,
     get_weapon_mastery_speed_penalty,
 )
+from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
@@ -23,11 +25,13 @@ class GetEncounterState:
         event_repository: EventRepository | None = None,
         battlemap_view_service: RenderBattlemapView | None = None,
         map_notes_service: BuildMapNotes | None = None,
+        armor_definition_repository: ArmorDefinitionRepository | None = None,
     ):
         self.repository = repository
         self.event_repository = event_repository
         self.battlemap_view_service = battlemap_view_service or RenderBattlemapView()
         self.map_notes_service = map_notes_service or BuildMapNotes()
+        self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
 
     def execute(self, encounter_id: str) -> dict[str, Any]:
         """读取指定 encounter，并返回视图层对象。"""
@@ -82,6 +86,11 @@ class GetEncounterState:
     ) -> dict[str, Any] | None:
         if entity is None:
             return None
+        armor_profile = self.armor_profile_resolver.refresh_entity_armor_class(entity)
+        effective_speed = max(
+            0,
+            entity.speed["walk"] - get_weapon_mastery_speed_penalty(entity) - armor_profile["speed_penalty_feet"],
+        )
 
         return {
             "id": entity.entity_id,
@@ -93,8 +102,19 @@ class GetEncounterState:
             "position": self._format_position(entity),
             "movement_remaining": f"{entity.speed['remaining']} feet",
             "ac": entity.ac,
-            "speed": max(0, entity.speed["walk"] - get_weapon_mastery_speed_penalty(entity)),
+            "speed": effective_speed,
+            "effective_speed": effective_speed,
+            "speed_penalty_feet": armor_profile["speed_penalty_feet"],
             "spell_save_dc": self._calculate_spell_save_dc(entity),
+            "armor": armor_profile["armor"],
+            "shield": armor_profile["shield"],
+            "armor_training": armor_profile["armor_training"],
+            "ac_breakdown": armor_profile["ac_breakdown"],
+            "stealth_disadvantage_sources": armor_profile["stealth_disadvantage_sources"],
+            "untrained_armor_penalties": {
+                "str_dex_d20_disadvantage": armor_profile["wearing_untrained_armor"],
+                "spellcasting_blocked": armor_profile["wearing_untrained_armor"],
+            },
             "available_actions": {
                 "weapons": self._build_weapons_view(entity),
                 "spells": self._build_spells_view(entity),
@@ -116,6 +136,7 @@ class GetEncounterState:
         items: list[dict[str, Any]] = []
         for entity_id in encounter.turn_order:
             entity = encounter.entities[entity_id]
+            armor_profile = self.armor_profile_resolver.refresh_entity_armor_class(entity)
             items.append(
                 {
                     "id": entity.entity_id,
@@ -123,6 +144,8 @@ class GetEncounterState:
                     "type": entity.side,
                     "hp": self._format_hp_status(entity),
                     "ac": entity.ac,
+                    "armor": armor_profile["armor"],
+                    "shield": armor_profile["shield"],
                     "position": self._format_position(entity),
                     "distance_from_current_turn_entity": self._format_distance_from_current(entity, current_entity),
                     "conditions": self._format_conditions(encounter, entity),

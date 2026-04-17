@@ -5,8 +5,10 @@ from uuid import uuid4
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.models.roll_request import RollRequest
+from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
+from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 
 
 class SavingThrowRequest:
@@ -16,9 +18,11 @@ class SavingThrowRequest:
         self,
         encounter_repository: EncounterRepository,
         spell_definition_repository: SpellDefinitionRepository | None = None,
+        armor_definition_repository: ArmorDefinitionRepository | None = None,
     ):
         self.encounter_repository = encounter_repository
         self.spell_definition_repository = spell_definition_repository or SpellDefinitionRepository()
+        self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
 
     def execute(
         self,
@@ -28,6 +32,7 @@ class SavingThrowRequest:
         spell_id: str,
         vantage: str = "normal",
         description: str | None = None,
+        force_save_ability: str | None = None,
     ) -> RollRequest:
         """为目标生成一次豁免请求。
 
@@ -42,14 +47,31 @@ class SavingThrowRequest:
         caster = self._get_current_entity_or_raise(encounter)
         target = self._get_entity_or_raise(encounter, target_id)
         spell_definition = self._get_spell_definition_or_raise(encounter, caster, spell_id)
+        self.armor_profile_resolver.refresh_entity_armor_class(target)
 
-        save_ability = spell_definition.get("save_ability")
+        save_ability = force_save_ability or spell_definition.get("save_ability")
         if not isinstance(save_ability, str) or not save_ability.strip():
             raise ValueError(f"spell '{spell_id}' does not define save_ability")
 
         save_dc = self._resolve_save_dc(caster, spell_definition)
         distance_to_target_feet = self._distance_feet(caster, target)
         normalized_vantage = self._normalize_vantage(vantage)
+        armor_profile = self.armor_profile_resolver.resolve(target)
+        vantage_sources = {"advantage": [], "disadvantage": []}
+        if normalized_vantage == "advantage":
+            vantage_sources["advantage"].append("requested_advantage")
+        elif normalized_vantage == "disadvantage":
+            vantage_sources["disadvantage"].append("requested_disadvantage")
+        if armor_profile["wearing_untrained_armor"] and save_ability.strip().lower() in {"str", "dex"}:
+            vantage_sources["disadvantage"].append("armor_untrained")
+        if vantage_sources["advantage"] and vantage_sources["disadvantage"]:
+            normalized_vantage = "normal"
+        elif vantage_sources["advantage"]:
+            normalized_vantage = "advantage"
+        elif vantage_sources["disadvantage"]:
+            normalized_vantage = "disadvantage"
+        else:
+            normalized_vantage = "normal"
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
 
@@ -73,6 +95,7 @@ class SavingThrowRequest:
                 "damage": spell_definition.get("damage", []),
                 "half_on_success": spell_definition.get("half_on_success", False),
                 "vantage": normalized_vantage,
+                "vantage_sources": vantage_sources,
                 "distance_to_target": f"{distance_to_target_feet} ft",
                 "distance_to_target_feet": distance_to_target_feet,
             },

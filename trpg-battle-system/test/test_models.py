@@ -41,7 +41,7 @@ def build_entity(entity_id: str = "ent_ally_eric_001") -> EncounterEntity:
         resistances=[],
         immunities=[],
         vulnerabilities=[],
-    notes=[],
+        notes=[],
     )
 
 
@@ -90,6 +90,16 @@ def build_map() -> EncounterMap:
 
 
 class EncounterModelTests(unittest.TestCase):
+    def test_encounter_entity_roundtrip_preserves_equipped_armor_and_shield(self) -> None:
+        entity = build_entity()
+        entity.equipped_armor = {"armor_id": "chain_mail"}
+        entity.equipped_shield = {"armor_id": "shield"}
+
+        roundtrip = EncounterEntity.from_dict(entity.to_dict())
+
+        self.assertEqual(roundtrip.equipped_armor, {"armor_id": "chain_mail"})
+        self.assertEqual(roundtrip.equipped_shield, {"armor_id": "shield"})
+
     def test_encounter_roundtrip(self) -> None:
         """测试合法的 encounter 在 to_dict/from_dict 后仍能保持关键信息不变。"""
         entity = build_entity()

@@ -1,0 +1,158 @@
+{
+  "armor_definitions": {
+    "padded_armor": {
+      "armor_id": "padded_armor",
+      "name": "布甲",
+      "category": "light",
+      "ac": {
+        "base": 11,
+        "dex_cap": null,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": true
+    },
+    "leather_armor": {
+      "armor_id": "leather_armor",
+      "name": "皮甲",
+      "category": "light",
+      "ac": {
+        "base": 11,
+        "dex_cap": null,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    },
+    "studded_leather_armor": {
+      "armor_id": "studded_leather_armor",
+      "name": "镶钉皮甲",
+      "category": "light",
+      "ac": {
+        "base": 12,
+        "dex_cap": null,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    },
+    "hide_armor": {
+      "armor_id": "hide_armor",
+      "name": "兽皮甲",
+      "category": "medium",
+      "ac": {
+        "base": 12,
+        "dex_cap": 2,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    },
+    "chain_shirt": {
+      "armor_id": "chain_shirt",
+      "name": "链甲衫",
+      "category": "medium",
+      "ac": {
+        "base": 13,
+        "dex_cap": 2,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    },
+    "scale_mail": {
+      "armor_id": "scale_mail",
+      "name": "鳞甲",
+      "category": "medium",
+      "ac": {
+        "base": 14,
+        "dex_cap": 2,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": true
+    },
+    "breastplate": {
+      "armor_id": "breastplate",
+      "name": "胸甲",
+      "category": "medium",
+      "ac": {
+        "base": 14,
+        "dex_cap": 2,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    },
+    "half_plate_armor": {
+      "armor_id": "half_plate_armor",
+      "name": "半身板甲",
+      "category": "medium",
+      "ac": {
+        "base": 15,
+        "dex_cap": 2,
+        "add_dex_modifier": true
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": true
+    },
+    "ring_mail": {
+      "armor_id": "ring_mail",
+      "name": "环甲",
+      "category": "heavy",
+      "ac": {
+        "base": 14,
+        "dex_cap": 0,
+        "add_dex_modifier": false
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": true
+    },
+    "chain_mail": {
+      "armor_id": "chain_mail",
+      "name": "链甲",
+      "category": "heavy",
+      "ac": {
+        "base": 16,
+        "dex_cap": 0,
+        "add_dex_modifier": false
+      },
+      "strength_requirement": 13,
+      "stealth_disadvantage": true
+    },
+    "splint_armor": {
+      "armor_id": "splint_armor",
+      "name": "板条甲",
+      "category": "heavy",
+      "ac": {
+        "base": 17,
+        "dex_cap": 0,
+        "add_dex_modifier": false
+      },
+      "strength_requirement": 15,
+      "stealth_disadvantage": true
+    },
+    "plate_armor": {
+      "armor_id": "plate_armor",
+      "name": "板甲",
+      "category": "heavy",
+      "ac": {
+        "base": 18,
+        "dex_cap": 0,
+        "add_dex_modifier": false
+      },
+      "strength_requirement": 15,
+      "stealth_disadvantage": true
+    },
+    "shield": {
+      "armor_id": "shield",
+      "name": "盾牌",
+      "category": "shield",
+      "ac": {
+        "bonus": 2
+      },
+      "strength_requirement": null,
+      "stealth_disadvantage": false
+    }
+  }
+}

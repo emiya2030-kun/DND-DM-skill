@@ -79,6 +79,10 @@ class EncounterEntity:
     combat_flags: dict[str, Any] = field(default_factory=dict)
     # 开始/结束回合触发的运行时效果.
     turn_effects: list[dict[str, Any]] = field(default_factory=list)
+    # 当前装备的护甲.
+    equipped_armor: dict[str, Any] | None = None
+    # 当前装备的盾牌.
+    equipped_shield: dict[str, Any] | None = None
     # 武器清单,攻击请求会从这里读取攻击方式和伤害结构.
     weapons: list[dict[str, Any]] = field(default_factory=list)
     # 法术清单,施法声明、攻击型法术、豁免型法术都会从这里读取.
@@ -153,6 +157,8 @@ class EncounterEntity:
             "action_economy": self.action_economy,
             "combat_flags": self.combat_flags,
             "turn_effects": self.turn_effects,
+            "equipped_armor": self.equipped_armor,
+            "equipped_shield": self.equipped_shield,
             "weapons": self.weapons,
             "spells": self.spells,
             "resistances": self.resistances,

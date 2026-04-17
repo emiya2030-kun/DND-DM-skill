@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tools.models import Encounter, EncounterEntity
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
+from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
 
 
 def reset_turn_resources(entity: EncounterEntity) -> None:
@@ -11,7 +12,7 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         "reaction_used": False,
         "free_interaction_used": False,
     }
-    speed_penalty = get_weapon_mastery_speed_penalty(entity)
+    speed_penalty = get_weapon_mastery_speed_penalty(entity) + get_armor_speed_penalty(entity)
     entity.speed["remaining"] = max(0, entity.speed["walk"] - speed_penalty)
     combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
     combat_flags["movement_spent_feet"] = 0

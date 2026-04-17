@@ -9,7 +9,9 @@ from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.models.roll_request import RollRequest
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
+from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.combat.rules.conditions import (
     AUTO_CRIT_MELEE_TARGET_CONDITIONS,
     BLOCKED_ATTACK_CONDITIONS,
@@ -39,9 +41,11 @@ class AttackRollRequest:
         self,
         encounter_repository: EncounterRepository,
         weapon_definition_repository: WeaponDefinitionRepository | None = None,
+        armor_definition_repository: ArmorDefinitionRepository | None = None,
     ):
         self.encounter_repository = encounter_repository
         self.weapon_profile_resolver = WeaponProfileResolver(weapon_definition_repository or WeaponDefinitionRepository())
+        self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
 
     def execute(
         self,
@@ -65,7 +69,10 @@ class AttackRollRequest:
             allow_out_of_turn_actor=allow_out_of_turn_actor,
         )
         target = self._get_entity_or_raise(encounter, target_id)
+        self.armor_profile_resolver.refresh_entity_armor_class(actor)
+        self.armor_profile_resolver.refresh_entity_armor_class(target)
         weapon = self.resolve_weapon_or_raise(actor, weapon_id)
+        actor_armor_profile = self.armor_profile_resolver.resolve(actor)
 
         actor_runtime = ConditionRuntime(actor.conditions)
         target_runtime = ConditionRuntime(target.conditions)
@@ -117,6 +124,8 @@ class AttackRollRequest:
             vantage_sources["advantage"].extend(mastery_modifiers["advantage_sources"])
         if mastery_modifiers["disadvantage_sources"]:
             vantage_sources["disadvantage"].extend(mastery_modifiers["disadvantage_sources"])
+        if actor_armor_profile["wearing_untrained_armor"] and modifier in {"str", "dex"}:
+            vantage_sources["disadvantage"].append("armor_untrained")
         if (
             fighter_has_studied_attacks(actor.class_features)
             and has_unconsumed_studied_attack_mark(actor.class_features, target.entity_id)

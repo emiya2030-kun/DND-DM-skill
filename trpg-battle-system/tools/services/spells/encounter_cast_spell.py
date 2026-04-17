@@ -5,9 +5,11 @@ from uuid import uuid4
 
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
+from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.repositories.zone_definition_repository import ZoneDefinitionRepository
+from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.area_geometry import build_spell_zone_instance
@@ -31,6 +33,7 @@ class EncounterCastSpell:
         encounter_repository: EncounterRepository,
         append_event: AppendEvent,
         spell_definition_repository: SpellDefinitionRepository | None = None,
+        armor_definition_repository: ArmorDefinitionRepository | None = None,
         zone_definition_repository: ZoneDefinitionRepository | None = None,
         open_reaction_window: "OpenReactionWindow" | None = None,
         reaction_definition_repository: "ReactionDefinitionRepository" | None = None,
@@ -38,6 +41,7 @@ class EncounterCastSpell:
         self.encounter_repository = encounter_repository
         self.append_event = append_event
         self.spell_definition_repository = spell_definition_repository or SpellDefinitionRepository()
+        self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
         self.zone_definition_repository = zone_definition_repository or ZoneDefinitionRepository()
         if open_reaction_window is None:
             from tools.repositories.reaction_definition_repository import ReactionDefinitionRepository
@@ -77,6 +81,9 @@ class EncounterCastSpell:
             actor_id=actor_id,
             allow_out_of_turn_actor=allow_out_of_turn_actor,
         )
+        armor_profile = self.armor_profile_resolver.resolve(caster)
+        if armor_profile["wearing_untrained_armor"]:
+            raise ValueError("armor_training_required_for_spellcasting")
         spell_definition = self._get_spell_definition_or_raise(encounter, caster, spell_id)
         resolved_target_ids = self._resolve_target_ids(encounter, target_ids or [])
         action_cost = self._resolve_action_cost(spell_definition)

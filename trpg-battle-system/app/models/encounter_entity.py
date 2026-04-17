@@ -73,6 +73,10 @@ class EncounterEntity:
     action_economy: dict[str, Any] = field(default_factory=dict)
     # 战斗运行标记,例如是否活动、是否倒地、是否专注.
     combat_flags: dict[str, Any] = field(default_factory=dict)
+    # 当前装备的护甲.
+    equipped_armor: dict[str, Any] | None = None
+    # 当前装备的盾牌.
+    equipped_shield: dict[str, Any] | None = None
     # 武器清单,攻击请求会从这里读取攻击方式和伤害结构.
     weapons: list[dict[str, Any]] = field(default_factory=list)
     # 法术清单,施法声明、攻击型法术、豁免型法术都会从这里读取.
@@ -142,6 +146,8 @@ class EncounterEntity:
             "resources": self.resources,
             "action_economy": self.action_economy,
             "combat_flags": self.combat_flags,
+            "equipped_armor": self.equipped_armor,
+            "equipped_shield": self.equipped_shield,
             "weapons": self.weapons,
             "spells": self.spells,
             "resistances": self.resistances,

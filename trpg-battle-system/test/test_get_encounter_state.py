@@ -213,6 +213,28 @@ def build_encounter() -> Encounter:
 
 
 class GetEncounterStateTests(unittest.TestCase):
+    def test_execute_projects_armor_breakdown_and_speed_penalty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.ability_scores["str"] = 12
+            player.equipped_armor = {"armor_id": "chain_mail"}
+            player.equipped_shield = {"armor_id": "shield"}
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            current = state["current_turn_entity"]
+
+            self.assertEqual(current["ac"], 18)
+            self.assertEqual(current["ac_breakdown"]["base_armor_ac"], 16)
+            self.assertEqual(current["ac_breakdown"]["shield_bonus"], 2)
+            self.assertEqual(current["speed_penalty_feet"], 10)
+            self.assertEqual(current["effective_speed"], 20)
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_fighter_runtime_resources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
