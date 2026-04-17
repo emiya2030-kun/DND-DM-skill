@@ -34,6 +34,7 @@ class ExecuteAbilityCheck:
         dc: int,
         vantage: str = "normal",
         additional_bonus: int = 0,
+        class_feature_options: dict[str, Any] | None = None,
         reason: str | None = None,
         include_encounter_state: bool = False,
     ) -> dict[str, Any]:
@@ -72,6 +73,14 @@ class ExecuteAbilityCheck:
             roll_request=request,
             base_rolls=base_rolls,
             additional_bonus=additional_bonus,
+            metadata={
+                "class_feature_options": class_feature_options or {},
+                **(
+                    {"tactical_mind_bonus_roll": random.randint(1, 10)}
+                    if isinstance(class_feature_options, dict) and class_feature_options.get("tactical_mind")
+                    else {}
+                ),
+            },
         )
         outcome = self.result_service.execute(
             encounter_id=encounter_id,
@@ -96,6 +105,9 @@ class ExecuteAbilityCheck:
             "roll_result": roll_result.to_dict(),
             **outcome,
         }
+        tactical_mind = roll_result.metadata.get("tactical_mind")
+        if isinstance(tactical_mind, dict):
+            result["class_feature_result"] = {"tactical_mind": tactical_mind}
         result["check"] = check
         result["normalized_check"] = request.context["check"]
         if include_encounter_state:

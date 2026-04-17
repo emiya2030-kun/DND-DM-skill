@@ -168,6 +168,38 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             self.assertEqual(result.final_total, 15)
             repo.close()
 
+    def test_execute_tactical_mind_keeps_second_wind_when_bonus_still_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.class_features["fighter"] = {
+                "level": 2,
+                "second_wind": {"remaining_uses": 2},
+            }
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="ability",
+                check="str",
+                dc=20,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_roll=6,
+                metadata={"class_feature_options": {"tactical_mind": True}, "tactical_mind_bonus_roll": 3},
+            )
+
+            updated = repo.get("enc_ability_check_test")
+            self.assertEqual(result.final_total, 10)
+            self.assertEqual(result.metadata["tactical_mind"]["bonus_roll"], 3)
+            self.assertFalse(result.metadata["tactical_mind"]["consumed_second_wind"])
+            self.assertEqual(updated.entities["ent_ally_sabur_001"].class_features["fighter"]["second_wind"]["remaining_uses"], 2)
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

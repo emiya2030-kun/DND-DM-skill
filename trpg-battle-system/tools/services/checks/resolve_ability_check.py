@@ -8,7 +8,11 @@ from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.check_catalog import SKILL_TO_ABILITY
-from tools.services.class_features.shared import ensure_rogue_runtime, resolve_entity_skill_proficiencies
+from tools.services.class_features.shared import (
+    ensure_rogue_runtime,
+    get_fighter_runtime,
+    resolve_entity_skill_proficiencies,
+)
 from tools.services.combat.rules.conditions import ConditionRuntime
 from tools.services.combat.rules.conditions.condition_parser import parse_condition
 
@@ -53,6 +57,9 @@ class ResolveAbilityCheck:
             additional_bonus=additional_bonus,
         )
         final_total = chosen_roll + check_bonus - exhaustion_penalty
+        dc = roll_request.context.get("dc")
+        if not isinstance(dc, int):
+            raise ValueError("roll_request.context.dc must be an integer")
 
         result_metadata = dict(metadata or {})
         result_metadata.update(
@@ -66,6 +73,15 @@ class ResolveAbilityCheck:
                 "d20_penalty": exhaustion_penalty,
             }
         )
+        final_total, tactical_mind_metadata = self._apply_tactical_mind(
+            encounter=encounter,
+            actor=actor,
+            dc=dc,
+            current_total=final_total,
+            metadata=result_metadata,
+        )
+        if tactical_mind_metadata is not None:
+            result_metadata["tactical_mind"] = tactical_mind_metadata
 
         return RollResult(
             request_id=roll_request.request_id,
@@ -83,6 +99,57 @@ class ResolveAbilityCheck:
             metadata=result_metadata,
             rolled_at=rolled_at,
         )
+
+    def _apply_tactical_mind(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        dc: int,
+        current_total: int,
+        metadata: dict[str, Any],
+    ) -> tuple[int, dict[str, Any] | None]:
+        raw_options = metadata.get("class_feature_options")
+        if not isinstance(raw_options, dict) or not raw_options.get("tactical_mind"):
+            return current_total, None
+        if current_total >= dc:
+            return current_total, {
+                "used": False,
+                "bonus_roll": 0,
+                "consumed_second_wind": False,
+                "reason": "check_already_succeeded",
+            }
+
+        fighter = get_fighter_runtime(actor)
+        if not fighter:
+            raise ValueError("tactical_mind_requires_fighter_runtime")
+        second_wind = fighter.get("second_wind")
+        if not isinstance(second_wind, dict):
+            raise ValueError("tactical_mind_requires_second_wind")
+        remaining_uses = second_wind.get("remaining_uses")
+        if not isinstance(remaining_uses, int) or remaining_uses <= 0:
+            raise ValueError("tactical_mind_requires_second_wind")
+
+        override_bonus_roll = metadata.get("tactical_mind_bonus_roll")
+        if isinstance(override_bonus_roll, int) and not isinstance(override_bonus_roll, bool):
+            bonus_roll = override_bonus_roll
+        else:
+            import random
+
+            bonus_roll = random.randint(1, 10)
+
+        retry_total = current_total + bonus_roll
+        consumed = retry_total >= dc
+        if consumed:
+            second_wind["remaining_uses"] = remaining_uses - 1
+            self.encounter_repository.save(encounter)
+        return retry_total, {
+            "used": True,
+            "bonus_roll": bonus_roll,
+            "consumed_second_wind": consumed,
+            "retry_total": retry_total,
+            "original_total": current_total,
+        }
 
     def _resolve_bonus(
         self,
