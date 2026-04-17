@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from tools.models import Encounter, EncounterEntity, EncounterMap
 from tools.repositories import ArmorDefinitionRepository, EncounterRepository, WeaponDefinitionRepository
 from tools.services import AttackRollRequest
+from tools.services.combat.attack.weapon_profile_resolver import WeaponProfileResolver
 
 
 def build_actor(
@@ -275,6 +277,107 @@ class AttackRollRequestTests(unittest.TestCase):
 
             self.assertEqual(request.context["proficiency_bonus"], 2)
             self.assertTrue(request.context["weapon_is_proficient"])
+            repo.close()
+
+    def test_execute_fighter_auto_applies_martial_weapon_proficiency_from_shared_resolver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "rapier": {
+                                "id": "rapier",
+                                "name": "刺剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "piercing"},
+                                "properties": ["finesse"],
+                                "mastery": "vex",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.weapons = [{"weapon_id": "rapier"}]
+            actor.class_features = {"fighter": {"fighter_level": 1}}
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(
+                repo,
+                weapon_definition_repository=WeaponDefinitionRepository(knowledge_path),
+            ).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+            )
+
+            self.assertTrue(request.context["weapon_is_proficient"])
+            self.assertEqual(request.context["proficiency_bonus"], 2)
+            repo.close()
+
+    def test_execute_fighter_weapon_proficiency_case_insensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "rapier": {
+                                "id": "rapier",
+                                "name": "刺剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "piercing"},
+                                "properties": ["finesse"],
+                                "mastery": "vex",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.weapons = [{"weapon_id": "rapier"}]
+            actor.class_features = {"fighter": {"fighter_level": 1}}
+            repo.save(build_encounter(actor=actor))
+
+            mock_resolver_path = "tools.services.combat.attack.weapon_profile_resolver.resolve_entity_proficiencies"
+            mock_legacy_path = "tools.services.combat.attack.weapon_profile_resolver._looks_like_legacy_proficient_weapon"
+            try:
+                with patch(mock_resolver_path) as mock_resolver, patch.object(
+                    WeaponProfileResolver, "_looks_like_legacy_proficient_weapon", return_value=False
+                ) as mock_legacy:
+                    mock_resolver.return_value = {
+                        "weapon_proficiencies": ["Martial"],
+                        "armor_training": [],
+                    }
+
+                    request = AttackRollRequest(
+                        repo,
+                        weapon_definition_repository=WeaponDefinitionRepository(knowledge_path),
+                    ).execute(
+                        encounter_id="enc_attack_request_test",
+                        target_id="ent_enemy_goblin_001",
+                        weapon_id="rapier",
+                    )
+
+                    self.assertTrue(request.context["weapon_is_proficient"])
+                    self.assertEqual(request.context["proficiency_bonus"], 2)
+                    mock_resolver.assert_called_once_with(actor)
+                    mock_legacy.assert_not_called()
+            finally:
+                repo.close()
             repo.close()
 
     def test_execute_non_fighter_without_explicit_proficiency_keeps_legacy_default_proficiency(self) -> None:

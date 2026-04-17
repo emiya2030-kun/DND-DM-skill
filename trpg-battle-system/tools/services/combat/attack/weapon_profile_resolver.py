@@ -4,6 +4,7 @@ from typing import Any
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
+from tools.services.class_features.shared import resolve_entity_proficiencies
 
 
 class WeaponProfileResolver:
@@ -157,29 +158,12 @@ class WeaponProfileResolver:
             return explicit
 
         category = str(resolved_weapon.get("category") or "").strip().lower()
-        actor_proficiencies = self._resolve_actor_weapon_proficiencies(actor)
-        if category and category in actor_proficiencies:
+        proficiencies = resolve_entity_proficiencies(actor)["weapon_proficiencies"]
+        normalized = {entry.strip().lower() for entry in proficiencies if isinstance(entry, str)}
+        if category and category in normalized:
             return True
 
         return self._looks_like_legacy_proficient_weapon(runtime_weapon=runtime_weapon, resolved_weapon=resolved_weapon)
-
-    def _resolve_actor_weapon_proficiencies(self, actor: EncounterEntity) -> set[str]:
-        proficiencies: set[str] = set()
-        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
-        fighter = class_features.get("fighter")
-        if not isinstance(fighter, dict):
-            return proficiencies
-
-        proficiencies.update({"simple", "martial"})
-        configured = fighter.get("weapon_proficiencies")
-        if not isinstance(configured, list):
-            return proficiencies
-
-        for item in configured:
-            if not isinstance(item, str) or not item.strip():
-                continue
-            proficiencies.add(item.strip().lower())
-        return proficiencies
 
     def _looks_like_legacy_proficient_weapon(
         self,
