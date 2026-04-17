@@ -229,6 +229,24 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_fighter_weapon_proficiencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].class_features["fighter"]["weapon_proficiencies"] = [
+                "simple",
+                "martial",
+            ]
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+
+            fighter = state["current_turn_entity"]["resources"]["class_features"]["fighter"]
+            self.assertEqual(fighter["weapon_proficiencies"], ["simple", "martial"])
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

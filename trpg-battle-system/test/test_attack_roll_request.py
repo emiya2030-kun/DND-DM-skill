@@ -195,6 +195,135 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertFalse(request.context["weapon_is_proficient"])
             repo.close()
 
+    def test_execute_fighter_auto_applies_martial_weapon_proficiency_from_class_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "rapier": {
+                                "id": "rapier",
+                                "name": "刺剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "piercing"},
+                                "properties": ["finesse"],
+                                "mastery": "vex",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.weapons = [{"weapon_id": "rapier"}]
+            actor.class_features = {"fighter": {"fighter_level": 1}}
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(
+                repo,
+                weapon_definition_repository=WeaponDefinitionRepository(knowledge_path),
+            ).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["proficiency_bonus"], 2)
+            self.assertTrue(request.context["weapon_is_proficient"])
+            repo.close()
+
+    def test_execute_non_fighter_without_explicit_proficiency_keeps_legacy_default_proficiency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "rapier": {
+                                "id": "rapier",
+                                "name": "刺剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "piercing"},
+                                "properties": ["finesse"],
+                                "mastery": "vex",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.weapons = [{"weapon_id": "rapier"}]
+            actor.class_features = {}
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(
+                repo,
+                weapon_definition_repository=WeaponDefinitionRepository(knowledge_path),
+            ).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["proficiency_bonus"], 2)
+            self.assertTrue(request.context["weapon_is_proficient"])
+            repo.close()
+
+    def test_execute_runtime_weapon_proficiency_override_beats_class_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "rapier": {
+                                "id": "rapier",
+                                "name": "刺剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "piercing"},
+                                "properties": ["finesse"],
+                                "mastery": "vex",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_actor()
+            actor.class_features = {"fighter": {"fighter_level": 1}}
+            actor.weapons = [{"weapon_id": "rapier", "is_proficient": False}]
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(
+                repo,
+                weapon_definition_repository=WeaponDefinitionRepository(knowledge_path),
+            ).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["proficiency_bonus"], 0)
+            self.assertFalse(request.context["weapon_is_proficient"])
+            repo.close()
+
     def test_execute_applies_disadvantage_for_heavy_ranged_weapon_with_low_dex(self) -> None:
         """测试敏捷低于 13 时，重型远程武器攻击应有劣势。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

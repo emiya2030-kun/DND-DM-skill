@@ -35,7 +35,11 @@ class WeaponProfileResolver:
             resolved_properties=resolved.get("properties"),
             custom_properties=custom_properties,
         )
-        resolved["is_proficient"] = bool(runtime_weapon.get("is_proficient", True))
+        resolved["is_proficient"] = self._resolve_weapon_proficiency(
+            actor=actor,
+            runtime_weapon=runtime_weapon,
+            resolved_weapon=resolved,
+        )
 
         damage_parts = self._resolve_damage_parts(
             resolved=resolved,
@@ -140,3 +144,59 @@ class WeaponProfileResolver:
         if damage_type is not None:
             normalized["type"] = damage_type
         return normalized
+
+    def _resolve_weapon_proficiency(
+        self,
+        *,
+        actor: EncounterEntity,
+        runtime_weapon: dict[str, Any],
+        resolved_weapon: dict[str, Any],
+    ) -> bool:
+        explicit = runtime_weapon.get("is_proficient")
+        if isinstance(explicit, bool):
+            return explicit
+
+        category = str(resolved_weapon.get("category") or "").strip().lower()
+        actor_proficiencies = self._resolve_actor_weapon_proficiencies(actor)
+        if category and category in actor_proficiencies:
+            return True
+
+        return self._looks_like_legacy_proficient_weapon(runtime_weapon=runtime_weapon, resolved_weapon=resolved_weapon)
+
+    def _resolve_actor_weapon_proficiencies(self, actor: EncounterEntity) -> set[str]:
+        proficiencies: set[str] = set()
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict):
+            return proficiencies
+
+        proficiencies.update({"simple", "martial"})
+        configured = fighter.get("weapon_proficiencies")
+        if not isinstance(configured, list):
+            return proficiencies
+
+        for item in configured:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            proficiencies.add(item.strip().lower())
+        return proficiencies
+
+    def _looks_like_legacy_proficient_weapon(
+        self,
+        *,
+        runtime_weapon: dict[str, Any],
+        resolved_weapon: dict[str, Any],
+    ) -> bool:
+        has_name = any(
+            isinstance(candidate, str) and bool(candidate.strip())
+            for candidate in (runtime_weapon.get("name"), resolved_weapon.get("name"))
+        )
+        has_damage = any(
+            isinstance(candidate, list) and bool(candidate)
+            for candidate in (runtime_weapon.get("damage"), resolved_weapon.get("damage"))
+        )
+        has_range = any(
+            isinstance(candidate, dict)
+            for candidate in (runtime_weapon.get("range"), resolved_weapon.get("range"))
+        )
+        return has_name and has_damage and has_range

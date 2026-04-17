@@ -773,6 +773,7 @@ class GetEncounterState:
         return {
             "fighter": {
                 "fighter_level": fighter.get("fighter_level", fighter.get("level")),
+                "weapon_proficiencies": fighter.get("weapon_proficiencies", ["simple", "martial"]),
                 "second_wind": fighter.get("second_wind"),
                 "action_surge": fighter.get("action_surge"),
                 "indomitable": fighter.get("indomitable"),
