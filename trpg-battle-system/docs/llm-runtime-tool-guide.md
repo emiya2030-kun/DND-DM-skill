@@ -150,6 +150,33 @@ window.applyEncounterState(nextState)
 
 ## 6.1 读取状态
 
+## 战士职业特性运行时
+
+- `use_second_wind(...)`
+  - 这是一个附赠动作恢复入口
+  - 返回治疗结果
+  - 若角色拥有 `Tactical Shift`，结果里还会带 `free_movement_after_second_wind`
+- `use_action_surge(...)`
+  - 这是一个主动声明入口
+  - 会给当前回合增加 `extra_non_magic_action_available`
+  - 该额外动作不能用于 `Magic action`
+- `Extra Attack`
+  - 不需要单独 tool
+  - 只要角色执行 `Attack action`，攻击链会自动按运行时的 `extra_attack_count` 允许连续攻击
+  - 多职业来源不叠加，只取最高值
+- `Studied Attacks`
+  - 不需要单独 tool
+  - 攻击失手后，系统会给该目标写入下一次攻击优势标记
+  - 下次对同目标攻击时，攻击请求会自动带上优势并在结算后消费
+- `Tactical Master`
+  - 不需要单独 service
+  - 当战士具备该特性时，可以在 `ExecuteAttack(...)` 里传 `mastery_override`
+  - 当前只允许改为 `push / sap / slow`
+- `Indomitable`
+  - 不属于普通动作，也不消耗 `reaction`
+  - 它会以 `failed_save` 触发的反应窗口形式出现
+  - 选择后由后端自动重掷豁免，并额外加上 `fighter_level`
+
 ### `GetEncounterState`
 
 用途：

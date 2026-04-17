@@ -51,6 +51,14 @@ def resolve_turn_effects(
             "effect_removed": False,
         }
 
+        special_updates = _apply_special_turn_effect(
+            target=entity,
+            effect=effect,
+            trigger=trigger,
+        )
+        if special_updates:
+            resolution["condition_updates"].extend(special_updates)
+
         trigger_updates, trigger_damage_resolution = _apply_effect_outcome(
             encounter=encounter,
             target=entity,
@@ -125,6 +133,33 @@ def _apply_effect_outcome(
         damage_roll_overrides=damage_roll_overrides,
     )
     return condition_updates, damage_resolution
+
+
+def _apply_special_turn_effect(
+    *,
+    target: EncounterEntity,
+    effect: dict[str, Any],
+    trigger: str,
+) -> list[dict[str, object]]:
+    effect_type = effect.get("effect_type")
+    if effect_type != "shield_ac_bonus" or trigger != "start_of_turn":
+        return []
+
+    ac_bonus = effect.get("ac_bonus", 0)
+    if not isinstance(ac_bonus, int):
+        raise ValueError("shield_ac_bonus.ac_bonus must be an integer")
+    if ac_bonus == 0:
+        return [{"operation": "shield_ac_bonus_removed", "changed": False, "ac_bonus": 0}]
+
+    target.ac = max(0, target.ac - ac_bonus)
+    return [
+        {
+            "operation": "shield_ac_bonus_removed",
+            "changed": True,
+            "ac_bonus": ac_bonus,
+            "new_ac": target.ac,
+        }
+    ]
 
 
 def _apply_condition_changes(

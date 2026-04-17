@@ -57,7 +57,7 @@ class OpenReactionWindow:
                     "ask_player": ask_player,
                     "auto_resolve": auto_resolve,
                     "status": "pending",
-                    "resource_pool": "reaction",
+                    "resource_pool": self._resolve_resource_pool(definition),
                     "group_priority": 100,
                     "trigger_sequence": index,
                     "relationship_rank": 1,
@@ -130,6 +130,15 @@ class OpenReactionWindow:
             "pending_reaction_window": pending_window,
             "reaction_requests": requests,
         }
+
+    def _resolve_resource_pool(self, definition: dict[str, Any]) -> str:
+        resource_cost = definition.get("resource_cost")
+        if isinstance(resource_cost, dict):
+            if bool(resource_cost.get("reaction")):
+                return "reaction"
+            if resource_cost.get("class_feature"):
+                return "class_feature"
+        return "reaction"
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

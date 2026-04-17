@@ -324,6 +324,6 @@ class EncounterCastSpellTests(unittest.TestCase):
             self.assertIn("encounter_state", result)
             current = result["encounter_state"]["current_turn_entity"]
             self.assertEqual(current["id"], "ent_ally_eric_001")
-            self.assertEqual(current["resources"], "Spell Slots: 1st 2/2, 3st 0/1")
+            self.assertEqual(current["resources"]["summary"], "Spell Slots: 1st 2/2, 3st 0/1")
             encounter_repo.close()
             event_repo.close()

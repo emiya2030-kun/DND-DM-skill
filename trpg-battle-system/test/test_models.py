@@ -8,12 +8,45 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.models.encounter_entity import EncounterEntity as AppEncounterEntity
 from tools.models import Encounter, EncounterEntity, EncounterMap, Event, RollRequest, RollResult
 
 
 def build_entity(entity_id: str = "ent_ally_eric_001") -> EncounterEntity:
     """构造一个合法的基础实体，供其他测试复用。"""
     return EncounterEntity(
+        entity_id=entity_id,
+        entity_def_id="pc_eric_lv5",
+        source_ref={"character_id": "pc_eric_001"},
+        name="Eric",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 15, "y": 19},
+        hp={"current": 80, "max": 80, "temp": 0},
+        ac=16,
+        speed={"walk": 30, "remaining": 30},
+        initiative=17,
+        ability_scores={"str": 10, "dex": 18, "con": 12, "int": 14, "wis": 10, "cha": 16},
+        ability_mods={"str": 0, "dex": 4, "con": 1, "int": 2, "wis": 0, "cha": 3},
+        proficiency_bonus=3,
+        save_proficiencies=["wis", "cha"],
+        skill_modifiers={"arcana": 5, "stealth": 7},
+        conditions=[],
+        resources={"spell_slots": {"1": {"max": 2, "remaining": 2}}},
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": False},
+        combat_flags={"is_active": True, "is_defeated": False, "is_concentrating": False},
+        weapons=[],
+        spells=[],
+        resistances=[],
+        immunities=[],
+        vulnerabilities=[],
+    notes=[],
+    )
+
+
+def build_app_entity(entity_id: str = "ent_ally_eric_001") -> AppEncounterEntity:
+    return AppEncounterEntity(
         entity_id=entity_id,
         entity_def_id="pc_eric_lv5",
         source_ref={"character_id": "pc_eric_001"},
@@ -229,6 +262,26 @@ class EncounterModelTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_entity_roundtrip_preserves_class_features(self) -> None:
+        entity = build_entity()
+        entity.class_features = {"rage": {"remaining_uses": 1}}
+
+        payload = entity.to_dict()
+        self.assertIn("class_features", payload)
+
+        roundtrip = EncounterEntity.from_dict(payload)
+        self.assertEqual(roundtrip.class_features, entity.class_features)
+
+    def test_app_entity_roundtrip_preserves_class_features(self) -> None:
+        entity = build_app_entity()
+        entity.class_features = {"channel_divinity": {"uses": 2}}
+
+        payload = entity.to_dict()
+        self.assertIn("class_features", payload)
+
+        roundtrip = AppEncounterEntity.from_dict(payload)
+        self.assertEqual(roundtrip.class_features, entity.class_features)
 
     def test_current_entity_must_exist_in_entities(self) -> None:
         """测试 current_entity_id 不能指向 entities 中不存在的实体。"""

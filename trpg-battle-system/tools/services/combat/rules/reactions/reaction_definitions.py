@@ -119,4 +119,30 @@ REACTION_DEFINITIONS = {
             "short_label": "Counterspell",
         },
     },
+    "indomitable": {
+        "reaction_type": "indomitable",
+        "template_type": "failed_save_reroll",
+        "name": "Indomitable",
+        "trigger_type": "failed_save",
+        "resource_cost": {"class_feature": "indomitable"},
+        "timing": {
+            "window_phase": "after_failed_save_before_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "actor_has_indomitable",
+            "actor_has_remaining_indomitable_use",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_indomitable_reaction"},
+        "ui": {
+            "prompt": "Use Indomitable?",
+            "short_label": "Indomitable",
+        },
+    },
 }

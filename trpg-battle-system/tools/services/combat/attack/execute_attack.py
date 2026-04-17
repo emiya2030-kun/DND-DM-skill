@@ -12,6 +12,12 @@ from tools.services.combat.attack.weapon_mastery_effects import (
     apply_weapon_mastery_on_hit,
     consume_attack_roll_weapon_mastery_effects,
 )
+from tools.services.class_features.shared import (
+    add_or_refresh_studied_attack_mark,
+    consume_studied_attack_mark,
+    fighter_has_studied_attacks,
+    resolve_extra_attack_count,
+)
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.shared.update_hp import UpdateHp
@@ -80,6 +86,7 @@ class ExecuteAttack:
         consume_action: bool = True,
         consume_reaction: bool = False,
         allow_out_of_turn_actor: bool = False,
+        mastery_override: str | None = None,
         mastery_rolls: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
@@ -125,6 +132,13 @@ class ExecuteAttack:
                 weapon_id=weapon_id,
                 error=error,
             )
+
+        self._apply_tactical_master_override(
+            encounter_id=encounter_id,
+            actor_entity_id=request.actor_entity_id,
+            attack_context=request.context,
+            mastery_override=mastery_override,
+        )
 
         if normalized_attack_mode == "light_bonus":
             effective_consume_bonus_action = bool(request.context.get("light_bonus_uses_bonus_action", True))
@@ -279,6 +293,14 @@ class ExecuteAttack:
         if any(value for value in mastery_updates.values()):
             resolution["weapon_mastery_updates"] = mastery_updates
 
+        self._apply_studied_attacks_updates(
+            encounter_id=encounter_id,
+            actor_entity_id=request.actor_entity_id,
+            target_entity_id=request.target_entity_id,
+            hit=bool(resolution.get("hit")),
+            studied_attacks_applied=bool(request.context.get("studied_attacks_applied")),
+        )
+
         self._mark_attack_resource_used(
             encounter_id=encounter_id,
             actor_entity_id=request.actor_entity_id,
@@ -297,6 +319,78 @@ class ExecuteAttack:
         if include_encounter_state:
             result["encounter_state"] = GetEncounterState(self.attack_roll_request.encounter_repository).execute(encounter_id)
         return result
+
+    def _apply_studied_attacks_updates(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        target_entity_id: str,
+        hit: bool,
+        studied_attacks_applied: bool,
+    ) -> None:
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying studied attacks")
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            raise ValueError(
+                f"actor '{actor_entity_id}' not part of encounter '{encounter_id}' while applying studied attacks"
+            )
+
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        if not fighter_has_studied_attacks(class_features):
+            return
+
+        changed = False
+        if studied_attacks_applied:
+            changed = consume_studied_attack_mark(class_features, target_entity_id) or changed
+        if not hit:
+            add_or_refresh_studied_attack_mark(class_features, target_entity_id)
+            changed = True
+
+        if changed:
+            self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _apply_tactical_master_override(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        attack_context: dict[str, Any],
+        mastery_override: str | None,
+    ) -> None:
+        if mastery_override is None:
+            return
+
+        normalized_override = str(mastery_override).strip().lower()
+        if normalized_override not in {"push", "sap", "slow"}:
+            raise ValueError("invalid_mastery_override")
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying tactical master")
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            raise ValueError(
+                f"actor '{actor_entity_id}' not part of encounter '{encounter_id}' while applying tactical master"
+            )
+
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict) or not bool(fighter.get("tactical_master_enabled")):
+            raise ValueError("invalid_mastery_override")
+
+        base_mastery = str(
+            attack_context.get("weapon_mastery_base")
+            or attack_context.get("weapon_mastery")
+            or ""
+        ).strip().lower()
+        if not base_mastery:
+            raise ValueError("invalid_mastery_override")
+
+        attack_context["weapon_mastery_base"] = base_mastery
+        attack_context["weapon_mastery"] = normalized_override
 
     def _is_structured_invalid_attack_error(self, error: ValueError) -> bool:
         message = str(error)
@@ -767,13 +861,16 @@ class ExecuteAttack:
             )
         actor.action_economy = actor.action_economy if isinstance(actor.action_economy, dict) else {}
         actor.combat_flags = actor.combat_flags if isinstance(actor.combat_flags, dict) else {}
+        attack_mode = str(attack_context.get("attack_mode") or "default").lower()
         if consume_action:
-            actor.action_economy["action_used"] = True
+            if attack_mode == "light_bonus":
+                actor.action_economy["action_used"] = True
+            else:
+                actor.action_economy["action_used"] = self._consume_attack_action_sequence(actor)
         if consume_bonus_action:
             actor.action_economy["bonus_action_used"] = True
         if consume_reaction:
             actor.action_economy["reaction_used"] = True
-        attack_mode = str(attack_context.get("attack_mode") or "default").lower()
         weapon_properties = {str(prop).lower() for prop in attack_context.get("weapon_properties", [])}
         if attack_mode == "light_bonus":
             actor.combat_flags.pop("light_bonus_trigger", None)
@@ -786,6 +883,30 @@ class ExecuteAttack:
         elif consume_action:
             actor.combat_flags.pop("light_bonus_trigger", None)
         self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _consume_attack_action_sequence(self, actor: Any) -> bool:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        max_attacks = max(1, resolve_extra_attack_count(class_features))
+        used_attacks = self._increment_attack_action_attacks_used(actor)
+        return used_attacks >= max_attacks
+
+    def _increment_attack_action_attacks_used(self, actor: Any) -> int:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict):
+            return 1
+
+        turn_counters = fighter.get("turn_counters")
+        if not isinstance(turn_counters, dict):
+            turn_counters = {}
+            fighter["turn_counters"] = turn_counters
+
+        used_attacks = turn_counters.get("attack_action_attacks_used")
+        if isinstance(used_attacks, bool) or not isinstance(used_attacks, int):
+            used_attacks = 0
+        used_attacks = max(0, used_attacks) + 1
+        turn_counters["attack_action_attacks_used"] = used_attacks
+        return used_attacks
 
     def _apply_weapon_mastery_updates(
         self,

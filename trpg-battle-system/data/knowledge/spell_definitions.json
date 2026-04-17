@@ -234,6 +234,195 @@
         "note": null
       }
     },
+    "shield": {
+      "id": "shield",
+      "name": "Shield",
+      "level": 1,
+      "save_ability": null,
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "护盾术",
+        "name_en": "Shield",
+        "rules_text_zh": "一道无形的魔法屏障保护着你。直到你下回合开始前，你的护甲等级获得+5加值，包括对触发本反应的攻击生效。",
+        "rules_text_en": "An invisible barrier of magical force protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack."
+      },
+      "usage_contexts": ["combat"],
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师"],
+        "classes_en": ["Sorcerer", "Wizard"]
+      },
+      "base": {
+        "level": 1,
+        "school": "abjuration",
+        "school_zh": "防护",
+        "casting_time": "1 reaction",
+        "casting_time_zh": "反应",
+        "range": "self",
+        "range_zh": "自身",
+        "components": ["V", "S"],
+        "components_zh": ["V", "S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "until_start_of_next_turn",
+        "duration_zh": "直到你下回合开始",
+        "concentration": false,
+        "description": "An invisible barrier of magical force protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack."
+      },
+      "targeting": {
+        "type": "self",
+        "range_feet": 0,
+        "requires_line_of_sight": false,
+        "allowed_target_types": ["self"],
+        "trigger_requirement": "when_hit_by_attack"
+      },
+      "resolution": {
+        "mode": "no_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "reaction",
+        "recalculate_triggering_attack": true
+      },
+      "on_cast": {
+        "on_resolve": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [
+            {
+              "effect_template_id": "shield_ac_bonus"
+            }
+          ],
+          "note": "Apply +5 AC immediately and recalculate the triggering attack against the new AC."
+        }
+      },
+      "effect_templates": {
+        "shield_ac_bonus": {
+          "name": "Shield AC Bonus",
+          "trigger": "start_of_turn",
+          "save": null,
+          "on_trigger": {},
+          "on_save_success": {},
+          "on_save_failure": {},
+          "remove_after_trigger": true,
+          "effect_type": "shield_ac_bonus",
+          "ac_bonus": 5,
+          "expires_on": "start_of_next_self_turn"
+        }
+      },
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": null
+      },
+      "special_rules": {
+        "ac_bonus": 5,
+        "applies_to_triggering_attack": true,
+        "duration_until": "start_of_next_self_turn"
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      }
+    },
+    "counterspell": {
+      "id": "counterspell",
+      "name": "Counterspell",
+      "level": 3,
+      "save_ability": "con",
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "法术反制",
+        "name_en": "Counterspell",
+        "rules_text_zh": "你试图打断一名正在施法的生物。该生物进行一次体质豁免。豁免失败则法术消散且毫无效果，并且用于施展法术的动作、附赠动作或反应随之浪费。如果那道法术是使用法术位施展的，则法术位并不会被消耗。",
+        "rules_text_en": "You try to interrupt a creature in the process of casting a spell. The creature makes a Constitution saving throw. On a failed save, the spell fizzles with no effect, and the action, Bonus Action, or Reaction used to cast it is wasted. If the interrupted spell used a spell slot, that slot is not expended."
+      },
+      "usage_contexts": ["combat"],
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "魔契师", "法师"],
+        "classes_en": ["Sorcerer", "Warlock", "Wizard"]
+      },
+      "base": {
+        "level": 3,
+        "school": "abjuration",
+        "school_zh": "防护",
+        "casting_time": "1 reaction",
+        "casting_time_zh": "反应",
+        "range": "60 feet",
+        "range_zh": "60尺",
+        "components": ["S"],
+        "components_zh": ["S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "You try to interrupt a creature in the process of casting a spell. The creature makes a Constitution saving throw. On a failed save, the spell fizzles with no effect, and the action, Bonus Action, or Reaction used to cast it is wasted. If the interrupted spell used a spell slot, that slot is not expended."
+      },
+      "targeting": {
+        "type": "reaction_interrupt_single",
+        "range_feet": 60,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature_casting_spell"],
+        "trigger_requirement": "see_creature_casting_spell_with_components"
+      },
+      "resolution": {
+        "mode": "interrupt_save",
+        "save_ability": "con",
+        "save_dc_mode": "caster_spell_dc",
+        "activation": "reaction",
+        "on_failed_save_cancel_cast": true,
+        "on_failed_save_waste_host_action": true,
+        "on_failed_save_preserve_interrupted_spell_slot": true
+      },
+      "on_cast": {
+        "on_failed_save": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": "The interrupted spell is canceled. The original casting action is wasted, but its spell slot is not spent."
+        },
+        "on_successful_save": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": "The interrupted spell continues resolving normally."
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": null
+      },
+      "special_rules": {
+        "requires_visible_casting": true,
+        "requires_component_observable_spell": true,
+        "interrupted_spell_slot_preserved_on_failed_save": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": "Interrupted spell canceled; original casting action wasted; original spell slot preserved."
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": "Interrupted spell continues."
+      }
+    },
     "hex": {
       "id": "hex",
       "name": "Hex",

@@ -158,6 +158,36 @@ class StartTurnTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_ally_eric_001"].turn_effects, [])
             repo.close()
 
+    def test_execute_removes_shield_ac_bonus_on_target_turn_start(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].ac = 19
+            encounter.entities["ent_ally_eric_001"].turn_effects = [
+                {
+                    "effect_id": "effect_shield_001",
+                    "effect_type": "shield_ac_bonus",
+                    "name": "Shield",
+                    "source_entity_id": "ent_ally_eric_001",
+                    "target_entity_id": "ent_ally_eric_001",
+                    "trigger": "start_of_turn",
+                    "ac_bonus": 5,
+                    "save": None,
+                    "on_trigger": {},
+                    "on_save_success": {},
+                    "on_save_failure": {},
+                    "remove_after_trigger": True,
+                }
+            ]
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.turns.turn_effects.random.randint", return_value=1):
+                updated = StartTurn(repo).execute("enc_start_turn_test")
+
+            self.assertEqual(updated.entities["ent_ally_eric_001"].ac, 14)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].turn_effects, [])
+            repo.close()
+
     def test_execute_with_state_returns_latest_encounter_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

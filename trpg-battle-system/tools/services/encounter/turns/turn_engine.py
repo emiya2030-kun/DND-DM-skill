@@ -18,6 +18,19 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
     combat_flags.pop("light_bonus_trigger", None)
     entity.combat_flags = combat_flags
 
+    class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+    fighter = class_features.get("fighter")
+    if isinstance(fighter, dict):
+        turn_counters = fighter.get("turn_counters")
+        action_surge = fighter.get("action_surge")
+        temporary_bonuses = fighter.get("temporary_bonuses")
+        if isinstance(turn_counters, dict):
+            turn_counters["attack_action_attacks_used"] = 0
+        if isinstance(action_surge, dict):
+            action_surge["used_this_turn"] = False
+        if isinstance(temporary_bonuses, dict):
+            temporary_bonuses["extra_non_magic_action_available"] = 0
+
 
 def start_turn(encounter: Encounter) -> Encounter:
     if not encounter.turn_order:

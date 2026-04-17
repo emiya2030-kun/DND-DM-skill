@@ -55,6 +55,73 @@ def build_encounter_with_two_entities(*, current_entity_id: str | None = "ent_al
     )
 
 
+def test_start_turn_resets_fighter_turn_counters() -> None:
+    encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+    fighter_entity = encounter.entities["ent_ally_eric_001"]
+    fighter_entity.class_features = {
+        "fighter": {
+            "turn_counters": {"attack_action_attacks_used": 2},
+            "action_surge": {"remaining_uses": 1, "used_this_turn": True},
+            "temporary_bonuses": {"extra_non_magic_action_available": 1},
+        }
+    }
+
+    updated = start_turn(encounter)
+    fighter = updated.entities["ent_ally_eric_001"].class_features["fighter"]
+    assert fighter["turn_counters"]["attack_action_attacks_used"] == 0
+    assert fighter["action_surge"]["used_this_turn"] is False
+    assert fighter["temporary_bonuses"]["extra_non_magic_action_available"] == 0
+
+
+def test_start_turn_without_fighter_runtime_does_not_raise() -> None:
+    encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+    encounter.entities["ent_ally_eric_001"].class_features = {}
+
+    updated = start_turn(encounter)
+
+    assert updated.entities["ent_ally_eric_001"].class_features == {}
+
+
+def test_start_turn_still_resets_action_and_movement_when_fighter_runtime_exists() -> None:
+    encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+    entity = encounter.entities["ent_ally_eric_001"]
+    entity.action_economy = {
+        "action_used": True,
+        "bonus_action_used": True,
+        "reaction_used": True,
+        "free_interaction_used": True,
+    }
+    entity.speed["remaining"] = 5
+    entity.combat_flags["movement_spent_feet"] = 25
+    entity.class_features = {
+        "fighter": {
+            "turn_counters": {"attack_action_attacks_used": 3},
+            "action_surge": {"remaining_uses": 1, "used_this_turn": True},
+            "temporary_bonuses": {"extra_non_magic_action_available": 1},
+        }
+    }
+
+    updated = start_turn(encounter)
+
+    assert updated.entities["ent_ally_eric_001"].action_economy["action_used"] is False
+    assert updated.entities["ent_ally_eric_001"].action_economy["bonus_action_used"] is False
+    assert updated.entities["ent_ally_eric_001"].speed["remaining"] == 30
+    assert updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"] == 0
+
+
+def test_start_turn_does_not_create_missing_fighter_turn_reset_buckets() -> None:
+    encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+    entity = encounter.entities["ent_ally_eric_001"]
+    entity.class_features = {"fighter": {"level": 3}}
+
+    updated = start_turn(encounter)
+
+    fighter = updated.entities["ent_ally_eric_001"].class_features["fighter"]
+    assert "turn_counters" not in fighter
+    assert "action_surge" not in fighter
+    assert "temporary_bonuses" not in fighter
+
+
 class TurnEngineTests(unittest.TestCase):
     def test_end_turn_requires_current_entity(self) -> None:
         encounter = build_encounter_with_two_entities(current_entity_id=None)

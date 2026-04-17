@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -228,6 +229,87 @@ class BeginMoveEncounterEntityTests(unittest.TestCase):
             self.assertEqual(updated.reaction_requests[0]["source_event_type"], "movement_trigger_check")
             self.assertIsNone(updated.reaction_requests[0]["source_event_id"])
             self.assertEqual(updated.reaction_requests[0]["payload"]["weapon_id"], "shortsword")
+            repo.close()
+            event_repo.close()
+
+    def test_begin_move_ignores_opportunity_attacks_for_tactical_shift_move(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_encounter_with_player_and_moving_enemy())
+
+            result = BeginMoveEncounterEntity(repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_begin_move_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 6, "y": 6},
+                ignore_opportunity_attacks_for_this_move=True,
+            )
+
+            updated = repo.get("enc_begin_move_test")
+            assert updated is not None
+            self.assertNotEqual(result["status"], "waiting_reaction")
+            self.assertIsNone(updated.pending_movement)
+            self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 6, "y": 6})
+            repo.close()
+            event_repo.close()
+
+    def test_begin_move_tactical_shift_does_not_call_open_reaction_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_encounter_with_player_and_moving_enemy())
+            open_reaction_window = Mock()
+            open_reaction_window.execute.return_value = {
+                "status": "no_reaction",
+                "pending_reaction_window": None,
+                "reaction_requests": [],
+            }
+            service = BeginMoveEncounterEntity(
+                repo,
+                AppendEvent(event_repo),
+                open_reaction_window=open_reaction_window,
+            )
+
+            result = service.execute_with_state(
+                encounter_id="enc_begin_move_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+                ignore_opportunity_attacks_for_this_move=True,
+            )
+
+            open_reaction_window.execute.assert_not_called()
+            self.assertEqual(result["movement_status"], "completed")
+            self.assertEqual(result["reaction_requests"], [])
+            repo.close()
+            event_repo.close()
+
+    def test_begin_move_tactical_shift_flag_only_applies_to_current_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_encounter_with_player_and_moving_enemy())
+            service = BeginMoveEncounterEntity(repo, AppendEvent(event_repo))
+
+            first = service.execute_with_state(
+                encounter_id="enc_begin_move_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+                ignore_opportunity_attacks_for_this_move=True,
+            )
+            self.assertEqual(first["movement_status"], "completed")
+
+            encounter = repo.get("enc_begin_move_test")
+            assert encounter is not None
+            encounter.entities["ent_enemy_orc_001"].position = {"x": 5, "y": 4}
+            repo.save(encounter)
+
+            second = service.execute_with_state(
+                encounter_id="enc_begin_move_test",
+                entity_id="ent_enemy_orc_001",
+                target_position={"x": 8, "y": 4},
+            )
+            self.assertEqual(second["movement_status"], "waiting_reaction")
+            self.assertTrue(second["reaction_requests"])
             repo.close()
             event_repo.close()
 

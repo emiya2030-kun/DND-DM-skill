@@ -865,6 +865,27 @@ class AttackRollRequestTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_rejects_when_attack_action_sequence_is_already_exhausted(self) -> None:
+        """测试 Extra Attack 序列已耗尽时，即使有 fighter runtime 也不能继续请求。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(action_economy={"action_used": True})
+            actor.class_features = {
+                "fighter": {
+                    "extra_attack_count": 2,
+                    "turn_counters": {"attack_action_attacks_used": 2},
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "action_already_used"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="rapier",
+                )
+            repo.close()
+
     def test_execute_rejects_when_wall_blocks_line_of_sight(self) -> None:
         """测试墙体阻挡视线时不会生成攻击请求。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

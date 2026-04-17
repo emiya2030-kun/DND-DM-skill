@@ -47,6 +47,16 @@ def build_player() -> EncounterEntity:
                 "eldritch_invocation": {"max": 3, "remaining": 2},
             },
         },
+        class_features={
+            "fighter": {
+                "fighter_level": 9,
+                "second_wind": {"max_uses": 3, "remaining_uses": 2},
+                "action_surge": {"max_uses": 1, "remaining_uses": 1, "used_this_turn": False},
+                "indomitable": {"max_uses": 1, "remaining_uses": 1},
+                "extra_attack_count": 2,
+                "tactical_master_enabled": True,
+            }
+        },
         weapons=[
             {
                 "weapon_id": "rapier",
@@ -203,6 +213,22 @@ def build_encounter() -> Encounter:
 
 
 class GetEncounterStateTests(unittest.TestCase):
+    def test_execute_projects_fighter_runtime_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            repo.save(build_encounter())
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+
+            fighter = state["current_turn_entity"]["resources"]["class_features"]["fighter"]
+            self.assertEqual(fighter["second_wind"]["remaining_uses"], 2)
+            self.assertEqual(fighter["action_surge"]["remaining_uses"], 1)
+            self.assertEqual(fighter["indomitable"]["remaining_uses"], 1)
+            self.assertEqual(fighter["extra_attack_count"], 2)
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

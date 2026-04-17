@@ -590,6 +590,74 @@ class MoveEncounterEntityTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"], 5)
             repo.close()
 
+    def test_move_entity_can_use_free_movement_to_cover_insufficient_regular_movement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_service_encounter()
+            entity = encounter.entities["ent_ally_eric_001"]
+            entity.speed["remaining"] = 5
+            encounter = repo.save(encounter)
+
+            service = MoveEncounterEntity(repo)
+            updated = service.execute(
+                encounter_id=encounter.encounter_id,
+                entity_id="ent_ally_eric_001",
+                target_position={"x": 4, "y": 2},
+                free_movement_feet=5,
+            )
+
+            self.assertEqual(updated.entities["ent_ally_eric_001"].position, {"x": 4, "y": 2})
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 0)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"], 30)
+            repo.close()
+
+    def test_move_entity_free_movement_only_consumes_cost_above_free_allowance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_service_encounter()
+            entity = encounter.entities["ent_ally_eric_001"]
+            entity.speed["remaining"] = 10
+            entity.combat_flags = {"movement_spent_feet": 20}
+            encounter = repo.save(encounter)
+
+            service = MoveEncounterEntity(repo)
+            updated = service.execute(
+                encounter_id=encounter.encounter_id,
+                entity_id="ent_ally_eric_001",
+                target_position={"x": 4, "y": 2},
+                free_movement_feet=10,
+            )
+
+            self.assertEqual(updated.entities["ent_ally_eric_001"].position, {"x": 4, "y": 2})
+            self.assertEqual(updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"], 20)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 10)
+            repo.close()
+
+    def test_move_entity_free_movement_only_applies_to_current_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_service_encounter()
+            entity = encounter.entities["ent_ally_eric_001"]
+            entity.speed["remaining"] = 5
+            encounter = repo.save(encounter)
+            service = MoveEncounterEntity(repo)
+
+            first = service.execute(
+                encounter_id=encounter.encounter_id,
+                entity_id="ent_ally_eric_001",
+                target_position={"x": 4, "y": 2},
+                free_movement_feet=5,
+            )
+            self.assertEqual(first.entities["ent_ally_eric_001"].position, {"x": 4, "y": 2})
+
+            with self.assertRaisesRegex(ValueError, "insufficient_movement"):
+                service.execute(
+                    encounter_id=encounter.encounter_id,
+                    entity_id="ent_ally_eric_001",
+                    target_position={"x": 5, "y": 2},
+                )
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

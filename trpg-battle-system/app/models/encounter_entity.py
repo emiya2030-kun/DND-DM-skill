@@ -85,6 +85,8 @@ class EncounterEntity:
     vulnerabilities: list[str] = field(default_factory=list)
     # 额外运行时备注,放那些不适合结构化建模的小型说明.
     notes: list[Any] = field(default_factory=list)
+    # 职业能力/天赋运行时状态,允许记录使用次数等.
+    class_features: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.entity_id = _require_non_empty_string(self.entity_id, "entity_id")
@@ -146,6 +148,7 @@ class EncounterEntity:
             "immunities": self.immunities,
             "vulnerabilities": self.vulnerabilities,
             "notes": self.notes,
+            "class_features": self.class_features,
         }
 
     @classmethod

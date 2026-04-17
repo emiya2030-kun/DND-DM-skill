@@ -104,7 +104,7 @@ class GetEncounterState:
             "weapon_ranges": self._build_weapon_ranges(encounter, entity),
             "conditions": self._format_conditions(encounter, entity),
             "ongoing_effects": self._build_entity_ongoing_effects(encounter, entity),
-            "resources": self._format_resources(entity),
+            "resources": self._build_resources_view(entity),
             "death_saves": self._format_death_saves(entity),
         }
 
@@ -690,7 +690,18 @@ class GetEncounterState:
             return ", ".join(entity.conditions)
         return self._dedupe_preserve_order([*entity.conditions, *effect_labels])
 
-    def _format_resources(self, entity: EncounterEntity) -> str:
+    def _build_resources_view(self, entity: EncounterEntity) -> dict[str, Any]:
+        spell_slots = self._build_spell_slots_resource_view(entity)
+        feature_uses = self._build_feature_uses_resource_view(entity)
+        class_features = self._build_class_feature_resource_view(entity)
+        return {
+            "summary": self._format_resources_summary(entity),
+            "spell_slots": spell_slots,
+            "feature_uses": feature_uses,
+            "class_features": class_features,
+        }
+
+    def _format_resources_summary(self, entity: EncounterEntity) -> str:
         parts: list[str] = []
 
         spell_slots = entity.resources.get("spell_slots", {})
@@ -714,6 +725,64 @@ class GetEncounterState:
         if not parts:
             return "No tracked resources."
         return " | ".join(parts)
+
+    def _build_spell_slots_resource_view(self, entity: EncounterEntity) -> dict[str, dict[str, int]]:
+        spell_slots = entity.resources.get("spell_slots", {})
+        if not isinstance(spell_slots, dict):
+            return {}
+
+        projected: dict[str, dict[str, int]] = {}
+        for level, slot_data in spell_slots.items():
+            if not isinstance(slot_data, dict):
+                continue
+            remaining = slot_data.get("remaining")
+            maximum = slot_data.get("max")
+            if not isinstance(remaining, int) or not isinstance(maximum, int):
+                continue
+            projected[str(level)] = {
+                "remaining": remaining,
+                "max": maximum,
+            }
+        return projected
+
+    def _build_feature_uses_resource_view(self, entity: EncounterEntity) -> dict[str, dict[str, int]]:
+        feature_uses = entity.resources.get("feature_uses", {})
+        if not isinstance(feature_uses, dict):
+            return {}
+
+        projected: dict[str, dict[str, int]] = {}
+        for name, use_data in feature_uses.items():
+            if not isinstance(use_data, dict):
+                continue
+            remaining = use_data.get("remaining")
+            maximum = use_data.get("max")
+            if not isinstance(remaining, int) or not isinstance(maximum, int):
+                continue
+            projected[str(name)] = {
+                "remaining": remaining,
+                "max": maximum,
+            }
+        return projected
+
+    def _build_class_feature_resource_view(self, entity: EncounterEntity) -> dict[str, Any]:
+        class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict):
+            return {}
+
+        return {
+            "fighter": {
+                "fighter_level": fighter.get("fighter_level", fighter.get("level")),
+                "second_wind": fighter.get("second_wind"),
+                "action_surge": fighter.get("action_surge"),
+                "indomitable": fighter.get("indomitable"),
+                "extra_attack_count": fighter.get("extra_attack_count"),
+                "tactical_master_enabled": bool(fighter.get("tactical_master_enabled")),
+                "studied_attacks": fighter.get("studied_attacks", []),
+                "temporary_bonuses": fighter.get("temporary_bonuses", {}),
+                "turn_counters": fighter.get("turn_counters", {}),
+            }
+        }
 
     def _format_death_saves(self, entity: EncounterEntity) -> str:
         combat_flags = entity.combat_flags or {}

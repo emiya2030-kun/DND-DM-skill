@@ -7,6 +7,7 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.attack.execute_attack import ExecuteAttack
 from tools.services.combat.rules.reactions.close_reaction_window import CloseReactionWindow
 from tools.services.combat.rules.reactions.definitions.counterspell import ResolveCounterspellReaction
+from tools.services.combat.rules.reactions.definitions.indomitable import ResolveIndomitableReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
 from tools.services.combat.rules.reactions.definitions.shield import ResolveShieldReaction
 from tools.services.combat.rules.reactions.resume_host_action import ResumeHostAction
@@ -37,8 +38,13 @@ class ResolveReactionOption:
         self.opportunity_attack_resolver = ResolveOpportunityAttackReaction(
             LeaveReachInterrupt(execute_attack),
         )
-        self.shield_resolver = ResolveShieldReaction(TargetedDefenseRewrite())
-        self.counterspell_resolver = ResolveCounterspellReaction(CastInterruptContest())
+        self.shield_resolver = ResolveShieldReaction(
+            TargetedDefenseRewrite(encounter_repository),
+        )
+        self.counterspell_resolver = ResolveCounterspellReaction(
+            CastInterruptContest(encounter_repository),
+        )
+        self.indomitable_resolver = ResolveIndomitableReaction(encounter_repository)
         encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
         self.resume_host_action = resume_host_action or ResumeHostAction(
             execute_attack=execute_attack,
@@ -275,6 +281,13 @@ class ResolveReactionOption:
             )
         if reaction_type == "counterspell":
             return self.counterspell_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+            )
+        if reaction_type == "indomitable":
+            return self.indomitable_resolver.execute(
                 encounter_id=encounter_id,
                 request=request,
                 final_total=final_total,

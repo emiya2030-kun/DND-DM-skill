@@ -83,6 +83,7 @@ class ResolveSavingThrow:
                 "voluntary_fail": voluntary_fail,
                 "auto_fail": auto_fail,
                 "save_ability": normalized_save_ability,
+                "save_modifier": ability_modifier + proficiency_bonus_applied,
                 "vantage": final_vantage,
                 "rolled_vantage": requested_vantage,
                 "condition_disadvantages": condition_disadvantages,

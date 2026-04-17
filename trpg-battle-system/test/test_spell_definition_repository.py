@@ -29,7 +29,7 @@ class SpellDefinitionRepositoryTests(unittest.TestCase):
     def test_templates_expose_shared_core_sections(self) -> None:
         repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
 
-        for spell_id in ("fireball", "hold_person", "hex", "hunters_mark", "eldritch_blast"):
+        for spell_id in ("fireball", "hold_person", "shield", "counterspell", "hex", "hunters_mark", "eldritch_blast"):
             spell = repo.get(spell_id)
             self.assertIsNotNone(spell)
             self.assertIn("base", spell)
@@ -60,6 +60,30 @@ class SpellDefinitionRepositoryTests(unittest.TestCase):
         self.assertEqual(hold_person["resolution"]["activation"], "action")
         self.assertIn("humanoid", hold_person["targeting"]["allowed_target_types"])
         self.assertEqual(hold_person["scaling"]["slot_level_bonus"]["additional_targets_per_extra_level"], 1)
+
+    def test_counterspell_template_uses_2024_con_save_interrupt_rule(self) -> None:
+        repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
+
+        spell = repo.get("counterspell")
+
+        self.assertIsNotNone(spell)
+        self.assertEqual(spell["resolution"]["activation"], "reaction")
+        self.assertEqual(spell["resolution"]["mode"], "interrupt_save")
+        self.assertEqual(spell["resolution"]["save_ability"], "con")
+        self.assertTrue(spell["resolution"]["on_failed_save_cancel_cast"])
+        self.assertTrue(spell["resolution"]["on_failed_save_preserve_interrupted_spell_slot"])
+
+    def test_shield_template_matches_runtime_reaction_behavior(self) -> None:
+        repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
+
+        spell = repo.get("shield")
+
+        self.assertIsNotNone(spell)
+        self.assertEqual(spell["resolution"]["activation"], "reaction")
+        self.assertEqual(spell["resolution"]["mode"], "no_roll")
+        self.assertEqual(spell["targeting"]["type"], "self")
+        self.assertEqual(spell["special_rules"]["ac_bonus"], 5)
+        self.assertEqual(spell["special_rules"]["duration_until"], "start_of_next_self_turn")
 
     def test_get_returns_eldritch_blast_cantrip_template(self) -> None:
         repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))

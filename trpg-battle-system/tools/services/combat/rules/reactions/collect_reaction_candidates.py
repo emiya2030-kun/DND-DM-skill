@@ -100,6 +100,26 @@ class CollectReactionCandidates:
                 for definition in definitions
             ]
 
+        if trigger_type == "failed_save":
+            target_id = trigger_event.get("target_entity_id")
+            if not isinstance(target_id, str):
+                return []
+            target = encounter.entities.get(target_id)
+            if target is None:
+                return []
+
+            definitions = [definition for definition in definitions if definition.get("reaction_type") == "indomitable"]
+            if not definitions or not self._eligible_for_indomitable(target):
+                return []
+
+            return [
+                {
+                    "actor_entity_id": target.entity_id,
+                    "reaction_definition": definition,
+                }
+                for definition in definitions
+            ]
+
         return []
 
     def _eligible_for_shield(self, entity: Any) -> bool:
@@ -116,6 +136,22 @@ class CollectReactionCandidates:
             and self._has_spell_slot(entity, minimum_level=3)
             and self._within_counterspell_range(entity, caster)
         )
+
+    def _eligible_for_indomitable(self, entity: Any) -> bool:
+        class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict):
+            return False
+
+        fighter_level = fighter.get("fighter_level", fighter.get("level", 0))
+        if isinstance(fighter_level, bool) or not isinstance(fighter_level, int) or fighter_level < 9:
+            return False
+
+        indomitable_state = fighter.get("indomitable")
+        if not isinstance(indomitable_state, dict):
+            return False
+        remaining_uses = indomitable_state.get("remaining_uses")
+        return isinstance(remaining_uses, int) and not isinstance(remaining_uses, bool) and remaining_uses > 0
 
     def _reaction_available(self, entity: Any) -> bool:
         action_economy = entity.action_economy if isinstance(entity.action_economy, dict) else {}

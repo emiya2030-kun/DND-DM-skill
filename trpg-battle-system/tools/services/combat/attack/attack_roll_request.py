@@ -26,6 +26,11 @@ from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
 )
+from tools.services.class_features.shared import (
+    fighter_has_studied_attacks,
+    has_unconsumed_studied_attack_mark,
+    resolve_extra_attack_count,
+)
 
 class AttackRollRequest:
     """根据当前 encounter 状态生成一次武器攻击的掷骰请求。"""
@@ -112,6 +117,11 @@ class AttackRollRequest:
             vantage_sources["advantage"].extend(mastery_modifiers["advantage_sources"])
         if mastery_modifiers["disadvantage_sources"]:
             vantage_sources["disadvantage"].extend(mastery_modifiers["disadvantage_sources"])
+        if (
+            fighter_has_studied_attacks(actor.class_features)
+            and has_unconsumed_studied_attack_mark(actor.class_features, target.entity_id)
+        ):
+            vantage_sources["advantage"].append("studied_attacks")
         if vantage_sources["advantage"] and vantage_sources["disadvantage"]:
             resolved_vantage = "normal"
         elif vantage_sources["advantage"]:
@@ -146,6 +156,7 @@ class AttackRollRequest:
                 "weapon_slot": weapon.get("slot"),
                 "weapon_properties": list(weapon.get("properties", [])),
                 "weapon_mastery": weapon.get("mastery"),
+                "weapon_mastery_base": weapon.get("mastery"),
                 "light_bonus_uses_bonus_action": light_bonus_uses_bonus_action,
                 "weapon_category": weapon.get("category"),
                 "weapon_is_proficient": bool(weapon.get("is_proficient", True)),
@@ -163,6 +174,7 @@ class AttackRollRequest:
                 "distance_to_target": f"{distance_to_target_feet} ft",
                 "distance_to_target_feet": distance_to_target_feet,
                 "melee_auto_crit": melee_auto_crit,
+                "studied_attacks_applied": "studied_attacks" in vantage_sources["advantage"],
             },
         )
 
@@ -234,8 +246,34 @@ class AttackRollRequest:
         return math.ceil(max(dx, dy)) * 5
 
     def _ensure_action_available(self, actor: EncounterEntity) -> None:
-        if bool(actor.action_economy.get("action_used")):
+        if bool(actor.action_economy.get("action_used")) and not self._can_continue_attack_action_sequence(actor):
             raise ValueError("action_already_used")
+
+    def _can_continue_attack_action_sequence(self, actor: EncounterEntity) -> bool:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if not isinstance(fighter, dict):
+            return False
+
+        max_attacks = max(1, resolve_extra_attack_count(class_features))
+        if max_attacks <= 1:
+            return False
+
+        used_attacks = self._read_attack_action_attacks_used(fighter)
+        if used_attacks is None:
+            return False
+
+        return used_attacks < max_attacks
+
+    def _read_attack_action_attacks_used(self, fighter: dict[str, Any]) -> int | None:
+        turn_counters = fighter.get("turn_counters")
+        if not isinstance(turn_counters, dict):
+            return None
+
+        used_attacks = turn_counters.get("attack_action_attacks_used")
+        if isinstance(used_attacks, bool) or not isinstance(used_attacks, int):
+            return 0
+        return max(0, used_attacks)
 
     def _ensure_bonus_action_available(self, actor: EncounterEntity) -> None:
         if bool(actor.action_economy.get("bonus_action_used")):

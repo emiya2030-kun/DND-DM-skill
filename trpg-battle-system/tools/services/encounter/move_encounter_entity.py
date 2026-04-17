@@ -30,6 +30,7 @@ class MoveEncounterEntity:
         count_movement: bool = True,
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
+        free_movement_feet: int = 0,
     ) -> Encounter:
         encounter = self.repository.get(encounter_id)
         if encounter is None:
@@ -64,13 +65,15 @@ class MoveEncounterEntity:
         effective_walk_speed = max(0, entity.speed["walk"] - exhaustion_penalty - mastery_speed_penalty)
         total_available_movement = effective_walk_speed * (2 if use_dash else 1)
         available_movement = max(0, total_available_movement - distance_already_moved)
-        if result.feet_cost > available_movement:
+        usable_free_movement_feet = max(0, free_movement_feet)
+        if result.feet_cost > available_movement + usable_free_movement_feet:
             raise ValueError("insufficient_movement")
 
         entity.position["x"] = target_position["x"]
         entity.position["y"] = target_position["y"]
         if count_movement:
-            spent_after_move = distance_already_moved + result.feet_cost
+            counted_cost = max(0, result.feet_cost - usable_free_movement_feet)
+            spent_after_move = distance_already_moved + counted_cost
             combat_flags = self._ensure_combat_flags_dict(entity)
             combat_flags["movement_spent_feet"] = spent_after_move
             entity.speed["remaining"] = max(0, effective_walk_speed - min(spent_after_move, effective_walk_speed))
@@ -102,6 +105,7 @@ class MoveEncounterEntity:
         count_movement: bool = True,
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
+        free_movement_feet: int = 0,
     ) -> dict[str, Any]:
         updated = self.execute(
             encounter_id=encounter_id,
@@ -110,6 +114,7 @@ class MoveEncounterEntity:
             count_movement=count_movement,
             use_dash=use_dash,
             allow_out_of_turn_actor=allow_out_of_turn_actor,
+            free_movement_feet=free_movement_feet,
         )
         current_entity = updated.entities[entity_id]
         return {

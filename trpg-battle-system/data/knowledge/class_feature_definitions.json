@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "class_feature_definitions": {
+    "fighter.second_wind": {
+      "id": "fighter.second_wind",
+      "name": "Second Wind",
+      "class_id": "fighter",
+      "level_required": 1,
+      "template_type": "activated_heal",
+      "activation": "bonus_action",
+      "resource_model": {
+        "recharge": "short_or_long_rest",
+        "uses_scaling": {
+          "ability": "fighter_level",
+          "rule": "max_of_2"
+        }
+      },
+      "trigger": {
+        "type": "player_activated"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Regain hit points based on fighter level.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.action_surge": {
+      "id": "fighter.action_surge",
+      "name": "Action Surge",
+      "class_id": "fighter",
+      "level_required": 2,
+      "template_type": "extra_action_grant",
+      "activation": "free",
+      "resource_model": {
+        "recharge": "short_or_long_rest",
+        "uses_scaling": {
+          "fighter_level_at_least_17": 2,
+          "otherwise": 1
+        }
+      },
+      "trigger": {
+        "type": "player_activated",
+        "timing": "on_turn"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one additional action on your turn.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.tactical_shift": {
+      "id": "fighter.tactical_shift",
+      "name": "Tactical Shift",
+      "class_id": "fighter",
+      "level_required": 2,
+      "template_type": "post_activation_free_movement",
+      "activation": "free",
+      "resource_model": {
+        "linked_to_feature": "fighter.second_wind"
+      },
+      "trigger": {
+        "type": "after_feature_use",
+        "feature_id": "fighter.second_wind"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "After Second Wind, move up to half Speed without opportunity attacks.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.indomitable": {
+      "id": "fighter.indomitable",
+      "name": "Indomitable",
+      "class_id": "fighter",
+      "level_required": 9,
+      "template_type": "failed_save_reroll",
+      "activation": "reaction",
+      "resource_model": {
+        "recharge": "long_rest",
+        "uses_scaling": {
+          "level_9": 1,
+          "level_13": 2,
+          "level_17": 3
+        }
+      },
+      "trigger": {
+        "type": "on_failed_saving_throw"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Reroll a failed saving throw.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.studied_attacks": {
+      "id": "fighter.studied_attacks",
+      "name": "Studied Attacks",
+      "class_id": "fighter",
+      "level_required": 13,
+      "template_type": "miss_applies_next_attack_advantage_mark",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_miss"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "A miss can grant advantage on your next attack against that target.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.extra_attack": {
+      "id": "fighter.extra_attack",
+      "name": "Extra Attack",
+      "class_id": "fighter",
+      "level_required": 5,
+      "template_type": "attack_action_multi_strike",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Attack more than once when taking the Attack action.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "special_rules": {
+        "stacking": "take_highest_only"
+      }
+    },
+    "fighter.tactical_master": {
+      "id": "fighter.tactical_master",
+      "name": "Tactical Master",
+      "class_id": "fighter",
+      "level_required": 9,
+      "template_type": "attack_mastery_override",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_weapon_attack_roll"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Temporarily replace weapon mastery option on qualifying attacks.",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    }
+  }
+}

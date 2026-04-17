@@ -61,6 +61,58 @@ def build_actor() -> EncounterEntity:
     )
 
 
+def build_fighter_actor_for_extra_attack(
+    *,
+    attack_action_attacks_used: int = 0,
+    action_used: bool = False,
+    extra_attack_count: Optional[int] = None,
+    extra_attack_sources: Optional[list[dict[str, int]]] = None,
+    fighter_level: int = 5,
+    studied_attacks: Optional[list[dict[str, object]]] = None,
+    tactical_master_enabled: bool = False,
+) -> EncounterEntity:
+    fighter_state: dict[str, object] = {
+        "level": fighter_level,
+        "fighter_level": fighter_level,
+        "turn_counters": {"attack_action_attacks_used": attack_action_attacks_used},
+    }
+    if extra_attack_count is not None:
+        fighter_state["extra_attack_count"] = extra_attack_count
+    if extra_attack_sources is not None:
+        fighter_state["extra_attack_sources"] = extra_attack_sources
+    if studied_attacks is not None:
+        fighter_state["studied_attacks"] = studied_attacks
+    if tactical_master_enabled:
+        fighter_state["tactical_master_enabled"] = True
+
+    return EncounterEntity(
+        entity_id="ent_fighter_001",
+        name="Fighter",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 2, "y": 2},
+        hp={"current": 30, "max": 30, "temp": 0},
+        ac=16,
+        speed={"walk": 30, "remaining": 30},
+        initiative=15,
+        ability_mods={"str": 4, "dex": 1, "con": 3, "int": 0, "wis": 1, "cha": 0},
+        proficiency_bonus=3,
+        action_economy={"action_used": action_used, "bonus_action_used": False, "reaction_used": False},
+        weapons=[
+            {
+                "weapon_id": "rapier",
+                "name": "Rapier",
+                "attack_bonus": 7,
+                "damage": [{"formula": "1d8+4", "type": "piercing"}],
+                "properties": ["finesse"],
+                "range": {"normal": 5, "long": 5},
+            }
+        ],
+        class_features={"fighter": fighter_state},
+    )
+
+
 def build_target() -> EncounterEntity:
     """构造完整攻击测试里的目标."""
     return EncounterEntity(
@@ -74,6 +126,30 @@ def build_target() -> EncounterEntity:
         ac=13,
         speed={"walk": 30, "remaining": 30},
         initiative=10,
+    )
+
+
+def build_fighter_encounter_for_extra_attack(
+    actor: Optional[EncounterEntity] = None,
+    target: Optional[EncounterEntity] = None,
+) -> Encounter:
+    actor = actor or build_fighter_actor_for_extra_attack()
+    target = target or build_target()
+    return Encounter(
+        encounter_id="enc_fighter_test",
+        name="Fighter Test Encounter",
+        status="active",
+        round=1,
+        current_entity_id=actor.entity_id,
+        turn_order=[actor.entity_id, target.entity_id],
+        entities={actor.entity_id: actor, target.entity_id: target},
+        map=EncounterMap(
+            map_id="map_fighter_test",
+            name="Fighter Test Map",
+            description="A small combat room.",
+            width=8,
+            height=8,
+        ),
     )
 
 
@@ -1629,6 +1705,354 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertIsNotNone(updated)
 
             self.assertTrue(updated.entities["ent_ally_eric_001"].action_economy.get("action_used"))
+
+    def test_execute_attack_consumes_one_attack_from_attack_action_sequence(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(
+                        attack_action_attacks_used=0,
+                        extra_attack_count=2,
+                    )
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [10], "modifier": 7},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(fighter["turn_counters"]["attack_action_attacks_used"], 1)
+            self.assertIs(updated.entities["ent_fighter_001"].action_economy["action_used"], False)
+
+    def test_execute_attack_marks_action_used_after_last_extra_attack_is_spent(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(
+                        attack_action_attacks_used=1,
+                        action_used=True,
+                        extra_attack_count=2,
+                    )
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [10], "modifier": 7},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(fighter["turn_counters"]["attack_action_attacks_used"], 2)
+            self.assertIs(updated.entities["ent_fighter_001"].action_economy["action_used"], True)
+
+    def test_execute_attack_allows_sequence_when_action_used_but_no_attack_spent_yet(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(
+                        attack_action_attacks_used=0,
+                        action_used=True,
+                        extra_attack_count=2,
+                    )
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [10], "modifier": 7},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(fighter["turn_counters"]["attack_action_attacks_used"], 1)
+            self.assertIs(updated.entities["ent_fighter_001"].action_economy["action_used"], False)
+
+    def test_missed_attack_adds_studied_attacks_mark_for_target(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(fighter_level=13),
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=8,
+                dice_rolls={"base_rolls": [1], "modifier": 7},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            marks = fighter["studied_attacks"]
+            self.assertFalse(result["resolution"]["hit"])
+            self.assertEqual(len(marks), 1)
+            self.assertEqual(marks[0]["target_entity_id"], "ent_enemy_goblin_001")
+            self.assertFalse(marks[0]["consumed"])
+
+    def test_next_attack_against_marked_target_gets_advantage_and_consumes_mark(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(
+                        fighter_level=13,
+                        studied_attacks=[
+                            {
+                                "target_entity_id": "ent_enemy_goblin_001",
+                                "expires_at": "end_of_next_turn",
+                                "consumed": False,
+                            }
+                        ],
+                    ),
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [10, 4], "chosen_roll": 10, "modifier": 7, "vantage": "advantage"},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            marks = fighter["studied_attacks"]
+            self.assertEqual(result["request"]["context"]["vantage"], "advantage")
+            self.assertIn("studied_attacks", result["request"]["context"]["vantage_sources"]["advantage"])
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(len(marks), 1)
+            self.assertTrue(marks[0]["consumed"])
+
+    def test_resolve_extra_attack_count_takes_highest_source_only_in_attack_flow(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(
+                build_fighter_encounter_for_extra_attack(
+                    actor=build_fighter_actor_for_extra_attack(
+                        attack_action_attacks_used=0,
+                        extra_attack_count=1,
+                        extra_attack_sources=[
+                            {"source": "fighter", "attack_count": 2},
+                            {"source": "multiclass_other_feature", "attack_count": 1},
+                        ],
+                    )
+                )
+            )
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                final_total=17,
+                dice_rolls={"base_rolls": [10], "modifier": 7},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            fighter = updated.entities["ent_fighter_001"].class_features["fighter"]
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(fighter["turn_counters"]["attack_action_attacks_used"], 1)
+            self.assertIs(updated.entities["ent_fighter_001"].action_economy["action_used"], False)
+
+    def test_tactical_master_allows_push_override_on_valid_weapon_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "longsword": {
+                                "id": "longsword",
+                                "name": "长剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "slashing"},
+                                "properties": ["versatile"],
+                                "mastery": "sap",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_fighter_actor_for_extra_attack(fighter_level=9, tactical_master_enabled=True)
+            actor.ability_mods["str"] = 4
+            actor.ability_scores = {"str": 18, "dex": 10, "con": 14, "int": 10, "wis": 10, "cha": 10}
+            actor.weapons = [{"weapon_id": "longsword", "is_proficient": True}]
+            target = build_target()
+            encounter_repo.save(build_fighter_encounter_for_extra_attack(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            weapon_repo = WeaponDefinitionRepository(knowledge_path)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo, weapon_definition_repository=weapon_repo),
+                AttackRollResult(encounter_repo, append_event, UpdateHp(encounter_repo, append_event)),
+            )
+
+            result = service.execute(
+                encounter_id="enc_fighter_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=18,
+                dice_rolls={"base_rolls": [11], "modifier": 7},
+                damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [4]}],
+                mastery_override="push",
+            )
+
+            updated = encounter_repo.get("enc_fighter_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(result["request"]["context"]["weapon_mastery"], "push")
+            push = result["resolution"]["weapon_mastery_updates"]["push"]
+            self.assertEqual(push["status"], "resolved")
+            self.assertEqual(updated.entities[target.entity_id].position, {"x": 5, "y": 2})
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_tactical_master_rejects_override_when_feature_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            knowledge_path = Path(tmp_dir) / "weapon_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "weapon_definitions": {
+                            "longsword": {
+                                "id": "longsword",
+                                "name": "长剑",
+                                "category": "martial",
+                                "kind": "melee",
+                                "base_damage": {"formula": "1d8", "damage_type": "slashing"},
+                                "properties": ["versatile"],
+                                "mastery": "sap",
+                                "range": {"normal": 5, "long": 5},
+                                "hands": {"mode": "one_handed"},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            actor = build_fighter_actor_for_extra_attack(fighter_level=9, tactical_master_enabled=False)
+            actor.weapons = [{"weapon_id": "longsword", "is_proficient": True}]
+            target = build_target()
+            encounter_repo.save(build_fighter_encounter_for_extra_attack(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            weapon_repo = WeaponDefinitionRepository(knowledge_path)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo, weapon_definition_repository=weapon_repo),
+                AttackRollResult(encounter_repo, append_event, UpdateHp(encounter_repo, append_event)),
+            )
+
+            with self.assertRaisesRegex(ValueError, "invalid_mastery_override"):
+                service.execute(
+                    encounter_id="enc_fighter_test",
+                    target_id=target.entity_id,
+                    weapon_id="longsword",
+                    final_total=18,
+                    dice_rolls={"base_rolls": [11], "modifier": 7},
+                    damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [4]}],
+                    mastery_override="push",
+                )
+
+            encounter_repo.close()
+            event_repo.close()
 
     def test_execute_marks_action_used_even_when_attack_misses_with_legacy_damage_inputs(self) -> None:
         """测试旧 hp_change 兼容路径在未命中时也会标记 action_used."""

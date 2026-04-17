@@ -47,6 +47,30 @@ class BeginMoveEncounterEntity:
             open_reaction_window = OpenReactionWindow(repository, definition_repository)
         self.open_reaction_window = open_reaction_window
 
+    def execute(
+        self,
+        *,
+        encounter_id: str,
+        entity_id: str,
+        target_position: dict[str, int],
+        count_movement: bool = True,
+        use_dash: bool = False,
+        allow_out_of_turn_actor: bool = False,
+        ignore_opportunity_attacks_for_this_move: bool = False,
+    ) -> dict[str, Any]:
+        result = self.execute_with_state(
+            encounter_id=encounter_id,
+            entity_id=entity_id,
+            target_position=target_position,
+            count_movement=count_movement,
+            use_dash=use_dash,
+            allow_out_of_turn_actor=allow_out_of_turn_actor,
+            ignore_opportunity_attacks_for_this_move=ignore_opportunity_attacks_for_this_move,
+        )
+        response = dict(result)
+        response["status"] = result["movement_status"]
+        return response
+
     def execute_with_state(
         self,
         *,
@@ -56,6 +80,7 @@ class BeginMoveEncounterEntity:
         count_movement: bool = True,
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
+        ignore_opportunity_attacks_for_this_move: bool = False,
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
         mover = resolve_current_turn_actor_or_raise(
@@ -74,7 +99,9 @@ class BeginMoveEncounterEntity:
         )
         self._ensure_movement_available(mover, result, use_dash)
 
-        first_trigger = self._find_first_opportunity_trigger(encounter, mover, result)
+        first_trigger = None
+        if not ignore_opportunity_attacks_for_this_move:
+            first_trigger = self._find_first_opportunity_trigger(encounter, mover, result)
         if first_trigger is None:
             mover.position = {"x": target_position["x"], "y": target_position["y"]}
             self._apply_movement_progress(mover, result.feet_cost, use_dash, count_movement)
