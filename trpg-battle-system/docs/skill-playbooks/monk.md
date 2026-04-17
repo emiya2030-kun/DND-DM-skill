@@ -180,3 +180,53 @@ LLM 不需要额外声明参数。
 - `step_of_the_wind`
 
 但这份 playbook 暂时不把它们写成明确调用示例,因为当前重点是只记录已稳定接线、调用路径明确的部分。
+
+## 9. 坚强防御 Patient Defense
+
+玩家例子:
+
+- “我拉开架势防守。”
+- “我花 1 点功力进入防御姿态。”
+
+调用:
+
+```json
+{
+  "command": "use_patient_defense",
+  "args": {
+    "encounter_id": "enc_preview_demo",
+    "actor_id": "pc_monk",
+    "spend_focus": true
+  }
+}
+```
+
+说明:
+
+- `spend_focus: false` 时，只给 `Disengage`
+- `spend_focus: true` 时，同时给 `Disengage + Dodge`
+
+## 10. 疾步如风 Step of the Wind
+
+玩家例子:
+
+- “我疾步冲过去。”
+- “我花 1 点功力踏风而行。”
+
+调用:
+
+```json
+{
+  "command": "use_step_of_the_wind",
+  "args": {
+    "encounter_id": "enc_preview_demo",
+    "actor_id": "pc_monk",
+    "spend_focus": true
+  }
+}
+```
+
+说明:
+
+- `spend_focus: false` 时，获得一次 `Dash`
+- `spend_focus: true` 时，同时获得 `Dash + Disengage`，并让本回合跳跃距离翻倍

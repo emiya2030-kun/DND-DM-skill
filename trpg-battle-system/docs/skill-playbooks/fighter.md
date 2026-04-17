@@ -181,3 +181,47 @@ LLM 不需要额外声明参数。
 - 这不是普通 `reaction` 消耗
 - 也不是主动在自己回合空放
 - 只会在失败豁免时出现
+
+## 8. 战术思维 Tactical Mind
+
+适用条件:
+
+- 战士一次属性检定失败
+- 还有 `second_wind.remaining_uses`
+
+调用:
+
+```json
+{
+  "command": "execute_ability_check",
+  "args": {
+    "encounter_id": "enc_preview_demo",
+    "actor_id": "pc_fighter",
+    "check_type": "ability",
+    "check": "str",
+    "dc": 15,
+    "class_feature_options": {
+      "tactical_mind": true
+    }
+  }
+}
+```
+
+说明:
+
+- 后端会在失败后自动补掷 `1d10`
+- 若补后仍失败，则不会消耗 `Second Wind`
+
+## 9. 战斗风格 Fighting Style
+
+当前已接入:
+
+- `Defense`
+- `Archery`
+- `Dueling`
+
+说明:
+
+- 这些是被动效果
+- LLM 不需要主动声明参数
+- 只要角色 runtime 中存在对应 `fighting_style.style_id`，后端会自动结算

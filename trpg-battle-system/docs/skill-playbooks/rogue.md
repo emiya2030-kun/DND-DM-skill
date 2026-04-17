@@ -180,3 +180,21 @@ LLM 不需要额外声明任何参数.
 - `GetEncounterState` 已会投影这些能力
 - LLM 应根据玩家语义决定这是在消耗附赠动作,而不是普通动作
 - 仍然使用现有移动 / 检定链路,不需要额外职业专用 tool
+
+## 9. 高阶诡诈打击
+
+当前后端已支持:
+
+- `poison`
+- `trip`
+- `withdraw`
+- `daze`
+- `knock_out`
+- `obscure`
+
+说明:
+
+- `poison` 需要角色具备制毒工具
+- 5级起可用 `poison / trip / withdraw`
+- 14级起可用 `daze / knock_out / obscure`
+- 11级起一次命中可声明两个效果

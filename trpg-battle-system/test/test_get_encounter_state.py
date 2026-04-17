@@ -359,6 +359,46 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_monk_bonus_action_features(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["monk"] = {
+                "level": 5,
+                "focus_points": {"max": 5, "remaining": 4},
+                "martial_arts_die": "1d8",
+                "unarmored_movement_bonus_feet": 10,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            monk = state["current_turn_entity"]["resources"]["class_features"]["monk"]
+
+            self.assertIn("patient_defense", monk["available_features"])
+            self.assertIn("step_of_the_wind", monk["available_features"])
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_fighter_tactical_mind_and_style(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["fighter"]["tactical_mind"] = {"enabled": True}
+            player.class_features["fighter"]["fighting_style"] = {"style_id": "archery"}
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            fighter = state["current_turn_entity"]["resources"]["class_features"]["fighter"]
+
+            self.assertTrue(fighter["tactical_mind"]["enabled"])
+            self.assertEqual(fighter["fighting_style"]["style_id"], "archery")
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_recent_activity_timeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
