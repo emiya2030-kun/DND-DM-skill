@@ -1357,6 +1357,37 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertFalse(request.context["melee_auto_crit"])
             repo.close()
 
+    def test_execute_rejects_sneak_attack_with_non_qualifying_weapon(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            actor.weapons = [
+                {
+                    "weapon_id": "glaive",
+                    "name": "Glaive",
+                    "attack_bonus": 5,
+                    "damage": [{"formula": "1d10+3", "type": "slashing"}],
+                    "properties": ["heavy", "reach", "two_handed"],
+                    "range": {"normal": 10, "long": 10},
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "sneak_attack_requires_finesse_or_ranged_weapon"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="glaive",
+                    class_feature_options={"sneak_attack": True},
+                )
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,6 +31,11 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
             action_surge["used_this_turn"] = False
         if isinstance(temporary_bonuses, dict):
             temporary_bonuses["extra_non_magic_action_available"] = 0
+    rogue = class_features.get("rogue")
+    if isinstance(rogue, dict):
+        sneak_attack = rogue.get("sneak_attack")
+        if isinstance(sneak_attack, dict):
+            sneak_attack["used_this_turn"] = False
 
 
 def start_turn(encounter: Encounter) -> Encounter:

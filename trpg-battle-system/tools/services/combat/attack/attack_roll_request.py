@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from typing import Any
 from uuid import uuid4
 
 
@@ -31,6 +32,7 @@ from tools.services.combat.shared.turn_actor_guard import (
 from tools.services.class_features.shared import (
     fighter_has_studied_attacks,
     has_unconsumed_studied_attack_mark,
+    normalize_class_feature_options,
     resolve_extra_attack_count,
 )
 
@@ -60,6 +62,7 @@ class AttackRollRequest:
         description: str | None = None,
         attack_mode: str | None = None,
         grip_mode: str | None = None,
+        class_feature_options: dict[str, Any] | None = None,
     ) -> RollRequest:
         """为当前行动者生成一次武器攻击请求。"""
         encounter = self._get_encounter_or_raise(encounter_id)
@@ -72,6 +75,12 @@ class AttackRollRequest:
         self.armor_profile_resolver.refresh_entity_armor_class(actor)
         self.armor_profile_resolver.refresh_entity_armor_class(target)
         weapon = self.resolve_weapon_or_raise(actor, weapon_id)
+        normalized_class_feature_options = normalize_class_feature_options(class_feature_options)
+        request_class_feature_options: dict[str, Any] = {}
+        if bool(normalized_class_feature_options.get("sneak_attack")):
+            if not self._weapon_qualifies_for_sneak_attack(weapon):
+                raise ValueError("sneak_attack_requires_finesse_or_ranged_weapon")
+            request_class_feature_options["sneak_attack"] = True
         actor_armor_profile = self.armor_profile_resolver.resolve(actor)
 
         actor_runtime = ConditionRuntime(actor.conditions)
@@ -184,6 +193,7 @@ class AttackRollRequest:
                 "distance_to_target_feet": distance_to_target_feet,
                 "melee_auto_crit": melee_auto_crit,
                 "studied_attacks_applied": "studied_attacks" in vantage_sources["advantage"],
+                "class_feature_options": request_class_feature_options,
             },
         )
 
@@ -569,6 +579,12 @@ class AttackRollRequest:
             return None
         damage_type = first_part.get("type")
         return str(damage_type) if isinstance(damage_type, str) and damage_type.strip() else None
+
+    def _weapon_qualifies_for_sneak_attack(self, weapon: dict[str, Any]) -> bool:
+        properties = {str(prop).lower() for prop in weapon.get("properties", [])}
+        if "finesse" in properties:
+            return True
+        return self._resolve_attack_kind(weapon, "default") == "ranged_weapon"
 
     def _collect_close_range_hostile_sources(
         self,

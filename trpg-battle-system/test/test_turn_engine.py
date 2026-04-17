@@ -237,3 +237,18 @@ class TurnEngineTests(unittest.TestCase):
 
         self.assertEqual(updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"], 0)
         self.assertNotIn("light_bonus_trigger", updated.entities["ent_ally_eric_001"].combat_flags)
+
+    def test_start_turn_resets_rogue_sneak_attack_flag(self) -> None:
+        encounter = build_encounter_with_two_entities(current_entity_id="ent_ally_eric_001")
+        entity = encounter.entities["ent_ally_eric_001"]
+        entity.class_features = {
+            "rogue": {
+                "level": 5,
+                "sneak_attack": {"damage_dice": "3d6", "used_this_turn": True},
+            }
+        }
+
+        updated = start_turn(encounter)
+
+        rogue = updated.entities["ent_ally_eric_001"].class_features["rogue"]
+        self.assertFalse(rogue["sneak_attack"]["used_this_turn"])

@@ -2408,6 +2408,65 @@ class ExecuteAttackTests(unittest.TestCase):
                     ],
                 )
 
+    def test_execute_applies_sneak_attack_damage_once_per_turn(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            target = build_target()
+            target.hp = {"current": 50, "max": 50, "temp": 0}
+            actor.class_features = {
+                "rogue": {
+                    "level": 5,
+                    "sneak_attack": {"damage_dice": "3d6", "used_this_turn": False},
+                }
+            }
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            first = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [5]},
+                    {"source": "rogue_sneak_attack", "rolls": [3, 4, 5]},
+                ],
+                class_feature_options={"sneak_attack": True},
+            )
+
+            second = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="rapier",
+                consume_action=False,
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [5]}],
+                class_feature_options={"sneak_attack": True},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(first["resolution"]["damage_resolution"]["total_damage"], 20)
+            self.assertEqual(len(first["resolution"]["damage_resolution"]["parts"]), 2)
+            self.assertEqual(first["resolution"]["damage_resolution"]["parts"][1]["source"], "rogue_sneak_attack")
+            self.assertTrue(
+                updated.entities["ent_ally_eric_001"].class_features["rogue"]["sneak_attack"]["used_this_turn"]
+            )
+            self.assertEqual(second["resolution"]["damage_resolution"]["total_damage"], 8)
+            self.assertEqual(len(second["resolution"]["damage_resolution"]["parts"]), 1)
+
     def test_execute_ignores_damage_rolls_when_attack_misses(self) -> None:
         """测试未命中时应忽略 damage_rolls，结果中不包含伤害分解."""
         with make_repositories() as (encounter_repo, event_repo):

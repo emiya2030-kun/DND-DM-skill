@@ -16,6 +16,7 @@ from tools.services.class_features.shared import (
     add_or_refresh_studied_attack_mark,
     consume_studied_attack_mark,
     fighter_has_studied_attacks,
+    get_class_runtime,
     resolve_extra_attack_count,
 )
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
@@ -88,6 +89,7 @@ class ExecuteAttack:
         allow_out_of_turn_actor: bool = False,
         mastery_override: str | None = None,
         mastery_rolls: dict[str, Any] | None = None,
+        class_feature_options: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
         skip_reaction_window: bool = False,
@@ -121,6 +123,7 @@ class ExecuteAttack:
                 description=description,
                 attack_mode=attack_mode,
                 grip_mode=grip_mode,
+                class_feature_options=class_feature_options,
             )
         except ValueError as error:
             if not self._is_structured_invalid_attack_error(error):
@@ -306,6 +309,7 @@ class ExecuteAttack:
             actor_entity_id=request.actor_entity_id,
             weapon_id=weapon_id,
             attack_context=request.context,
+            resolution=resolution,
             consume_action=effective_consume_action,
             consume_bonus_action=effective_consume_bonus_action,
             consume_reaction=consume_reaction,
@@ -557,6 +561,11 @@ class ExecuteAttack:
             target=target,
             attack_context=attack_context,
         )
+        self._maybe_append_rogue_sneak_attack_damage_part(
+            actor=actor,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
         is_critical_hit = self._is_critical_hit(roll_result)
         if force_critical_on_hit:
             is_critical_hit = True
@@ -662,6 +671,37 @@ class ExecuteAttack:
             )
         damage_parts.extend(self._build_target_effect_damage_parts(actor_entity_id=actor_entity_id, target=target))
         return damage_parts
+
+    def _maybe_append_rogue_sneak_attack_damage_part(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        options = attack_context.get("class_feature_options")
+        if not isinstance(options, dict) or not bool(options.get("sneak_attack")):
+            return False
+
+        rogue_runtime = get_class_runtime(actor, "rogue")
+        sneak_attack = rogue_runtime.get("sneak_attack")
+        if not isinstance(sneak_attack, dict):
+            return False
+        if bool(sneak_attack.get("used_this_turn")):
+            return False
+
+        damage_dice = sneak_attack.get("damage_dice")
+        if not isinstance(damage_dice, str) or not damage_dice.strip():
+            return False
+
+        damage_parts.append(
+            {
+                "source": "rogue_sneak_attack",
+                "formula": damage_dice.strip(),
+                "damage_type": attack_context.get("primary_damage_type"),
+            }
+        )
+        return True
 
     def _build_auto_damage_rolls_from_parts(
         self,
@@ -847,6 +887,7 @@ class ExecuteAttack:
         actor_entity_id: str,
         weapon_id: str,
         attack_context: dict[str, Any],
+        resolution: dict[str, Any],
         consume_action: bool,
         consume_bonus_action: bool,
         consume_reaction: bool,
@@ -882,7 +923,25 @@ class ExecuteAttack:
             }
         elif consume_action:
             actor.combat_flags.pop("light_bonus_trigger", None)
+        self._mark_rogue_sneak_attack_used_if_applied(actor=actor, resolution=resolution)
         self.attack_roll_request.encounter_repository.save(encounter)
+
+    def _mark_rogue_sneak_attack_used_if_applied(self, *, actor: Any, resolution: dict[str, Any]) -> None:
+        if not bool(resolution.get("hit")):
+            return
+        damage_resolution = resolution.get("damage_resolution")
+        if not isinstance(damage_resolution, dict):
+            return
+        parts = damage_resolution.get("parts")
+        if not isinstance(parts, list):
+            return
+        if not any(isinstance(part, dict) and part.get("source") == "rogue_sneak_attack" for part in parts):
+            return
+
+        rogue_runtime = get_class_runtime(actor, "rogue")
+        sneak_attack = rogue_runtime.get("sneak_attack")
+        if isinstance(sneak_attack, dict):
+            sneak_attack["used_this_turn"] = True
 
     def _consume_attack_action_sequence(self, actor: Any) -> bool:
         class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
