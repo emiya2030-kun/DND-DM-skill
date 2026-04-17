@@ -10,6 +10,16 @@
 4. 任何 `waiting_reaction` 都必须先处理
 5. 回合结束固定走 `EndTurn -> AdvanceTurn -> StartTurn`
 
+职业特性读取规则:
+
+1. 主 `SKILL.md` 只定义通用战斗运行协议,不重复职业细节
+2. 若当前行动者具有职业战斗特性,先按对应 playbook 理解自然语言,再决定是否补 `class_feature_options`
+3. 职业 playbook 只负责“如何调用已有 tool”,不改写主协议
+4. 当前已提供:
+   - `docs/skill-playbooks/fighter.md`
+   - `docs/skill-playbooks/monk.md`
+   - `docs/skill-playbooks/rogue.md`
+
 常用 runtime command:
 
 - `execute_attack`
@@ -41,6 +51,34 @@
     - 若返回 `invalid_attack`,这不是 transport error,而是规则非法,必须读取返回里的结构化结果并改口或改目标
     - 每次攻击结算后,后续判断一律基于返回的最新 `encounter_state`
 
+- `execute_ability_check`
+  - 用途: 当玩家或 NPC 的意图本质上是“做一次属性检定或技能检定”时使用
+  - 必填参数:
+    - `encounter_id`
+    - `actor_id`
+    - `check_type`: `ability` / `skill`
+    - `check`
+    - `dc`
+  - 常用可选参数:
+    - `vantage`: `normal` / `advantage` / `disadvantage`
+    - `additional_bonus`
+    - `reason`
+  - 默认行为:
+    - 后端自动掷 d20
+    - 后端自动计算属性修正、技能修正、熟练与力竭惩罚
+    - 后端自动比较 `final_total` 与 `dc`
+    - 返回检定结果与最新 `encounter_state`
+  - 调用约束:
+    - 先由 LLM 自己把玩家自然语言理解成标准检定,再调用 tool
+    - 必须显式传 `dc`
+    - 不要自己掷 d20,不要自己算修正值,不要自己比较是否成功
+    - 后续叙述一律基于返回里的 `success` / `failed` / `final_total`
+    - 当前版不用于对抗检定、秘密检定、擒抱专用规则
+  - 常见映射:
+    - 偷偷绕过去 -> `{"command":"execute_ability_check","args":{"encounter_id":"enc_preview_demo","actor_id":"pc_sabur","check_type":"skill","check":"stealth","dc":15}}`
+    - 看附近有没有埋伏 -> `{"command":"execute_ability_check","args":{"encounter_id":"enc_preview_demo","actor_id":"pc_sabur","check_type":"skill","check":"perception","dc":13}}`
+    - 推门或搬石头 -> `{"command":"execute_ability_check","args":{"encounter_id":"enc_preview_demo","actor_id":"pc_sabur","check_type":"ability","check":"str","dc":12}}`
+
 阅读顺序:
 
 - `trpg-battle-system/combat-runtime/references/runtime-protocol.md`
@@ -48,6 +86,9 @@
 - `trpg-battle-system/combat-runtime/references/monster-turn-flow.md`
 - `trpg-battle-system/combat-runtime/references/companion-npc-turn-flow.md`
 - `trpg-battle-system/combat-runtime/references/intent-examples.md`
+- `trpg-battle-system/docs/skill-playbooks/fighter.md`（当当前行动者是战士或正在使用战士职业特性时）
+- `trpg-battle-system/docs/skill-playbooks/monk.md`（当当前行动者是武僧或正在使用武僧职业特性时）
+- `trpg-battle-system/docs/skill-playbooks/rogue.md`（当当前行动者是盗贼或正在使用盗贼职业特性时）
 
 本地页面调试:
 
