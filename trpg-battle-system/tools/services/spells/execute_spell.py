@@ -88,6 +88,7 @@ class ExecuteSpell:
         spell_definition = request_result.get("spell_definition")
         prepared_save_damage: dict[str, Any] | None = None
         prepared_save_condition: dict[str, Any] | None = None
+        prepared_heal_spell: dict[str, Any] | None = None
         prepared_attack_spell: dict[str, Any] | None = None
         if self._is_save_damage_area_spell(spell_definition):
             prepared_save_damage = self._prepare_save_damage_resolution(
@@ -108,6 +109,16 @@ class ExecuteSpell:
             )
             if not prepared_save_condition.get("ok"):
                 return prepared_save_condition
+        elif self._is_heal_spell(spell_definition):
+            prepared_heal_spell = self._prepare_heal_spell_resolution(
+                encounter_id=encounter_id,
+                actor_id=request_result["actor_id"],
+                spell_definition=spell_definition,
+                target_ids=request_result.get("target_entity_ids"),
+                upcast_delta=request_result.get("upcast_delta"),
+            )
+            if not prepared_heal_spell.get("ok"):
+                return prepared_heal_spell
         elif self._is_attack_roll_spell(spell_definition):
             prepared_attack_spell = self._prepare_attack_spell_resolution(
                 encounter_id=encounter_id,
@@ -309,6 +320,34 @@ class ExecuteSpell:
                 "encounter_state": self.get_encounter_state.execute(encounter_id),
             }
 
+        if prepared_heal_spell is not None:
+            target_id = prepared_heal_spell["target_id"]
+            healing_rolls = prepared_heal_spell["healing_rolls"]
+            healing_total = prepared_heal_spell["healing_total"]
+            hp_update = self.update_hp.execute(
+                encounter_id=encounter_id,
+                target_id=target_id,
+                hp_change=-healing_total,
+                reason=cast_result.get("spell_name") or request_result["spell_id"],
+                source_entity_id=request_result["actor_id"],
+            )
+            return {
+                "encounter_id": cast_result["encounter_id"],
+                "actor_id": request_result["actor_id"],
+                "spell_id": cast_result["spell_id"],
+                "cast_level": cast_result["cast_level"],
+                "resource_update": cast_result.get("slot_consumed"),
+                "spell_resolution": {
+                    "mode": "heal",
+                    "resolution_mode": "heal",
+                    "target_id": target_id,
+                    "healing_rolls": healing_rolls,
+                    "healing_total": healing_total,
+                    "hp_update": hp_update,
+                },
+                "encounter_state": self.get_encounter_state.execute(encounter_id),
+            }
+
         if prepared_attack_spell is not None:
             target_resolutions: list[dict[str, Any]] = []
             spell_name = cast_result.get("spell_name") or request_result["spell_id"]
@@ -480,6 +519,14 @@ class ExecuteSpell:
             return False
         return resolution.get("mode") == "attack_roll" or bool(spell_definition.get("requires_attack_roll"))
 
+    def _is_heal_spell(self, spell_definition: Any) -> bool:
+        if not isinstance(spell_definition, dict):
+            return False
+        resolution = spell_definition.get("resolution")
+        if not isinstance(resolution, dict):
+            return False
+        return resolution.get("mode") == "heal"
+
     def _is_no_roll_spell(self, spell_definition: Any) -> bool:
         if not isinstance(spell_definition, dict):
             return False
@@ -487,6 +534,41 @@ class ExecuteSpell:
         if not isinstance(resolution, dict):
             return False
         return resolution.get("mode") == "no_roll"
+
+    def _prepare_heal_spell_resolution(
+        self,
+        *,
+        encounter_id: str,
+        actor_id: str,
+        spell_definition: dict[str, Any],
+        target_ids: Any,
+        upcast_delta: Any,
+    ) -> dict[str, Any]:
+        normalized_target_ids = [target_id for target_id in (target_ids or []) if isinstance(target_id, str) and target_id]
+        if len(normalized_target_ids) != 1:
+            return self._error(
+                "invalid_heal_target_count",
+                "治疗法术必须指定 1 个目标",
+            )
+
+        encounter = self.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found")
+        actor = encounter.entities.get(actor_id)
+        if actor is None:
+            raise ValueError(f"actor '{actor_id}' not found in encounter")
+
+        healing_rolls = self._build_auto_healing_rolls(
+            actor=actor,
+            spell_definition=spell_definition,
+            upcast_delta=upcast_delta,
+        )
+        return {
+            "ok": True,
+            "target_id": normalized_target_ids[0],
+            "healing_rolls": healing_rolls,
+            "healing_total": healing_rolls["total"],
+        }
 
     def _prepare_save_condition_resolution(
         self,
@@ -1230,6 +1312,58 @@ class ExecuteSpell:
             },
         }
 
+    def _build_auto_healing_rolls(
+        self,
+        *,
+        actor: Any,
+        spell_definition: dict[str, Any],
+        upcast_delta: Any,
+    ) -> dict[str, Any]:
+        on_cast = spell_definition.get("on_cast")
+        if not isinstance(on_cast, dict):
+            raise ValueError("spell_definition.on_cast must be a dict")
+        healing_parts = on_cast.get("healing_parts")
+        if not isinstance(healing_parts, list) or not healing_parts:
+            raise ValueError("spell_definition.on_cast.healing_parts must be a non-empty list")
+
+        base_rolls: list[int] = []
+        scaling_rolls: list[int] = []
+        total = 0
+        spellcasting_modifier = self._resolve_spellcasting_modifier(actor=actor)
+
+        for part in healing_parts:
+            if not isinstance(part, dict):
+                continue
+            formula = str(part.get("formula") or "").strip()
+            dice_count, die_size = self._parse_damage_formula(formula)
+            rolls = [random.randint(1, die_size) for _ in range(dice_count)]
+            base_rolls.extend(rolls)
+            total += sum(rolls)
+            if bool(part.get("include_spellcasting_modifier")):
+                total += spellcasting_modifier
+
+        scaling = spell_definition.get("scaling")
+        slot_level_bonus = scaling.get("slot_level_bonus") if isinstance(scaling, dict) else None
+        additional_healing_parts = slot_level_bonus.get("additional_healing_parts") if isinstance(slot_level_bonus, dict) else None
+        normalized_upcast_delta = upcast_delta if isinstance(upcast_delta, int) and upcast_delta > 0 else 0
+        if isinstance(additional_healing_parts, list) and normalized_upcast_delta > 0:
+            for part in additional_healing_parts:
+                if not isinstance(part, dict):
+                    continue
+                formula_per_extra_level = str(part.get("formula_per_extra_level") or "").strip()
+                dice_count, die_size = self._parse_damage_formula(formula_per_extra_level)
+                for _ in range(normalized_upcast_delta):
+                    rolls = [random.randint(1, die_size) for _ in range(dice_count)]
+                    scaling_rolls.extend(rolls)
+                    total += sum(rolls)
+
+        return {
+            "base_rolls": base_rolls,
+            "scaling_rolls": scaling_rolls,
+            "spellcasting_modifier": spellcasting_modifier,
+            "total": total,
+        }
+
     def _resolve_spell_attack_modifier(self, *, actor: Any) -> int:
         source_ref = getattr(actor, "source_ref", None)
         if not isinstance(source_ref, dict):
@@ -1244,6 +1378,18 @@ class ExecuteSpell:
         if not isinstance(proficiency_bonus, int):
             proficiency_bonus = 0
         return ability_modifier + proficiency_bonus
+
+    def _resolve_spellcasting_modifier(self, *, actor: Any) -> int:
+        source_ref = getattr(actor, "source_ref", None)
+        if not isinstance(source_ref, dict):
+            return 0
+        spellcasting_ability = source_ref.get("spellcasting_ability")
+        if not isinstance(spellcasting_ability, str) or not spellcasting_ability.strip():
+            return 0
+        ability_modifier = getattr(actor, "ability_mods", {}).get(spellcasting_ability)
+        if not isinstance(ability_modifier, int):
+            return 0
+        return ability_modifier
 
     def _build_auto_damage_rolls_from_parts(
         self,

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -490,6 +491,93 @@ def write_eldritch_blast_attack_spell_definition(spell_repo_path: Path) -> None:
 
 
 class ExecuteSpellTests(unittest.TestCase):
+    def test_execute_healing_word_auto_rolls_upcast_and_caps_at_max_hp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_caster_001"]
+            target = encounter.entities["ent_target_001"]
+            caster.spells.append({"spell_id": "healing_word", "name": "Healing Word", "level": 1})
+            caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
+            caster.resources["spell_slots"]["2"] = {"max": 1, "remaining": 1}
+            caster.source_ref["spellcasting_ability"] = "int"
+            caster.ability_mods["int"] = 3
+            target.hp["current"] = 2
+            encounter_repo.save(encounter)
+
+            service = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo),
+            )
+            with patch("tools.services.spells.execute_spell.random.randint", side_effect=[1, 2, 3, 4]):
+                result = service.execute(
+                    encounter_id="enc_execute_spell_test",
+                    actor_id="ent_caster_001",
+                    spell_id="healing_word",
+                    cast_level=2,
+                    target_entity_ids=["ent_target_001"],
+                    declared_action_cost="bonus_action",
+                )
+
+            updated = encounter_repo.get("enc_execute_spell_test")
+            assert updated is not None
+            self.assertEqual(result["spell_resolution"]["mode"], "heal")
+            self.assertEqual(result["spell_resolution"]["target_id"], "ent_target_001")
+            self.assertEqual(result["spell_resolution"]["healing_total"], 13)
+            self.assertEqual(result["spell_resolution"]["hp_update"]["event_type"], "healing_applied")
+            self.assertEqual(result["spell_resolution"]["hp_update"]["hp_after"], 12)
+            self.assertEqual(updated.entities["ent_target_001"].hp["current"], 12)
+            self.assertEqual(updated.entities["ent_caster_001"].resources["spell_slots"]["2"]["remaining"], 0)
+            self.assertTrue(updated.entities["ent_caster_001"].action_economy["bonus_action_used"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_healing_word_blocks_on_dead_target_but_still_casts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_caster_001"]
+            target = encounter.entities["ent_target_001"]
+            caster.spells.append({"spell_id": "healing_word", "name": "Healing Word", "level": 1})
+            caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
+            caster.source_ref["spellcasting_ability"] = "int"
+            caster.ability_mods["int"] = 3
+            target.hp["current"] = 0
+            target.combat_flags["is_dead"] = True
+            encounter_repo.save(encounter)
+
+            service = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo),
+            )
+            with patch("tools.services.spells.execute_spell.random.randint", side_effect=[2, 2]):
+                result = service.execute(
+                    encounter_id="enc_execute_spell_test",
+                    actor_id="ent_caster_001",
+                    spell_id="healing_word",
+                    cast_level=1,
+                    target_entity_ids=["ent_target_001"],
+                    declared_action_cost="bonus_action",
+                )
+
+            updated = encounter_repo.get("enc_execute_spell_test")
+            assert updated is not None
+            self.assertEqual(result["resource_update"]["remaining_after"], 1)
+            self.assertEqual(result["spell_resolution"]["hp_update"]["event_type"], "hp_unchanged")
+            self.assertEqual(
+                result["spell_resolution"]["hp_update"]["healing_blocked_reason"],
+                "target_is_dead",
+            )
+            self.assertEqual(updated.entities["ent_target_001"].hp["current"], 0)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_allows_out_of_turn_reaction_spell_and_spends_reaction_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
