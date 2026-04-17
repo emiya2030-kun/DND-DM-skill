@@ -108,7 +108,6 @@ class GetEncounterState:
             "spell_save_dc": self._calculate_spell_save_dc(entity),
             "armor": armor_profile["armor"],
             "shield": armor_profile["shield"],
-            "armor_training": armor_profile["armor_training"],
             "ac_breakdown": armor_profile["ac_breakdown"],
             "stealth_disadvantage_sources": armor_profile["stealth_disadvantage_sources"],
             "untrained_armor_penalties": {
@@ -793,20 +792,10 @@ class GetEncounterState:
         if not isinstance(fighter, dict):
             return {}
 
-        return {
-            "fighter": {
-                "fighter_level": fighter.get("fighter_level", fighter.get("level")),
-                "weapon_proficiencies": fighter.get("weapon_proficiencies", ["simple", "martial"]),
-                "second_wind": fighter.get("second_wind"),
-                "action_surge": fighter.get("action_surge"),
-                "indomitable": fighter.get("indomitable"),
-                "extra_attack_count": fighter.get("extra_attack_count"),
-                "tactical_master_enabled": bool(fighter.get("tactical_master_enabled")),
-                "studied_attacks": fighter.get("studied_attacks", []),
-                "temporary_bonuses": fighter.get("temporary_bonuses", {}),
-                "turn_counters": fighter.get("turn_counters", {}),
-            }
-        }
+        fighter_view = dict(fighter)
+        fighter_view.pop("weapon_proficiencies", None)
+        fighter_view.pop("armor_training", None)
+        return {"fighter": fighter_view}
 
     def _format_death_saves(self, entity: EncounterEntity) -> str:
         combat_flags = entity.combat_flags or {}
