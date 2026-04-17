@@ -937,6 +937,61 @@ class UpdateHpTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_blocks_healing_for_dead_target(self) -> None:
+        """测试已死亡目标不能接受普通治疗。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_goblin_001"]
+            target.hp["current"] = 0
+            target.combat_flags["is_dead"] = True
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_hp_test",
+                target_id="ent_enemy_goblin_001",
+                hp_change=-6,
+                reason="Healing Word",
+            )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            self.assertEqual(updated.entities["ent_enemy_goblin_001"].hp["current"], 0)
+            self.assertEqual(result["event_type"], "hp_unchanged")
+            self.assertTrue(result["healing_blocked"])
+            self.assertEqual(result["healing_blocked_reason"], "target_is_dead")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_allows_healing_for_zero_hp_but_not_dead_target(self) -> None:
+        """测试 0 HP 但未死亡的目标仍可接受治疗。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_goblin_001"]
+            target.hp["current"] = 0
+            target.combat_flags["is_dead"] = False
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_hp_test",
+                target_id="ent_enemy_goblin_001",
+                hp_change=-4,
+                reason="Healing Word",
+            )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            self.assertEqual(updated.entities["ent_enemy_goblin_001"].hp["current"], 4)
+            self.assertEqual(result["event_type"], "healing_applied")
+            self.assertNotIn("healing_blocked_reason", result)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_writes_event_payload(self) -> None:
         """测试事件日志里会保留 HP 变化前后和原因。"""
         with tempfile.TemporaryDirectory() as tmp_dir:

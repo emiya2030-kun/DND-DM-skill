@@ -71,11 +71,27 @@ class UpdateHp:
             result["damage_adjustment"] = damage_adjustment
             event_type = "damage_applied"
         elif hp_change < 0:
-            result = self._apply_healing(target, abs(hp_change))
-            result["original_hp_change"] = hp_change
-            result["adjusted_hp_change"] = hp_change
-            result["damage_adjustment"] = None
-            event_type = "healing_applied"
+            if bool(target.combat_flags.get("is_dead")):
+                result = {
+                    "hp_before": hp_before,
+                    "hp_after": hp_before,
+                    "temp_hp_before": temp_hp_before,
+                    "temp_hp_after": temp_hp_before,
+                    "applied_change": 0,
+                    "temp_hp_absorbed": 0,
+                    "original_hp_change": hp_change,
+                    "adjusted_hp_change": 0,
+                    "damage_adjustment": None,
+                    "healing_blocked": True,
+                    "healing_blocked_reason": "target_is_dead",
+                }
+                event_type = "hp_unchanged"
+            else:
+                result = self._apply_healing(target, abs(hp_change))
+                result["original_hp_change"] = hp_change
+                result["adjusted_hp_change"] = hp_change
+                result["damage_adjustment"] = None
+                event_type = "healing_applied"
         else:
             result = {
                 "hp_before": hp_before,
