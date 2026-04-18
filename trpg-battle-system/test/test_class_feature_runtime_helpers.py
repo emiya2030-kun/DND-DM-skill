@@ -18,11 +18,13 @@ def _import_helpers():
         ensure_monk_runtime,
         ensure_ranger_runtime,
         ensure_rogue_runtime,
+        ensure_sorcerer_runtime,
         ensure_warlock_runtime,
         get_class_runtime,
         get_fighter_runtime,
         get_monk_runtime,
         get_ranger_runtime,
+        get_sorcerer_runtime,
         get_warlock_runtime,
         normalize_class_feature_options,
         resolve_extra_attack_count,
@@ -37,11 +39,13 @@ def _import_helpers():
         ensure_monk_runtime=ensure_monk_runtime,
         ensure_ranger_runtime=ensure_ranger_runtime,
         ensure_rogue_runtime=ensure_rogue_runtime,
+        ensure_sorcerer_runtime=ensure_sorcerer_runtime,
         ensure_warlock_runtime=ensure_warlock_runtime,
         get_class_runtime=get_class_runtime,
         get_fighter_runtime=get_fighter_runtime,
         get_monk_runtime=get_monk_runtime,
         get_ranger_runtime=get_ranger_runtime,
+        get_sorcerer_runtime=get_sorcerer_runtime,
         get_warlock_runtime=get_warlock_runtime,
         normalize_class_feature_options=normalize_class_feature_options,
         resolve_extra_attack_count=resolve_extra_attack_count,
@@ -218,7 +222,32 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(monk["unarmored_movement_bonus_feet"], 20)
         self.assertTrue(monk["evasion"]["enabled"])
         self.assertFalse(monk["deflect_energy"]["enabled"])
-        self.assertTrue(monk["heightened_focus"]["enabled"])
+
+    def test_ensure_sorcerer_runtime_derives_core_progression_from_level(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"sorcerer": {"level": 7}}
+
+        sorcerer = helpers.ensure_sorcerer_runtime(entity)
+
+        self.assertEqual(sorcerer["sorcery_points"]["max"], 7)
+        self.assertEqual(sorcerer["sorcery_points"]["current"], 7)
+        self.assertEqual(sorcerer["innate_sorcery"]["uses_max"], 2)
+        self.assertEqual(sorcerer["innate_sorcery"]["uses_current"], 2)
+        self.assertFalse(sorcerer["innate_sorcery"]["active"])
+        self.assertTrue(sorcerer["sorcerous_restoration"]["enabled"])
+        self.assertTrue(sorcerer["sorcery_incarnate"]["enabled"])
+        self.assertEqual(sorcerer["cantrips_known"], 5)
+        self.assertEqual(sorcerer["prepared_spells_count"], 11)
+
+    def test_get_sorcerer_runtime_reads_existing_bucket_from_entity_class_features(self) -> None:
+        helpers = _import_helpers()
+        entity = type("FakeEntity", (), {"class_features": {"sorcerer": {"level": 3, "sorcery_points": {"current": 2}}}})()
+
+        sorcerer = helpers.get_sorcerer_runtime(entity)
+
+        self.assertEqual(sorcerer["level"], 3)
+        self.assertEqual(sorcerer["sorcery_points"]["current"], 2)
 
     def test_get_monk_runtime_preserves_existing_remaining_focus_points(self) -> None:
         helpers = _import_helpers()

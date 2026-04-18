@@ -13,7 +13,9 @@ from tools.services.class_features.shared.fighting_styles import (
     resolve_fighting_style_ids,
 )
 from tools.services.class_features.shared.spell_slots import (
+    add_created_spell_slot,
     build_available_spell_slots_view,
+    clear_created_spell_slots,
     consume_exact_spell_slot,
     consume_lowest_available_spell_slot,
     ensure_spell_slots_runtime,
@@ -28,6 +30,7 @@ from tools.services.class_features.shared.runtime import (
     ensure_monk_runtime,
     ensure_paladin_runtime,
     ensure_ranger_runtime,
+    ensure_sorcerer_runtime,
     ensure_warlock_runtime,
     get_barbarian_runtime,
     get_class_runtime,
@@ -35,6 +38,7 @@ from tools.services.class_features.shared.runtime import (
     get_monk_runtime,
     get_paladin_runtime,
     get_ranger_runtime,
+    get_sorcerer_runtime,
     get_warlock_runtime,
 )
 from tools.services.class_features.shared.studied_attacks import (
@@ -52,6 +56,8 @@ from tools.services.class_features.shared.warlock_invocations import (
 
 __all__ = [
     "add_or_refresh_studied_attack_mark",
+    "add_created_spell_slot",
+    "clear_created_spell_slots",
     "consume_studied_attack_mark",
     "consume_exact_spell_slot",
     "consume_lowest_available_spell_slot",
@@ -62,6 +68,7 @@ __all__ = [
     "ensure_monk_runtime",
     "ensure_paladin_runtime",
     "ensure_ranger_runtime",
+    "ensure_sorcerer_runtime",
     "ensure_warlock_runtime",
     "ensure_spell_slots_runtime",
     "ensure_rogue_runtime",
@@ -74,6 +81,7 @@ __all__ = [
     "get_monk_runtime",
     "get_paladin_runtime",
     "get_ranger_runtime",
+    "get_sorcerer_runtime",
     "get_selected_warlock_invocations",
     "get_warlock_runtime",
     "has_fighting_style",

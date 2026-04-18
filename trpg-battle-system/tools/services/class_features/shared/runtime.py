@@ -258,6 +258,52 @@ def ensure_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     return ranger
 
 
+def get_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "sorcerer")
+    if not runtime:
+        return {}
+    return ensure_sorcerer_runtime(entity_or_class_features)
+
+
+def ensure_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    sorcerer = ensure_class_runtime(entity_or_class_features, "sorcerer")
+    level = int(sorcerer.get("level", 0) or 0)
+
+    sorcerer["cantrips_known"] = _resolve_sorcerer_cantrips_known(level)
+    sorcerer["prepared_spells_count"] = _resolve_sorcerer_prepared_spells_count(level)
+
+    sorcery_points = sorcerer.setdefault("sorcery_points", {})
+    sorcery_points["max"] = level if level > 0 else int(sorcery_points.get("max", 0) or 0)
+    current = sorcery_points.get("current")
+    sorcery_points["current"] = current if isinstance(current, int) else sorcery_points["max"]
+
+    innate_sorcery = sorcerer.setdefault("innate_sorcery", {})
+    innate_sorcery["enabled"] = level >= 1
+    innate_sorcery["uses_max"] = 2 if level >= 1 else 0
+    uses_current = innate_sorcery.get("uses_current")
+    innate_sorcery["uses_current"] = uses_current if isinstance(uses_current, int) else innate_sorcery["uses_max"]
+    innate_sorcery["active"] = bool(innate_sorcery.get("active"))
+    innate_sorcery.setdefault("expires_at_turn", None)
+
+    font_of_magic = sorcerer.setdefault("font_of_magic", {})
+    font_of_magic["enabled"] = level >= 2
+
+    sorcerous_restoration = sorcerer.setdefault("sorcerous_restoration", {})
+    sorcerous_restoration["enabled"] = level >= 5
+    sorcerous_restoration["used_since_long_rest"] = bool(sorcerous_restoration.get("used_since_long_rest", False))
+
+    sorcery_incarnate = sorcerer.setdefault("sorcery_incarnate", {})
+    sorcery_incarnate["enabled"] = level >= 7
+
+    created_spell_slots = sorcerer.setdefault("created_spell_slots", {})
+    for slot_level in range(1, 6):
+        key = str(slot_level)
+        value = created_spell_slots.get(key)
+        created_spell_slots[key] = value if isinstance(value, int) and value >= 0 else 0
+
+    return sorcerer
+
+
 def get_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     runtime = get_class_runtime(entity_or_class_features, "warlock")
     if not runtime:
@@ -561,3 +607,37 @@ def _resolve_warlock_prepared_spells_count(level: int) -> int:
     if level >= 2:
         return 3
     return 2 if level >= 1 else 0
+
+
+def _resolve_sorcerer_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 6
+    if level >= 4:
+        return 5
+    return 4 if level >= 1 else 0
+
+
+def _resolve_sorcerer_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 2,
+        2: 4,
+        3: 6,
+        4: 7,
+        5: 9,
+        6: 10,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+        12: 16,
+        13: 17,
+        14: 17,
+        15: 18,
+        16: 18,
+        17: 19,
+        18: 20,
+        19: 21,
+        20: 22,
+    }
+    return progression.get(level, 0)

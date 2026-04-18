@@ -8,7 +8,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.models import EncounterEntity
-from tools.services.class_features.shared.spell_slots import ensure_spell_slots_runtime
+from tools.services.class_features.shared.spell_slots import (
+    add_created_spell_slot,
+    clear_created_spell_slots,
+    ensure_spell_slots_runtime,
+)
 
 
 def build_entity() -> EncounterEntity:
@@ -127,3 +131,32 @@ def test_ensure_spell_slots_runtime_builds_shared_and_pact_slots_together() -> N
         "max": 2,
         "remaining": 1,
     }
+
+
+def test_add_created_spell_slot_increments_slot_pool_and_runtime_counter() -> None:
+    entity = build_entity()
+    entity.class_features = {"sorcerer": {"level": 5}}
+
+    ensure_spell_slots_runtime(entity)
+    result = add_created_spell_slot(entity, slot_level=3, amount=1)
+
+    assert result["remaining_after"] == 3
+    assert entity.resources["spell_slots"]["3"]["remaining"] == 3
+    assert entity.class_features["sorcerer"]["created_spell_slots"]["3"] == 1
+
+
+def test_clear_created_spell_slots_restores_original_remaining_values() -> None:
+    entity = build_entity()
+    entity.class_features = {"sorcerer": {"level": 5}}
+
+    ensure_spell_slots_runtime(entity)
+    add_created_spell_slot(entity, slot_level=1, amount=1)
+    add_created_spell_slot(entity, slot_level=2, amount=1)
+
+    cleared = clear_created_spell_slots(entity)
+
+    assert cleared == {"1": 1, "2": 1}
+    assert entity.resources["spell_slots"]["1"]["remaining"] == entity.resources["spell_slots"]["1"]["max"]
+    assert entity.resources["spell_slots"]["2"]["remaining"] == entity.resources["spell_slots"]["2"]["max"]
+    assert entity.class_features["sorcerer"]["created_spell_slots"]["1"] == 0
+    assert entity.class_features["sorcerer"]["created_spell_slots"]["2"] == 0

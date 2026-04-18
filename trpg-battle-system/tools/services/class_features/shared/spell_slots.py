@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.services.class_features.shared.runtime import ensure_sorcerer_runtime
+
 MULTICLASS_SPELL_SLOTS: dict[int, dict[str, int]] = {
     1: {"1": 2},
     2: {"1": 3},
@@ -288,6 +290,58 @@ def restore_consumed_spell_slot(entity: Any, slot_consumed: dict[str, Any] | Non
         pact_magic_slots = resources.get("pact_magic_slots")
         if isinstance(pact_magic_slots, dict):
             pact_magic_slots["remaining"] = remaining_before
+
+
+def add_created_spell_slot(entity: Any, *, slot_level: int, amount: int = 1) -> dict[str, Any]:
+    if slot_level < 1 or amount < 1:
+        raise ValueError("created_spell_slot_invalid")
+    ensure_spell_slots_runtime(entity)
+    sorcerer = ensure_sorcerer_runtime(entity)
+    resources = getattr(entity, "resources", {})
+    if not isinstance(resources, dict):
+        resources = {}
+        setattr(entity, "resources", resources)
+    spell_slots = resources.setdefault("spell_slots", {})
+    slot_key = str(slot_level)
+    slot_info = spell_slots.setdefault(slot_key, {"max": 0, "remaining": 0})
+    if not isinstance(slot_info, dict):
+        slot_info = {"max": 0, "remaining": 0}
+        spell_slots[slot_key] = slot_info
+
+    remaining_before = int(slot_info.get("remaining", 0) or 0)
+    slot_info["remaining"] = remaining_before + amount
+
+    created_spell_slots = sorcerer.setdefault("created_spell_slots", {})
+    created_spell_slots[slot_key] = int(created_spell_slots.get(slot_key, 0) or 0) + amount
+    return {
+        "slot_level": slot_level,
+        "remaining_before": remaining_before,
+        "remaining_after": slot_info["remaining"],
+        "created_amount": created_spell_slots[slot_key],
+    }
+
+
+def clear_created_spell_slots(entity: Any) -> dict[str, int]:
+    ensure_spell_slots_runtime(entity)
+    sorcerer = ensure_sorcerer_runtime(entity)
+    created_spell_slots = sorcerer.get("created_spell_slots")
+    resources = getattr(entity, "resources", {})
+    spell_slots = resources.get("spell_slots") if isinstance(resources, dict) else None
+    if not isinstance(created_spell_slots, dict) or not isinstance(spell_slots, dict):
+        return {}
+
+    cleared: dict[str, int] = {}
+    for slot_key, created_amount in list(created_spell_slots.items()):
+        if not isinstance(created_amount, int) or created_amount <= 0:
+            created_spell_slots[str(slot_key)] = 0
+            continue
+        slot_info = spell_slots.get(str(slot_key))
+        if isinstance(slot_info, dict):
+            remaining = int(slot_info.get("remaining", 0) or 0)
+            slot_info["remaining"] = max(0, remaining - created_amount)
+        created_spell_slots[str(slot_key)] = 0
+        cleared[str(slot_key)] = created_amount
+    return cleared
 
 
 def _has_slot_progression_features(class_features: dict[str, Any]) -> bool:
