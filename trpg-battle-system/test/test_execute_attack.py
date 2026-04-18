@@ -377,6 +377,75 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertFalse(result["resolution"]["hit"])
             self.assertEqual(updated.entities[actor.entity_id].resources["spell_slots"]["1"]["remaining"], 2)
 
+    def test_execute_applies_radiant_strikes_on_level_eleven_melee_hit(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_paladin_actor()
+            actor.class_features = {"paladin": {"level": 11}}
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "chosen_roll": 13, "modifier": 5, "vantage": "normal"},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [4]},
+                    {"source": "paladin_radiant_strikes", "rolls": [5]},
+                ],
+            )
+
+            damage_parts = result["resolution"]["damage_resolution"]["parts"]
+            self.assertEqual(damage_parts[1]["source"], "paladin_radiant_strikes")
+            self.assertEqual(damage_parts[1]["formula"], "1d8")
+            self.assertEqual(damage_parts[1]["damage_type"], "radiant")
+
+    def test_execute_applies_radiant_strikes_on_level_eleven_unarmed_hit(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {"paladin": {"level": 11}}
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "chosen_roll": 12, "modifier": 5, "vantage": "normal"},
+                damage_rolls=[
+                    {"source": "weapon:unarmed_strike:part_0", "rolls": [4]},
+                    {"source": "paladin_radiant_strikes", "rolls": [4]},
+                ],
+            )
+
+            damage_parts = result["resolution"]["damage_resolution"]["parts"]
+            self.assertEqual(damage_parts[1]["source"], "paladin_radiant_strikes")
+            self.assertEqual(damage_parts[1]["formula"], "1d8")
+
     def test_execute_applies_knockout_protection_when_melee_attack_drops_humanoid_to_zero_hp(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_actor()

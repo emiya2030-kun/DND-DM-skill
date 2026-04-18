@@ -139,6 +139,12 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     radius_feet = aura_of_protection.get("radius_feet")
     aura_of_protection["radius_feet"] = radius_feet if isinstance(radius_feet, int) else 10
 
+    radiant_strikes = paladin.setdefault("radiant_strikes", {})
+    explicit_radiant_strikes_enabled = radiant_strikes.get("enabled")
+    radiant_strikes["enabled"] = (
+        explicit_radiant_strikes_enabled if isinstance(explicit_radiant_strikes_enabled, bool) else level >= 11
+    )
+
     return paladin
 
 

@@ -43,7 +43,7 @@ MARTIAL_CLASS_SUMMARIES = {
         "available_features": ["sneak_attack", "cunning_action"],
     },
     "paladin": {
-        "fields": ["level", "divine_smite", "lay_on_hands", "aura_of_protection"],
+        "fields": ["level", "divine_smite", "lay_on_hands", "aura_of_protection", "radiant_strikes"],
         "available_features": ["divine_smite", "lay_on_hands", "aura_of_protection"],
     },
     "barbarian": {
@@ -875,6 +875,12 @@ class GetEncounterState:
                     "bonus_hide": True,
                 }
             available_features = list(summary["available_features"])
+            if class_id == "paladin":
+                level = int(bucket.get("level", 0) or 0)
+                if level >= 11:
+                    available_features.append("radiant_strikes")
+                if level >= 14:
+                    available_features.append("restoring_touch")
             if class_id == "barbarian":
                 level = int(bucket.get("level", 0) or 0)
                 if level >= 9:

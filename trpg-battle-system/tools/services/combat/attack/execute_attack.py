@@ -663,6 +663,11 @@ class ExecuteAttack:
             attack_context=attack_context,
             damage_parts=damage_parts,
         )
+        self._maybe_append_paladin_radiant_strikes_damage_part(
+            actor=actor,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
         self._maybe_append_barbarian_brutal_strike_damage_part(
             actor=actor,
             attack_context=attack_context,
@@ -1057,6 +1062,31 @@ class ExecuteAttack:
             {
                 "source": "paladin_divine_smite",
                 "formula": self._resolve_divine_smite_formula(target=target, slot_level=slot_level),
+                "damage_type": "radiant",
+            }
+        )
+        return True
+
+    def _maybe_append_paladin_radiant_strikes_damage_part(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        paladin_runtime = ensure_paladin_runtime(actor)
+        radiant_strikes = paladin_runtime.get("radiant_strikes")
+        if not isinstance(radiant_strikes, dict) or not bool(radiant_strikes.get("enabled")):
+            return False
+
+        attack_kind = str(attack_context.get("attack_kind") or "").lower()
+        if attack_kind not in {"melee_weapon", "unarmed_strike"}:
+            return False
+
+        damage_parts.append(
+            {
+                "source": "paladin_radiant_strikes",
+                "formula": "1d8",
                 "damage_type": "radiant",
             }
         )
