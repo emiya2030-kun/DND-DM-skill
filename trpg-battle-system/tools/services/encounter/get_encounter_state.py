@@ -47,6 +47,7 @@ MARTIAL_CLASS_SUMMARIES = {
             "level",
             "divine_smite",
             "lay_on_hands",
+            "faithful_steed",
             "channel_divinity",
             "aura_of_protection",
             "aura_of_courage",
@@ -885,6 +886,8 @@ class GetEncounterState:
             available_features = list(summary["available_features"])
             if class_id == "paladin":
                 level = int(bucket.get("level", 0) or 0)
+                if level >= 5:
+                    available_features.append("faithful_steed")
                 if level >= 3:
                     available_features.append("channel_divinity")
                 if level >= 9:

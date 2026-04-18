@@ -153,6 +153,36 @@ def build_enemy_attacker() -> EncounterEntity:
     )
 
 
+def build_find_steed_summon(*, summoner_entity_id: str) -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_steed_001",
+        name="Otherworldly Steed",
+        side="ally",
+        category="summon",
+        controller="player",
+        position={"x": 4, "y": 4},
+        hp={"current": 25, "max": 25, "temp": 0},
+        ac=12,
+        speed={"walk": 60, "remaining": 60},
+        initiative=15,
+        size="large",
+        source_ref={
+            "summoner_entity_id": summoner_entity_id,
+            "source_spell_id": "find_steed",
+            "source_spell_instance_id": "spell_find_steed_001",
+            "summon_template": "otherworldly_steed",
+            "steed_type": "celestial",
+            "appearance": "warhorse",
+        },
+        combat_flags={
+            "dismiss_on_zero_hp": True,
+            "dismiss_on_summoner_death": True,
+            "shares_initiative_with_summoner": True,
+            "controlled_mount": True,
+        },
+    )
+
+
 def build_encounter() -> Encounter:
     """构造 HP 更新测试用 encounter。"""
     target = build_target()
@@ -219,6 +249,124 @@ def build_mark_spell_instance(*, spell_id: str, caster_entity_id: str, target_id
 
 
 class UpdateHpTests(unittest.TestCase):
+    def test_execute_removes_find_steed_summon_at_zero_hp_and_clears_spell_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            summoner = build_player_target()
+            summon = build_find_steed_summon(summoner_entity_id=summoner.entity_id)
+            encounter = Encounter(
+                encounter_id="enc_hp_test",
+                name="HP Test Encounter",
+                status="active",
+                round=1,
+                current_entity_id=summon.entity_id,
+                turn_order=[summoner.entity_id, summon.entity_id],
+                entities={summoner.entity_id: summoner, summon.entity_id: summon},
+                map=EncounterMap(
+                    map_id="map_hp_test",
+                    name="HP Test Map",
+                    description="A small combat room.",
+                    width=8,
+                    height=8,
+                ),
+                spell_instances=[
+                    {
+                        "instance_id": "spell_find_steed_001",
+                        "spell_id": "find_steed",
+                        "spell_name": "Find Steed",
+                        "caster_entity_id": summoner.entity_id,
+                        "caster_name": summoner.name,
+                        "cast_level": 2,
+                        "concentration": {"required": False, "active": False},
+                        "targets": [],
+                        "lifecycle": {"status": "active", "started_round": 1},
+                        "special_runtime": {
+                            "summon_mode": "persistent_entity",
+                            "summon_entity_ids": [summon.entity_id],
+                            "replace_previous_from_same_caster": True,
+                        },
+                    }
+                ],
+            )
+            encounter_repo.save(encounter)
+
+            result = UpdateHp(encounter_repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_hp_test",
+                target_id=summon.entity_id,
+                hp_change=99,
+                reason="Steed destroyed",
+            )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            self.assertEqual(result["zero_hp_outcome"]["outcome"], "summon_removed")
+            self.assertNotIn(summon.entity_id, updated.entities)
+            self.assertEqual(updated.spell_instances[0]["special_runtime"]["summon_entity_ids"], [])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_removes_find_steed_summon_when_summoner_dies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            summoner = build_player_target()
+            summoner.hp["current"] = 0
+            summoner.conditions = ["unconscious"]
+            summoner.combat_flags["death_saves"] = {"successes": 0, "failures": 0}
+            summoner.combat_flags["is_dead"] = False
+            summon = build_find_steed_summon(summoner_entity_id=summoner.entity_id)
+            encounter = Encounter(
+                encounter_id="enc_hp_test",
+                name="HP Test Encounter",
+                status="active",
+                round=1,
+                current_entity_id=summoner.entity_id,
+                turn_order=[summoner.entity_id, summon.entity_id],
+                entities={summoner.entity_id: summoner, summon.entity_id: summon},
+                map=EncounterMap(
+                    map_id="map_hp_test",
+                    name="HP Test Map",
+                    description="A small combat room.",
+                    width=8,
+                    height=8,
+                ),
+                spell_instances=[
+                    {
+                        "instance_id": "spell_find_steed_001",
+                        "spell_id": "find_steed",
+                        "spell_name": "Find Steed",
+                        "caster_entity_id": summoner.entity_id,
+                        "caster_name": summoner.name,
+                        "cast_level": 2,
+                        "concentration": {"required": False, "active": False},
+                        "targets": [],
+                        "lifecycle": {"status": "active", "started_round": 1},
+                        "special_runtime": {
+                            "summon_mode": "persistent_entity",
+                            "summon_entity_ids": [summon.entity_id],
+                            "replace_previous_from_same_caster": True,
+                        },
+                    }
+                ],
+            )
+            encounter_repo.save(encounter)
+
+            UpdateHp(encounter_repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_hp_test",
+                target_id=summoner.entity_id,
+                hp_change=10,
+                reason="Paladin dies at zero hp",
+            )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            self.assertTrue(updated.entities[summoner.entity_id].combat_flags["is_dead"])
+            self.assertNotIn(summon.entity_id, updated.entities)
+            self.assertEqual(updated.spell_instances[0]["special_runtime"]["summon_entity_ids"], [])
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_damage_removes_abjure_foes_effect_and_condition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

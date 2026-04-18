@@ -10,11 +10,14 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.repositories.zone_definition_repository import ZoneDefinitionRepository
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
+from tools.services.class_features.shared import ensure_paladin_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.area_geometry import build_spell_zone_instance
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
+from tools.services.spells.summons.create_summoned_entity import create_summoned_entity
+from tools.services.spells.summons.find_steed_builder import build_find_steed_entity
 from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
@@ -93,7 +96,14 @@ class EncounterCastSpell:
         if spell_level > 0 and resolved_cast_level < spell_level:
             raise ValueError("cast_level cannot be lower than the spell's base level")
 
-        slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
+        free_find_steed_cast_used = False
+        if self._is_find_steed_spell(spell_definition) and self._has_faithful_steed_free_cast(caster):
+            slot_consumed = None
+            paladin = ensure_paladin_runtime(caster)
+            paladin["faithful_steed"]["free_cast_available"] = False
+            free_find_steed_cast_used = True
+        else:
+            slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
         if not skip_reaction_window:
@@ -131,6 +141,7 @@ class EncounterCastSpell:
                 }
         turn_effect_updates: list[dict[str, Any]] = []
         spell_instance: dict[str, Any] | None = None
+        summon_entity: EncounterEntity | None = None
         if apply_no_roll_immediate_effects:
             turn_effect_updates = self._maybe_apply_no_roll_turn_effects(
                 encounter=encounter,
@@ -178,6 +189,33 @@ class EncounterCastSpell:
                 special_runtime["linked_zone_ids"] = linked_zone_ids
             linked_zone_ids.append(zone["zone_id"])
             zone_updates.append({"zone_id": zone["zone_id"], "target_point": normalized_target_point})
+        if self._is_find_steed_spell(spell_definition):
+            normalized_target_point = self._normalize_target_point(target_point)
+            if normalized_target_point is None:
+                raise ValueError("find_steed_requires_target_point")
+            self._replace_previous_find_steed_if_needed(encounter=encounter, caster=caster)
+            spell_instance = build_spell_instance(
+                spell_definition=spell_definition,
+                caster=caster,
+                cast_level=resolved_cast_level,
+                targets=[],
+                started_round=encounter.round,
+            )
+            encounter.spell_instances.append(spell_instance)
+            summon_entity = build_find_steed_entity(
+                caster=caster,
+                cast_level=resolved_cast_level,
+                summon_position={"x": normalized_target_point["x"], "y": normalized_target_point["y"]},
+                steed_type="celestial",
+                appearance="warhorse",
+                source_spell_instance_id=spell_instance["instance_id"],
+            )
+            create_summoned_entity(
+                encounter=encounter,
+                summon=summon_entity,
+                insert_after_entity_id=caster.entity_id,
+            )
+            spell_instance["special_runtime"]["summon_entity_ids"] = [summon_entity.entity_id]
         payload = {
             "spell_id": resolved_spell_id,
             "spell_name": resolved_spell_name,
@@ -193,6 +231,7 @@ class EncounterCastSpell:
             "action_cost": action_cost,
             "turn_effect_updates": turn_effect_updates,
             "spell_instance": spell_instance,
+            "summon_entity_id": summon_entity.entity_id if summon_entity is not None else None,
             "zone_updates": zone_updates,
             "reason": reason or f"Cast {resolved_spell_name}",
         }
@@ -209,6 +248,9 @@ class EncounterCastSpell:
             )
         except Exception:
             self._rollback_spell_slot_if_needed(caster, slot_consumed)
+            if free_find_steed_cast_used:
+                paladin = ensure_paladin_runtime(caster)
+                paladin["faithful_steed"]["free_cast_available"] = True
             caster.action_economy = previous_action_economy
             self.encounter_repository.save(encounter)
             raise
@@ -233,6 +275,41 @@ class EncounterCastSpell:
         if include_encounter_state:
             result["encounter_state"] = GetEncounterState(self.encounter_repository).execute(encounter_id)
         return result
+
+    def _is_find_steed_spell(self, spell_definition: dict[str, Any]) -> bool:
+        spell_id = str(spell_definition.get("spell_id") or spell_definition.get("id") or "").strip().lower()
+        return spell_id == "find_steed"
+
+    def _has_faithful_steed_free_cast(self, caster: EncounterEntity) -> bool:
+        paladin = ensure_paladin_runtime(caster)
+        faithful_steed = paladin.get("faithful_steed")
+        if not isinstance(faithful_steed, dict):
+            return False
+        return bool(faithful_steed.get("enabled")) and bool(faithful_steed.get("free_cast_available"))
+
+    def _replace_previous_find_steed_if_needed(
+        self,
+        *,
+        encounter: Encounter,
+        caster: EncounterEntity,
+    ) -> None:
+        for instance in encounter.spell_instances:
+            if instance.get("spell_id") != "find_steed":
+                continue
+            if instance.get("caster_entity_id") != caster.entity_id:
+                continue
+            special_runtime = instance.get("special_runtime")
+            if not isinstance(special_runtime, dict):
+                continue
+            summon_entity_ids = special_runtime.get("summon_entity_ids")
+            if not isinstance(summon_entity_ids, list) or not summon_entity_ids:
+                continue
+            for summon_id in list(summon_entity_ids):
+                encounter.entities.pop(summon_id, None)
+                encounter.turn_order = [entity_id for entity_id in encounter.turn_order if entity_id != summon_id]
+                if encounter.current_entity_id == summon_id:
+                    encounter.current_entity_id = caster.entity_id
+            special_runtime["summon_entity_ids"] = []
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

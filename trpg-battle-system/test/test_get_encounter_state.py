@@ -465,6 +465,47 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_paladin_faithful_steed_summary_at_level_five(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 5,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertTrue(paladin["faithful_steed"]["enabled"])
+            self.assertTrue(paladin["faithful_steed"]["free_cast_available"])
+            self.assertIn("faithful_steed", paladin["available_features"])
+
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_paladin_faithful_steed_preserves_explicit_free_cast_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 5,
+                "faithful_steed": {"free_cast_available": False},
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertFalse(paladin["faithful_steed"]["free_cast_available"])
+
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_barbarian_high_level_feature_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

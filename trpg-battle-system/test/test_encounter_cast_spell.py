@@ -33,6 +33,7 @@ def build_caster() -> EncounterEntity:
         resources={
             "spell_slots": {
                 "1": {"max": 2, "remaining": 2},
+                "2": {"max": 1, "remaining": 1},
                 "3": {"max": 1, "remaining": 1},
             }
         },
@@ -49,6 +50,16 @@ def build_caster() -> EncounterEntity:
                 "name": "Fire Bolt",
                 "level": 0,
                 "requires_attack_roll": True,
+            },
+            {
+                "spell_id": "find_steed",
+                "name": "Find Steed",
+                "level": 2,
+                "base": {
+                    "level": 2,
+                    "casting_time": "1 action",
+                    "concentration": False
+                },
             },
         ],
     )
@@ -93,6 +104,62 @@ def build_encounter() -> Encounter:
 
 
 class EncounterCastSpellTests(unittest.TestCase):
+    def test_execute_find_steed_creates_spell_instance_and_summon_entity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["paladin"] = {"level": 5, "faithful_steed": {"free_cast_available": False}}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="find_steed",
+                cast_level=2,
+                target_point={"x": 5, "y": 5, "anchor": "cell_center"},
+                reason="Summon steed",
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            summon_ids = result["spell_instance"]["special_runtime"]["summon_entity_ids"]
+            self.assertEqual(len(summon_ids), 1)
+            summon_id = summon_ids[0]
+            self.assertIn(summon_id, updated.entities)
+            self.assertIn(summon_id, updated.turn_order)
+            self.assertEqual(updated.entities[summon_id].position, {"x": 5, "y": 5})
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["2"]["remaining"], 0)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_steed_consumes_free_cast_before_spell_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["paladin"] = {"level": 5}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="find_steed",
+                cast_level=2,
+                target_point={"x": 5, "y": 5, "anchor": "cell_center"},
+                reason="Summon steed",
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertIsNone(result["slot_consumed"])
+            self.assertFalse(updated.entities["ent_ally_eric_001"].class_features["paladin"]["faithful_steed"]["free_cast_available"])
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["2"]["remaining"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_rejects_spellcasting_in_untrained_armor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

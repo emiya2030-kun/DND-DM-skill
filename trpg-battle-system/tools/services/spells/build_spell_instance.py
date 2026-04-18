@@ -77,6 +77,17 @@ def _build_special_runtime(
     targets: list[dict[str, Any]],
 ) -> dict[str, Any]:
     runtime: dict[str, Any] = {"linked_zone_ids": []}
+    spell_id = str(spell_definition.get("id") or spell_definition.get("spell_id") or "")
+    if spell_id == "find_steed":
+        runtime.update(
+            {
+                "summon_mode": "persistent_entity",
+                "summon_entity_ids": [],
+                "replace_previous_from_same_caster": True,
+            }
+        )
+        return runtime
+
     special_rules = spell_definition.get("special_rules")
     if not isinstance(special_rules, dict):
         return runtime

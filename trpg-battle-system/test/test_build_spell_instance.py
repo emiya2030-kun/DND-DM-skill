@@ -100,3 +100,17 @@ class BuildSpellInstanceTests(unittest.TestCase):
         self.assertEqual(instance["spell_id"], "hunters_mark")
         self.assertTrue(instance["special_runtime"]["retargetable"])
         self.assertEqual(instance["special_runtime"]["current_target_id"], "ent_enemy_goblin_001")
+
+    def test_build_spell_instance_for_find_steed_tracks_summon_runtime(self) -> None:
+        instance = build_spell_instance(
+            spell_definition={"id": "find_steed", "name": "Find Steed", "level": 2},
+            caster=build_caster(),
+            cast_level=2,
+            targets=[],
+            started_round=1,
+        )
+
+        self.assertEqual(instance["spell_id"], "find_steed")
+        self.assertEqual(instance["special_runtime"]["summon_mode"], "persistent_entity")
+        self.assertEqual(instance["special_runtime"]["summon_entity_ids"], [])
+        self.assertTrue(instance["special_runtime"]["replace_previous_from_same_caster"])

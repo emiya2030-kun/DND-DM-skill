@@ -135,6 +135,11 @@ class UpdateHp:
             adjusted_damage=result["adjusted_hp_change"],
             from_critical_hit=from_critical_hit,
         )
+        if zero_hp_followup is not None and zero_hp_followup.get("outcome") == "entity_dead":
+            self._remove_summons_for_dead_summoner(
+                encounter=encounter,
+                summoner_entity_id=target.entity_id,
+            )
         retarget_updates = self._maybe_enable_retarget_marked_spells(
             encounter=encounter,
             target=target,
@@ -398,6 +403,7 @@ class UpdateHp:
             }
 
         if target.category == "summon":
+            self._clear_summon_runtime_links(encounter=encounter, summon_entity_id=target.entity_id)
             self._remove_entity_from_encounter(encounter, target.entity_id)
             return {
                 "outcome": "summon_removed",
@@ -666,6 +672,31 @@ class UpdateHp:
         pending = encounter.pending_movement
         if isinstance(pending, dict) and pending.get("entity_id") == entity_id:
             pending["status"] = "interrupted"
+
+    def _clear_summon_runtime_links(self, *, encounter: Encounter, summon_entity_id: str) -> None:
+        for instance in encounter.spell_instances:
+            special_runtime = instance.get("special_runtime")
+            if not isinstance(special_runtime, dict):
+                continue
+            summon_entity_ids = special_runtime.get("summon_entity_ids")
+            if not isinstance(summon_entity_ids, list):
+                continue
+            if summon_entity_id in summon_entity_ids:
+                special_runtime["summon_entity_ids"] = [
+                    entity_id for entity_id in summon_entity_ids if entity_id != summon_entity_id
+                ]
+
+    def _remove_summons_for_dead_summoner(self, *, encounter: Encounter, summoner_entity_id: str) -> None:
+        summon_ids = [
+            entity_id
+            for entity_id, entity in encounter.entities.items()
+            if entity.category == "summon"
+            and isinstance(entity.source_ref, dict)
+            and entity.source_ref.get("summoner_entity_id") == summoner_entity_id
+        ]
+        for summon_id in summon_ids:
+            self._clear_summon_runtime_links(encounter=encounter, summon_entity_id=summon_id)
+            self._remove_entity_from_encounter(encounter, summon_id)
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

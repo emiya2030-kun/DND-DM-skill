@@ -158,6 +158,16 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     aura_of_courage_radius = aura_of_courage.get("radius_feet")
     aura_of_courage["radius_feet"] = aura_of_courage_radius if isinstance(aura_of_courage_radius, int) else 10
 
+    faithful_steed = paladin.setdefault("faithful_steed", {})
+    explicit_faithful_steed_enabled = faithful_steed.get("enabled")
+    faithful_steed["enabled"] = (
+        explicit_faithful_steed_enabled if isinstance(explicit_faithful_steed_enabled, bool) else level >= 5
+    )
+    free_cast_available = faithful_steed.get("free_cast_available")
+    faithful_steed["free_cast_available"] = (
+        free_cast_available if isinstance(free_cast_available, bool) else level >= 5
+    )
+
     radiant_strikes = paladin.setdefault("radiant_strikes", {})
     explicit_radiant_strikes_enabled = radiant_strikes.get("enabled")
     radiant_strikes["enabled"] = (
