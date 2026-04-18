@@ -32,6 +32,53 @@
 - `Faithful Steed`
 - 长休恢复这些职业资源
 
+## Remaining Paladin Features Status
+
+为避免后续继续开发时反复对范围，这里把当前圣武士特性的实现状态一并记录。
+
+### 已完成
+
+- `Lay on Hands`｜圣疗
+- `Aura of Protection`｜守护灵光
+- `Divine Smite`｜至圣斩
+- `Fighting Style`｜战斗风格
+- `Extra Attack`｜额外攻击
+- 基于现有战斗法术系统的 paladin spell slot 消耗与施法基础链路
+
+### 本轮完成后将新增
+
+- `Radiant Strikes`｜光耀打击
+- `Restoring Touch`｜复原之触
+
+### 仍未实现
+
+- `Divine Sense`｜神圣感知
+- `Channel Divinity`｜引导神力资源框架
+- `Abjure Foes`｜弃绝众敌
+- `Aura of Courage`｜勇气灵光
+- `Aura Expansion`｜灵光增效
+- `Faithful Steed`｜信实坐骑
+- `Blessed Warrior`｜受祝福的勇士
+- 长休 / 短休驱动的 paladin 职业资源恢复
+- 子职能力
+
+### 建议后续顺序
+
+按当前战斗系统的主链和性价比，建议后续优先级如下：
+
+1. `Channel Divinity` 资源框架
+2. `Abjure Foes`
+3. `Aura of Courage`
+4. `Aura Expansion`
+5. `Faithful Steed`
+6. `Divine Sense` 是否需要后端化，再单独决定
+
+这样做的原因：
+
+1. `Radiant Strikes` 与 `Restoring Touch` 都是现有主链上的增强，不需要新资源系统
+2. `Abjure Foes` 与 `Aura of Courage` 都依赖更明确的 paladin 被动 / 主动资源框架
+3. `Faithful Steed` 会牵涉召唤实体与战斗外/战斗内双场景，不适合插在这一轮里
+
 ## Divine Sense Handling
 
 `Divine Sense` 本轮不进入后端。
