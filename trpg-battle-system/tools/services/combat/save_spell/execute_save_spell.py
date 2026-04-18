@@ -47,6 +47,7 @@ class ExecuteSaveSpell:
         conditions_on_success: list[str] | None = None,
         note_on_failed_save: str | None = None,
         note_on_success: str | None = None,
+        metamagic_options: dict[str, Any] | None = None,
         include_encounter_state: bool = False,
         metadata: dict[str, Any] | None = None,
         rolled_at: str | None = None,
@@ -65,6 +66,7 @@ class ExecuteSaveSpell:
             target_ids=[target_id],
             cast_level=cast_level,
             reason=description,
+            metamagic_options=metamagic_options,
         )
 
         request = self.saving_throw_request.execute(
@@ -73,6 +75,7 @@ class ExecuteSaveSpell:
             spell_id=spell_id,
             vantage=vantage,
             description=description,
+            metamagic=cast.get("metamagic"),
         )
 
         roll_result = self.resolve_saving_throw.execute(

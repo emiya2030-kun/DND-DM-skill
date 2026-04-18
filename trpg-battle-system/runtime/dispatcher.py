@@ -36,11 +36,14 @@ def execute_runtime_command(
                 encounter_state = context.get_encounter_state(encounter_id)
             except ValueError:
                 encounter_state = None
+        error_code = getattr(error, "error_code", str(error))
+        message = getattr(error, "message", str(error))
         return {
             "ok": False,
             "command": command,
-            "error_code": str(error),
-            "message": str(error),
+            "error_code": error_code,
+            "message": message,
+            "rule_context": getattr(error, "rule_context", None),
             "result": None,
             "encounter_state": encounter_state,
         }

@@ -15,10 +15,12 @@ from tools.services.class_features.shared import (
     consume_exact_spell_slot,
     ensure_paladin_runtime,
     ensure_ranger_runtime,
+    ensure_sorcerer_runtime,
     restore_consumed_spell_slot,
 )
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
+from tools.services.shared.rule_validation_error import RuleValidationError
 from tools.services.spells.area_geometry import build_spell_zone_instance
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
@@ -87,6 +89,7 @@ class EncounterCastSpell:
         target_point: dict[str, Any] | None = None,
         cast_level: int | None = None,
         spell_options: dict[str, Any] | None = None,
+        metamagic_options: dict[str, Any] | None = None,
         reason: str | None = None,
         include_encounter_state: bool = False,
         apply_no_roll_immediate_effects: bool = True,
@@ -124,22 +127,47 @@ class EncounterCastSpell:
         resolved_cast_level = cast_level if cast_level is not None else spell_level
         if spell_level > 0 and resolved_cast_level < spell_level:
             raise ValueError("cast_level cannot be lower than the spell's base level")
+        metamagic = self._resolve_metamagic(
+            caster=caster,
+            spell_id=spell_id,
+            spell_definition=spell_definition,
+            action_cost=action_cost,
+            target_ids=resolved_target_ids,
+            metamagic_options=metamagic_options,
+        )
+        if bool(metamagic.get("quickened_spell")):
+            action_cost = "bonus_action"
+        noticeability = self._build_noticeability(metamagic=metamagic)
+        self._validate_action_cost_available_or_raise(caster=caster, action_cost=action_cost)
 
-        free_find_steed_cast_used = False
-        free_hunters_mark_cast_used = False
-        if self._is_find_steed_spell(spell_definition) and self._has_faithful_steed_free_cast(caster):
+        free_find_steed_cast_used = self._is_find_steed_spell(spell_definition) and self._has_faithful_steed_free_cast(caster)
+        free_hunters_mark_cast_used = self._is_hunters_mark_spell(spell_definition) and self._has_favored_enemy_free_cast(caster)
+        will_consume_spell_slot = self._will_consume_spell_slot_for_cast(
+            spell_level=spell_level,
+            free_find_steed_cast_used=free_find_steed_cast_used,
+            free_hunters_mark_cast_used=free_hunters_mark_cast_used,
+        )
+        self._validate_spell_slot_cast_limit_or_raise(
+            caster=caster,
+            will_consume_spell_slot=will_consume_spell_slot,
+            action_cost=action_cost,
+        )
+
+        if free_find_steed_cast_used:
             slot_consumed = None
             paladin = ensure_paladin_runtime(caster)
             paladin["faithful_steed"]["free_cast_available"] = False
-            free_find_steed_cast_used = True
-        elif self._is_hunters_mark_spell(spell_definition) and self._has_favored_enemy_free_cast(caster):
+        elif free_hunters_mark_cast_used:
             slot_consumed = None
             ranger = ensure_ranger_runtime(caster)
             favored_enemy = ranger.get("favored_enemy", {})
             favored_enemy["free_cast_uses_remaining"] = max(0, int(favored_enemy.get("free_cast_uses_remaining", 0)) - 1)
-            free_hunters_mark_cast_used = True
         else:
             slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
+        sorcery_points_consumed = self._consume_sorcery_points_if_needed(
+            caster=caster,
+            metamagic=metamagic,
+        )
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
         normalized_spell_options = dict(spell_options) if isinstance(spell_options, dict) else {}
@@ -159,12 +187,18 @@ class EncounterCastSpell:
                     "target_ids": list(resolved_target_ids),
                     "target_point": target_point,
                     "spell_options": normalized_spell_options,
+                    "metamagic": metamagic,
+                    "noticeability": noticeability,
                     "action_cost": action_cost,
                     "allow_out_of_turn_actor": allow_out_of_turn_actor,
                     "phase": "before_spell_resolves",
                 },
                 "caster_entity_id": caster.entity_id,
                 "target_entity_id": caster.entity_id,
+                "payload": {
+                    "metamagic": metamagic,
+                    "noticeability": noticeability,
+                },
             }
             window_result = self.open_reaction_window.execute(
                 encounter_id=encounter_id,
@@ -314,6 +348,8 @@ class EncounterCastSpell:
             "spell_definition": spell_definition,
             "slot_consumed": slot_consumed,
             "action_cost": action_cost,
+            "metamagic": metamagic,
+            "noticeability": noticeability,
             "turn_effect_updates": turn_effect_updates,
             "spell_instance": spell_instance,
             "summon_entity_id": summon_entity.entity_id if summon_entity is not None else None,
@@ -322,6 +358,10 @@ class EncounterCastSpell:
         }
         previous_action_economy = dict(caster.action_economy) if isinstance(caster.action_economy, dict) else {}
         self._consume_action_cost_if_needed(caster, action_cost)
+        self._record_spell_slot_cast_if_needed(
+            caster=caster,
+            slot_consumed=slot_consumed,
+        )
         self.encounter_repository.save(encounter)
         try:
             event = self.append_event.execute(
@@ -333,6 +373,7 @@ class EncounterCastSpell:
             )
         except Exception:
             self._rollback_spell_slot_if_needed(caster, slot_consumed)
+            self._restore_sorcery_points_if_needed(caster=caster, sorcery_points_consumed=sorcery_points_consumed)
             if free_find_steed_cast_used:
                 paladin = ensure_paladin_runtime(caster)
                 paladin["faithful_steed"]["free_cast_available"] = True
@@ -355,6 +396,8 @@ class EncounterCastSpell:
             "target_point": target_point,
             "slot_consumed": slot_consumed,
             "action_cost": action_cost,
+            "metamagic": metamagic,
+            "noticeability": noticeability,
             "turn_effect_updates": turn_effect_updates,
             "spell_instance": spell_instance,
             "zone_updates": zone_updates,
@@ -540,6 +583,193 @@ class EncounterCastSpell:
             raise ValueError("spell.level must be an integer >= 0")
         return spell_level
 
+    def _find_known_spell(self, caster: EncounterEntity, spell_id: str) -> dict[str, Any] | None:
+        for spell in caster.spells:
+            if spell.get("spell_id") == spell_id:
+                return spell
+        return None
+
+    def _resolve_spellcasting_class(self, known_spell: dict[str, Any] | None) -> str | None:
+        if not isinstance(known_spell, dict):
+            return None
+        casting_class = known_spell.get("casting_class")
+        if isinstance(casting_class, str) and casting_class.strip():
+            return casting_class.strip().lower()
+        classes = known_spell.get("classes")
+        if isinstance(classes, list) and len(classes) == 1:
+            current_class = classes[0]
+            if isinstance(current_class, str) and current_class.strip():
+                return current_class.strip().lower()
+        return None
+
+    def _resolve_metamagic(
+        self,
+        *,
+        caster: EncounterEntity,
+        spell_id: str,
+        spell_definition: dict[str, Any],
+        action_cost: str | None,
+        target_ids: list[str],
+        metamagic_options: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        default_result = self._build_default_metamagic()
+        if not isinstance(metamagic_options, dict):
+            return default_result
+        selected = metamagic_options.get("selected")
+        if not isinstance(selected, list):
+            return default_result
+
+        normalized_selected = [str(item).strip().lower() for item in selected if str(item).strip()]
+        if not normalized_selected:
+            return default_result
+        if len(normalized_selected) > 1:
+            raise ValueError("multiple_metamagic_not_supported")
+
+        known_spell = self._find_known_spell(caster, spell_id)
+        if self._resolve_spellcasting_class(known_spell) != "sorcerer":
+            raise ValueError("metamagic_requires_sorcerer_spell")
+
+        sorcerer = ensure_sorcerer_runtime(caster)
+        if int(sorcerer.get("level", 0) or 0) < 2:
+            raise ValueError("metamagic_requires_sorcerer_level_2")
+        sorcery_points = sorcerer.get("sorcery_points")
+        current_points = int(sorcery_points.get("current", 0) or 0) if isinstance(sorcery_points, dict) else 0
+        selected_metamagic = normalized_selected[0]
+        supported_costs = {
+            "subtle_spell": 1,
+            "quickened_spell": 2,
+            "distant_spell": 1,
+            "heightened_spell": 2,
+            "careful_spell": 1,
+        }
+        cost = supported_costs.get(selected_metamagic)
+        if cost is None:
+            raise ValueError("unsupported_metamagic")
+        if current_points < cost:
+            raise ValueError("insufficient_sorcery_points")
+
+        metamagic = self._build_default_metamagic()
+        metamagic["selected"] = [selected_metamagic]
+        metamagic[selected_metamagic] = True
+        metamagic["sorcery_point_cost"] = cost
+
+        if selected_metamagic == "quickened_spell":
+            if action_cost != "action":
+                raise ValueError("quickened_spell_requires_action_cast_time")
+            return metamagic
+
+        if selected_metamagic == "distant_spell":
+            if not self._spell_can_use_distant_spell(spell_definition=spell_definition):
+                raise ValueError("distant_spell_requires_range_or_touch_spell")
+            metamagic["effective_range_override_feet"] = self._resolve_distant_spell_range_override_feet(
+                spell_definition=spell_definition
+            )
+            return metamagic
+
+        if selected_metamagic == "heightened_spell":
+            heightened_target_id = metamagic_options.get("heightened_target_id")
+            if not isinstance(heightened_target_id, str) or not heightened_target_id.strip():
+                raise ValueError("heightened_spell_requires_target")
+            if heightened_target_id not in target_ids:
+                raise ValueError("heightened_spell_target_must_be_one_of_the_spell_targets")
+            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
+                raise ValueError("heightened_spell_requires_save_spell")
+            metamagic["heightened_target_id"] = heightened_target_id
+            return metamagic
+
+        if selected_metamagic == "careful_spell":
+            careful_target_ids = metamagic_options.get("careful_target_ids")
+            if not isinstance(careful_target_ids, list) or not careful_target_ids:
+                raise ValueError("careful_spell_requires_targets")
+            normalized_careful_target_ids = [str(item).strip() for item in careful_target_ids if str(item).strip()]
+            max_protected_targets = max(1, int(caster.ability_mods.get("cha", 0) or 0))
+            if len(normalized_careful_target_ids) > max_protected_targets:
+                raise ValueError("careful_spell_too_many_targets")
+            for entity_id in normalized_careful_target_ids:
+                if entity_id not in target_ids:
+                    raise ValueError("careful_spell_targets_must_be_spell_targets")
+            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
+                raise ValueError("careful_spell_requires_save_spell")
+            metamagic["careful_target_ids"] = normalized_careful_target_ids
+            return metamagic
+
+        return metamagic
+
+    def _build_default_metamagic(self) -> dict[str, Any]:
+        return {
+            "selected": [],
+            "subtle_spell": False,
+            "quickened_spell": False,
+            "distant_spell": False,
+            "heightened_spell": False,
+            "careful_spell": False,
+            "sorcery_point_cost": 0,
+            "heightened_target_id": None,
+            "careful_target_ids": [],
+            "effective_range_override_feet": None,
+        }
+
+    def _spell_can_use_distant_spell(self, *, spell_definition: dict[str, Any]) -> bool:
+        targeting = spell_definition.get("targeting")
+        if isinstance(targeting, dict):
+            range_kind = targeting.get("range_kind")
+            if isinstance(range_kind, str) and range_kind.strip().lower() == "touch":
+                return True
+            range_feet = targeting.get("range_feet")
+            if isinstance(range_feet, int) and range_feet >= 5:
+                return True
+        base = spell_definition.get("base")
+        if isinstance(base, dict):
+            spell_range = base.get("range")
+            if isinstance(spell_range, str) and spell_range.strip().lower() == "touch":
+                return True
+        return False
+
+    def _resolve_distant_spell_range_override_feet(self, *, spell_definition: dict[str, Any]) -> int | None:
+        targeting = spell_definition.get("targeting")
+        if isinstance(targeting, dict):
+            range_kind = targeting.get("range_kind")
+            if isinstance(range_kind, str) and range_kind.strip().lower() == "touch":
+                return 30
+            range_feet = targeting.get("range_feet")
+            if isinstance(range_feet, int) and range_feet >= 5:
+                return range_feet * 2
+        base = spell_definition.get("base")
+        if isinstance(base, dict):
+            spell_range = base.get("range")
+            if isinstance(spell_range, str) and spell_range.strip().lower() == "touch":
+                return 30
+        return None
+
+    def _spell_requires_saving_throw(self, *, spell_definition: dict[str, Any]) -> bool:
+        save_ability = spell_definition.get("save_ability")
+        if isinstance(save_ability, str) and save_ability.strip():
+            return True
+        resolution = spell_definition.get("resolution")
+        if isinstance(resolution, dict):
+            resolution_save_ability = resolution.get("save_ability")
+            if isinstance(resolution_save_ability, str) and resolution_save_ability.strip():
+                return True
+            return str(resolution.get("mode") or "").strip().lower() == "save"
+        return False
+
+    def _build_noticeability(self, *, metamagic: dict[str, Any]) -> dict[str, Any]:
+        if bool(metamagic.get("subtle_spell")):
+            return {
+                "casting_is_perceptible": False,
+                "verbal_visible": False,
+                "somatic_visible": False,
+                "material_visible": False,
+                "spell_effect_visible": True,
+            }
+        return {
+            "casting_is_perceptible": True,
+            "verbal_visible": True,
+            "somatic_visible": True,
+            "material_visible": True,
+            "spell_effect_visible": True,
+        }
+
     def _consume_spell_slot_if_needed(
         self,
         caster: EncounterEntity,
@@ -552,6 +782,23 @@ class EncounterCastSpell:
 
         return consume_exact_spell_slot(caster, cast_level)
 
+    def _consume_sorcery_points_if_needed(
+        self,
+        *,
+        caster: EncounterEntity,
+        metamagic: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        cost = int(metamagic.get("sorcery_point_cost", 0) or 0)
+        if cost <= 0:
+            return None
+        sorcerer = ensure_sorcerer_runtime(caster)
+        sorcery_points = sorcerer.setdefault("sorcery_points", {})
+        current_points = int(sorcery_points.get("current", 0) or 0)
+        if current_points < cost:
+            raise ValueError("insufficient_sorcery_points")
+        sorcery_points["current"] = current_points - cost
+        return {"amount": cost}
+
     def _rollback_spell_slot_if_needed(
         self,
         caster: EncounterEntity,
@@ -561,6 +808,22 @@ class EncounterCastSpell:
             return
 
         restore_consumed_spell_slot(caster, slot_consumed)
+
+    def _restore_sorcery_points_if_needed(
+        self,
+        *,
+        caster: EncounterEntity,
+        sorcery_points_consumed: dict[str, Any] | None,
+    ) -> None:
+        if sorcery_points_consumed is None:
+            return
+        amount = int(sorcery_points_consumed.get("amount", 0) or 0)
+        if amount <= 0:
+            return
+        sorcerer = ensure_sorcerer_runtime(caster)
+        sorcery_points = sorcerer.setdefault("sorcery_points", {})
+        current_points = int(sorcery_points.get("current", 0) or 0)
+        sorcery_points["current"] = current_points + amount
 
     def _resolve_action_cost(self, spell_definition: dict[str, Any]) -> str | None:
         resolution = spell_definition.get("resolution")
@@ -592,6 +855,69 @@ class EncounterCastSpell:
             caster.action_economy["bonus_action_used"] = True
         elif action_cost == "reaction":
             caster.action_economy["reaction_used"] = True
+
+    def _validate_action_cost_available_or_raise(
+        self,
+        *,
+        caster: EncounterEntity,
+        action_cost: str | None,
+    ) -> None:
+        action_economy = caster.action_economy if isinstance(caster.action_economy, dict) else {}
+        if action_cost == "action" and bool(action_economy.get("action_used")):
+            raise ValueError("action_already_used")
+        if action_cost == "bonus_action" and bool(action_economy.get("bonus_action_used")):
+            raise ValueError("bonus_action_already_used")
+        if action_cost == "reaction" and bool(action_economy.get("reaction_used")):
+            raise ValueError("reaction_already_used")
+
+    def _will_consume_spell_slot_for_cast(
+        self,
+        *,
+        spell_level: int,
+        free_find_steed_cast_used: bool,
+        free_hunters_mark_cast_used: bool,
+    ) -> bool:
+        if spell_level <= 0:
+            return False
+        return not free_find_steed_cast_used and not free_hunters_mark_cast_used
+
+    def _validate_spell_slot_cast_limit_or_raise(
+        self,
+        *,
+        caster: EncounterEntity,
+        will_consume_spell_slot: bool,
+        action_cost: str | None = None,
+    ) -> None:
+        if not will_consume_spell_slot:
+            return
+        if action_cost == "reaction":
+            return
+        action_economy = caster.action_economy if isinstance(caster.action_economy, dict) else {}
+        if bool(action_economy.get("spell_slot_cast_used_this_turn")):
+            raise RuleValidationError(
+                "spell_slot_cast_already_used_this_turn",
+                "本回合你已通过自身施法消耗过一次法术位，不能再以动作或附赠动作施展会消耗法术位的法术；反应法术、物品施法与其他不消耗法术位的施法不受此限制。",
+                rule_context={
+                    "casting_source": "self_spellcasting",
+                    "consumes_spell_slot": True,
+                    "action_cost": action_cost,
+                    "reaction_spell_exception": True,
+                    "item_cast_exception": True,
+                    "non_slot_cast_exception": True,
+                },
+            )
+
+    def _record_spell_slot_cast_if_needed(
+        self,
+        *,
+        caster: EncounterEntity,
+        slot_consumed: dict[str, Any] | None,
+    ) -> None:
+        if slot_consumed is None:
+            return
+        if not isinstance(caster.action_economy, dict):
+            caster.action_economy = {}
+        caster.action_economy["spell_slot_cast_used_this_turn"] = True
 
     def _maybe_apply_no_roll_turn_effects(
         self,

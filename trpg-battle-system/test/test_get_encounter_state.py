@@ -1604,6 +1604,38 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(refreshed_actions["free_interaction_used"], False)
             repo.close()
 
+    def test_execute_exposes_spell_slot_cast_limit_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            spellcasting = state["current_turn_entity"]["spellcasting"]
+
+            self.assertFalse(spellcasting["spell_slot_cast_used_this_turn"])
+            self.assertTrue(spellcasting["spell_slot_cast_available_this_turn"])
+            self.assertTrue(spellcasting["reaction_spell_exception"])
+            self.assertTrue(spellcasting["item_cast_exception"])
+            self.assertTrue(spellcasting["non_slot_cast_exception"])
+            self.assertEqual(spellcasting["summary"], "本回合还可以通过自身施法消耗一次法术位。")
+
+            encounter.entities["ent_ally_eric_001"].action_economy = {
+                "spell_slot_cast_used_this_turn": True,
+            }
+            repo.save(encounter)
+
+            refreshed_state = GetEncounterState(repo).execute("enc_view_test")
+            refreshed_spellcasting = refreshed_state["current_turn_entity"]["spellcasting"]
+
+            self.assertTrue(refreshed_spellcasting["spell_slot_cast_used_this_turn"])
+            self.assertFalse(refreshed_spellcasting["spell_slot_cast_available_this_turn"])
+            self.assertEqual(
+                refreshed_spellcasting["summary"],
+                "本回合已通过自身施法消耗过一次法术位；动作/附赠动作的再次耗位施法受限，反应法术、物品施法与其他不消耗法术位的施法例外。",
+            )
+            repo.close()
+
     def test_execute_projects_spell_effect_summaries_without_exposing_raw_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

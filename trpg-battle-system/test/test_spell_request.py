@@ -90,21 +90,39 @@ def build_wolf_target() -> EncounterEntity:
     )
 
 
+def build_extra_target() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_target_extra_001",
+        name="Scout",
+        side="ally",
+        category="npc",
+        controller="gm",
+        position={"x": 1, "y": 2},
+        hp={"current": 9, "max": 9, "temp": 0},
+        ac=12,
+        speed={"walk": 30, "remaining": 30},
+        initiative=7,
+        source_ref={"entity_type": "humanoid"},
+    )
+
+
 def build_encounter() -> Encounter:
     caster = build_wizard_caster()
     humanoid = build_humanoid_target()
     wolf = build_wolf_target()
+    extra = build_extra_target()
     return Encounter(
         encounter_id="enc_spell_request_test",
         name="Spell Request Test",
         status="active",
         round=1,
         current_entity_id=caster.entity_id,
-        turn_order=[caster.entity_id, humanoid.entity_id, wolf.entity_id],
+        turn_order=[caster.entity_id, humanoid.entity_id, wolf.entity_id, extra.entity_id],
         entities={
             caster.entity_id: caster,
             humanoid.entity_id: humanoid,
             wolf.entity_id: wolf,
+            extra.entity_id: extra,
         },
         map=EncounterMap(
             map_id="map_spell_request_test",
@@ -573,6 +591,277 @@ class SpellRequestTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["spell_attack_advantage"])
         self.assertEqual(result["spell_save_dc_bonus"], 1)
+
+    def test_execute_accepts_subtle_spell_and_returns_noticeability_metadata(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "chromatic_orb": {
+                        "id": "chromatic_orb",
+                        "name": "Chromatic Orb",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "attack_roll"},
+                        "targeting": {"allowed_target_types": ["creature"]},
+                        "requires_attack_roll": True,
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "sorcerer": {
+                "level": 3,
+                "sorcery_points": {"max": 3, "current": 2},
+            }
+        }
+        caster.spells.append(
+            {
+                "spell_id": "chromatic_orb",
+                "name": "Chromatic Orb",
+                "level": 1,
+                "casting_class": "sorcerer",
+            }
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="chromatic_orb",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={"selected": ["subtle_spell"]},
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["metamagic"]["selected"], ["subtle_spell"])
+        self.assertTrue(result["metamagic"]["subtle_spell"])
+        self.assertEqual(result["metamagic"]["sorcery_point_cost"], 1)
+        self.assertFalse(result["metamagic"]["quickened_spell"])
+        self.assertFalse(result["metamagic"]["distant_spell"])
+        self.assertFalse(result["metamagic"]["heightened_spell"])
+        self.assertFalse(result["metamagic"]["careful_spell"])
+        self.assertEqual(
+            result["noticeability"],
+            {
+                "casting_is_perceptible": False,
+                "verbal_visible": False,
+                "somatic_visible": False,
+                "material_visible": False,
+                "spell_effect_visible": True,
+            },
+        )
+
+    def test_execute_rejects_multiple_metamagic_selection(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "chromatic_orb": {
+                        "id": "chromatic_orb",
+                        "name": "Chromatic Orb",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "attack_roll"},
+                        "targeting": {"type": "single_target", "range_feet": 90, "allowed_target_types": ["creature"]},
+                        "requires_attack_roll": True,
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.spells.append(
+            {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="chromatic_orb",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={"selected": ["subtle_spell", "quickened_spell"]},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "multiple_metamagic_not_supported")
+
+    def test_execute_accepts_quickened_spell_and_returns_cost(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "chromatic_orb": {
+                        "id": "chromatic_orb",
+                        "name": "Chromatic Orb",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "attack_roll"},
+                        "targeting": {"type": "single_target", "range_feet": 90, "allowed_target_types": ["creature"]},
+                        "requires_attack_roll": True,
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.spells.append(
+            {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="chromatic_orb",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={"selected": ["quickened_spell"]},
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["metamagic"]["quickened_spell"])
+        self.assertEqual(result["metamagic"]["sorcery_point_cost"], 2)
+
+    def test_execute_accepts_distant_spell_for_touch_spell(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "shocking_grasp": {
+                        "id": "shocking_grasp",
+                        "name": "Shocking Grasp",
+                        "level": 0,
+                        "base": {"level": 0, "casting_time": "1 action", "concentration": False, "range": "touch"},
+                        "resolution": {"activation": "action", "mode": "attack_roll"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 5,
+                            "range_kind": "touch",
+                            "allowed_target_types": ["creature"],
+                        },
+                        "requires_attack_roll": True,
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        encounter.map.width = 12
+        encounter.entities["ent_target_humanoid_001"].position = {"x": 7, "y": 1}
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.spells.append(
+            {"spell_id": "shocking_grasp", "name": "Shocking Grasp", "level": 0, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="shocking_grasp",
+            cast_level=0,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={"selected": ["distant_spell"]},
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["metamagic"]["distant_spell"])
+
+    def test_execute_rejects_heightened_spell_without_target_id(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "hold_person": {
+                        "id": "hold_person",
+                        "name": "Hold Person",
+                        "level": 2,
+                        "save_ability": "wis",
+                        "base": {"level": 2, "casting_time": "1 action", "concentration": True},
+                        "resolution": {"activation": "action", "mode": "save"},
+                        "targeting": {"type": "single_target", "range_feet": 60, "allowed_target_types": ["humanoid"]},
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        for spell in caster.spells:
+            if spell.get("spell_id") == "hold_person":
+                spell["casting_class"] = "sorcerer"
+                break
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="hold_person",
+            cast_level=2,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={"selected": ["heightened_spell"]},
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "heightened_spell_requires_target")
+
+    def test_execute_rejects_careful_spell_when_targets_exceed_cha_mod(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "burning_hands": {
+                        "id": "burning_hands",
+                        "name": "Burning Hands",
+                        "level": 1,
+                        "save_ability": "dex",
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False, "range": "self"},
+                        "resolution": {"activation": "action", "mode": "save"},
+                        "targeting": {"type": "area_cone", "range_feet": 0, "allowed_target_types": ["creature"]},
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.ability_mods["cha"] = 1
+        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.spells.append(
+            {"spell_id": "burning_hands", "name": "Burning Hands", "level": 1, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="burning_hands",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001", "ent_target_wolf_001"],
+            metamagic_options={
+                "selected": ["careful_spell"],
+                "careful_target_ids": [
+                    "ent_target_humanoid_001",
+                    "ent_target_wolf_001",
+                    "ent_target_extra_001",
+                ],
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "careful_spell_too_many_targets")
 
     def test_execute_allows_two_beams_for_eldritch_blast_at_level_7_and_rejects_three(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(

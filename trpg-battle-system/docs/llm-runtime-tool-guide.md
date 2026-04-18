@@ -245,6 +245,53 @@ window.applyEncounterState(nextState)
   - 每个长休周期只能用一次
   - 恢复不大于术士等级一半（向下取整）的已消耗术法点
 
+- `Metamagic Batch 1 / 超魔法第一批`
+  - 目前不单独拆 service，仍然通过 `EncounterCastSpell` / `ExecuteSaveSpell` 施法
+  - 通用声明格式：
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["subtle_spell"]
+  }
+}
+```
+
+  - 当前一次施法只支持一个超魔法
+  - 当前支持：
+    - `subtle_spell`
+    - `quickened_spell`
+    - `distant_spell`
+    - `heightened_spell`
+    - `careful_spell`
+  - 共同使用前提：
+    - 该法术必须是术士法术
+    - 施法者至少是 `2` 级术士
+  - 术法点消耗：
+    - `subtle_spell = 1`
+    - `distant_spell = 1`
+    - `careful_spell = 1`
+    - `quickened_spell = 2`
+    - `heightened_spell = 2`
+  - 后端当前会自动处理：
+    - 扣除术法点
+    - 在结果和 `spell_declared` 事件中写入 `metamagic`
+    - 在结果和 `spell_declared` 事件中写入 `noticeability`
+    - `subtle_spell` 不打开 `Counterspell / 反制法术` 反应窗
+    - `quickened_spell` 改写这次施法的动作经济为附赠动作
+    - `heightened_spell` 让指定目标豁免劣势
+    - `careful_spell` 让受保护目标自动成功；若成功本应半伤，则改为 `0`
+  - 叙事解释规则：
+    - `noticeability.casting_is_perceptible = false` 时，视为旁观者无法直接察觉到“你正在施法”
+    - 但 `spell_effect_visible` 仍然可能是 `true`，也就是法术效果本身仍可被看到
+  - 额外参数：
+    - `heightened_spell` 需要 `heightened_target_id`
+    - `careful_spell` 需要 `careful_target_ids`
+  - 2024 施法位限制已落地：
+    - 每回合中，通过施法实际消耗法术位的次数最多为一次
+    - 这条限制不区分动作 / 附赠动作 / 反应，也不区分法术环阶
+    - 戏法、免费施法、物品施法等不消耗法术位的施法，不计入这条限制
+
 - 当前注意事项
   - 现在还没有统一长休系统
   - 因此“长休时清空术法点临时造出的法术位”目前只记录在运行态与开发日志里，尚未自动结算
@@ -677,6 +724,15 @@ LLM 可从返回中读取：
 - 需要时自动串 `UpdateHp`
 - 需要时自动串 `UpdateConditions`
 - 需要时自动串 `UpdateEncounterNotes`
+
+可选参数补充：
+
+- `metamagic_options`
+  - 结构与 `EncounterCastSpell` 完全一致
+  - 后端会先声明施法，再把结构化后的 `metamagic` 自动透传到：
+    - `SavingThrowRequest`
+    - `ResolveSavingThrow`
+    - `SavingThrowResult`
 
 ### 当前主路径
 

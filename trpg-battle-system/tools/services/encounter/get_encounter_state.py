@@ -300,6 +300,7 @@ class GetEncounterState:
                 "spell_slots_available": self._build_spell_slots_view(entity),
             },
             "actions": self._build_actions(entity),
+            "spellcasting": self._build_spellcasting_state(entity),
             "weapon_ranges": self._build_weapon_ranges(encounter, entity),
             "conditions": self._format_conditions(encounter, entity),
             "ongoing_effects": self._build_entity_ongoing_effects(encounter, entity),
@@ -841,6 +842,22 @@ class GetEncounterState:
             "bonus_action_used": bool(action_economy.get("bonus_action_used")),
             "reaction_used": bool(action_economy.get("reaction_used")),
             "free_interaction_used": bool(action_economy.get("free_interaction_used")),
+        }
+
+    def _build_spellcasting_state(self, entity: EncounterEntity) -> dict[str, Any]:
+        action_economy = entity.action_economy or {}
+        spell_slot_cast_used_this_turn = bool(action_economy.get("spell_slot_cast_used_this_turn"))
+        return {
+            "spell_slot_cast_used_this_turn": spell_slot_cast_used_this_turn,
+            "spell_slot_cast_available_this_turn": not spell_slot_cast_used_this_turn,
+            "reaction_spell_exception": True,
+            "item_cast_exception": True,
+            "non_slot_cast_exception": True,
+            "summary": (
+                "本回合已通过自身施法消耗过一次法术位；动作/附赠动作的再次耗位施法受限，反应法术、物品施法与其他不消耗法术位的施法例外。"
+                if spell_slot_cast_used_this_turn
+                else "本回合还可以通过自身施法消耗一次法术位。"
+            ),
         }
 
     def _filter_targets_by_range(

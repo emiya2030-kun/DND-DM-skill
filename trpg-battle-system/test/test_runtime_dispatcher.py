@@ -5,6 +5,7 @@ from pathlib import Path
 from runtime.commands import COMMAND_HANDLERS
 from runtime.context import build_runtime_context
 from runtime.dispatcher import execute_runtime_command
+from tools.services.shared.rule_validation_error import RuleValidationError
 
 
 class RuntimeDispatcherTests(unittest.TestCase):
@@ -104,6 +105,31 @@ class RuntimeDispatcherTests(unittest.TestCase):
 
                 self.assertFalse(result["ok"])
                 self.assertEqual(result["encounter_state"], None)
+            finally:
+                context.close()
+
+    def test_rule_validation_error_exposes_message_and_rule_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            context = build_runtime_context(data_dir=Path(tmp_dir))
+            try:
+                def handler(ctx, args):
+                    raise RuleValidationError(
+                        "spell_slot_cast_already_used_this_turn",
+                        "本回合已通过自身施法消耗过一次法术位。",
+                        rule_context={"reaction_spell_exception": True},
+                    )
+
+                result = execute_runtime_command(
+                    context,
+                    command="test_command",
+                    args={"encounter_id": "enc_test"},
+                    handlers={"test_command": handler},
+                )
+
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["error_code"], "spell_slot_cast_already_used_this_turn")
+                self.assertEqual(result["message"], "本回合已通过自身施法消耗过一次法术位。")
+                self.assertEqual(result["rule_context"], {"reaction_spell_exception": True})
             finally:
                 context.close()
 

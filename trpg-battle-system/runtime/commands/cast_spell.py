@@ -4,6 +4,7 @@ from typing import Any
 
 from runtime.context import BattleRuntimeContext
 from tools.services import AppendEvent, ExecuteSpell, SpellRequest
+from tools.services.shared.rule_validation_error import RuleValidationError
 
 
 def _require_arg(args: dict[str, object], key: str) -> object:
@@ -48,7 +49,11 @@ def cast_spell(context: BattleRuntimeContext, args: dict[str, object]) -> dict[s
     )
 
     if not bool(result.get("ok", True)):
-        raise ValueError(str(result.get("message") or result.get("error_code") or "cast_spell_failed"))
+        raise RuleValidationError(
+            str(result.get("error_code") or "cast_spell_failed"),
+            str(result.get("message") or result.get("error_code") or "cast_spell_failed"),
+            rule_context=result.get("rule_context") if isinstance(result.get("rule_context"), dict) else None,
+        )
 
     return {
         "encounter_id": encounter_id,

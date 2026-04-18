@@ -37,6 +37,7 @@ class SavingThrowRequest:
         description: str | None = None,
         force_save_ability: str | None = None,
         save_dc_bonus: int = 0,
+        metamagic: dict[str, object] | None = None,
     ) -> RollRequest:
         """为目标生成一次豁免请求。
 
@@ -67,6 +68,12 @@ class SavingThrowRequest:
             vantage_sources["advantage"].append("requested_advantage")
         elif normalized_vantage == "disadvantage":
             vantage_sources["disadvantage"].append("requested_disadvantage")
+        metamagic_context = self._normalize_metamagic(metamagic)
+        if (
+            bool(metamagic_context.get("heightened_spell"))
+            and metamagic_context.get("heightened_target_id") == target.entity_id
+        ):
+            vantage_sources["disadvantage"].append("metamagic_heightened_spell")
         if armor_profile["wearing_untrained_armor"] and save_ability.strip().lower() in {"str", "dex"}:
             vantage_sources["disadvantage"].append("armor_untrained")
         if (
@@ -91,6 +98,10 @@ class SavingThrowRequest:
             normalized_vantage = "disadvantage"
         else:
             normalized_vantage = "normal"
+        auto_success = (
+            bool(metamagic_context.get("careful_spell"))
+            and target.entity_id in metamagic_context.get("careful_target_ids", [])
+        )
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
 
@@ -115,10 +126,30 @@ class SavingThrowRequest:
                 "half_on_success": spell_definition.get("half_on_success", False),
                 "vantage": normalized_vantage,
                 "vantage_sources": vantage_sources,
+                "auto_success": auto_success,
+                "metamagic": metamagic_context,
                 "distance_to_target": f"{distance_to_target_feet} ft",
                 "distance_to_target_feet": distance_to_target_feet,
             },
         )
+
+    def _normalize_metamagic(self, metamagic: dict[str, object] | None) -> dict[str, object]:
+        if not isinstance(metamagic, dict):
+            return {
+                "selected": [],
+                "heightened_spell": False,
+                "heightened_target_id": None,
+                "careful_spell": False,
+                "careful_target_ids": [],
+            }
+        careful_target_ids = metamagic.get("careful_target_ids")
+        return {
+            "selected": list(metamagic.get("selected", [])) if isinstance(metamagic.get("selected"), list) else [],
+            "heightened_spell": bool(metamagic.get("heightened_spell")),
+            "heightened_target_id": metamagic.get("heightened_target_id"),
+            "careful_spell": bool(metamagic.get("careful_spell")),
+            "careful_target_ids": list(careful_target_ids) if isinstance(careful_target_ids, list) else [],
+        }
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

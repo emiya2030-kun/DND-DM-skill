@@ -833,3 +833,47 @@ class SavingThrowResultTests(unittest.TestCase):
             self.assertTrue(result["success"])
             self.assertEqual(result["final_total"], 13)
             self.assertEqual(result["comparison"]["left_value"], 13)
+
+    def test_execute_careful_spell_turns_successful_half_damage_into_zero(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter_repo.save(build_encounter())
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+                metamagic={
+                    "selected": ["careful_spell"],
+                    "careful_spell": True,
+                    "careful_target_ids": ["ent_enemy_iron_duster_001"],
+                    "heightened_spell": False,
+                    "heightened_target_id": None,
+                },
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            result = service.execute(
+                encounter_id="enc_save_result_test",
+                roll_request=request,
+                roll_result=ResolveSavingThrow(encounter_repo).execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    base_roll=2,
+                ),
+                spell_definition=build_spell_definitions()["burning_hands"],
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+            )
+
+            updated = encounter_repo.get("enc_save_result_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["success"])
+            self.assertEqual(result["damage_resolution"]["total_damage"], 0)
+            self.assertEqual(result["damage_resolution"]["metamagic_adjustment"]["metamagic_id"], "careful_spell")
+            self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 18)

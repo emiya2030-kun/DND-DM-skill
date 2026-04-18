@@ -149,6 +149,13 @@ class SavingThrowResult:
                     outcome=outcome,
                     damage_resolution=damage_resolution,
                 )
+                damage_resolution = self._maybe_apply_careful_spell_protection(
+                    roll_request=roll_request,
+                    success=success,
+                    spell_definition=spell_definition,
+                    outcome=outcome,
+                    damage_resolution=damage_resolution,
+                )
                 result["damage_resolution"] = damage_resolution
                 if self.update_hp is None:
                     raise ValueError("update_hp service is required when resolving spell outcome damage")
@@ -615,6 +622,40 @@ class SavingThrowResult:
         if selected_outcome is None:
             return False
         return selected_outcome.get("damage_multiplier") == 0.5
+
+    def _maybe_apply_careful_spell_protection(
+        self,
+        *,
+        roll_request: RollRequest,
+        success: bool,
+        spell_definition: dict[str, Any],
+        outcome: dict[str, Any],
+        damage_resolution: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not success:
+            return damage_resolution
+        if not bool(roll_request.context.get("auto_success")):
+            return damage_resolution
+        if not self._is_success_half_damage_spell(spell_definition=spell_definition) and outcome.get("damage_multiplier") != 0.5:
+            return damage_resolution
+
+        adjusted = {
+            **damage_resolution,
+            "parts": [dict(part) for part in damage_resolution.get("parts", [])],
+        }
+        for part in adjusted["parts"]:
+            adjusted_total = part.get("adjusted_total")
+            if not isinstance(adjusted_total, int):
+                raise ValueError("damage_resolution.parts[].adjusted_total must be an integer")
+            part["adjusted_total"] = 0
+
+        adjusted["total_damage"] = 0
+        adjusted["metamagic_adjustment"] = {
+            "metamagic_id": "careful_spell",
+            "rule": "successful_half_damage_becomes_zero",
+            "applied": True,
+        }
+        return adjusted
 
     def _maybe_apply_turn_effects(
         self,

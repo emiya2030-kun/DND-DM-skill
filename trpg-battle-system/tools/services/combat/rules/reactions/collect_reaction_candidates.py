@@ -126,6 +126,11 @@ class CollectReactionCandidates:
             ]
 
         if trigger_type == "spell_declared":
+            payload = trigger_event.get("payload")
+            if isinstance(payload, dict):
+                metamagic = payload.get("metamagic")
+                if isinstance(metamagic, dict) and bool(metamagic.get("subtle_spell")):
+                    return []
             caster_id = trigger_event.get("caster_entity_id")
             if not isinstance(caster_id, str):
                 return []

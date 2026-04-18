@@ -145,6 +145,37 @@ class RuntimeHttpServerTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error_code"], "unknown_command")
 
+    def test_command_endpoint_preserves_rule_context_in_error_payload(self) -> None:
+        with patch(
+            "runtime.http_server.execute_runtime_command",
+            return_value={
+                "ok": False,
+                "command": "cast_spell",
+                "error_code": "spell_slot_cast_already_used_this_turn",
+                "message": "本回合已通过自身施法消耗过一次法术位。",
+                "rule_context": {
+                    "casting_source": "self_spellcasting",
+                    "reaction_spell_exception": True,
+                },
+            },
+        ):
+            status, payload = self._request(
+                "POST",
+                "/runtime/command",
+                payload={"command": "cast_spell", "args": {"encounter_id": "enc_test"}},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_code"], "spell_slot_cast_already_used_this_turn")
+        self.assertEqual(
+            payload["rule_context"],
+            {
+                "casting_source": "self_spellcasting",
+                "reaction_spell_exception": True,
+            },
+        )
+
     def test_execute_attack_command_hits_and_returns_updated_encounter_state(self) -> None:
         self._seed_attack_encounter()
 

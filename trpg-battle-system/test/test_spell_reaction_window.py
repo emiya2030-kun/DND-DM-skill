@@ -169,3 +169,42 @@ class SpellReactionWindowTests(unittest.TestCase):
             self.assertIn("encounter_state", result)
             encounter_repo.close()
             event_repo.close()
+
+    def test_cast_spell_with_subtle_spell_does_not_open_counterspell_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter(with_counterspell=True)
+            caster = encounter.entities["ent_enemy_mage_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 2},
+            }
+            caster.spells = [
+                {
+                    "spell_id": "fireball",
+                    "name": "Fireball",
+                    "level": 3,
+                    "casting_class": "sorcerer",
+                }
+            ]
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(
+                encounter_repo,
+                AppendEvent(event_repo),
+                SpellDefinitionRepository(),
+            )
+
+            result = service.execute(
+                encounter_id="enc_spell_reaction_test",
+                actor_id="ent_enemy_mage_001",
+                spell_id="fireball",
+                cast_level=3,
+                metamagic_options={"selected": ["subtle_spell"]},
+            )
+
+            self.assertIn("spell_id", result)
+            self.assertNotIn("status", result)
+            encounter_repo.close()
+            event_repo.close()

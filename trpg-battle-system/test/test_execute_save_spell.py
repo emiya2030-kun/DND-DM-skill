@@ -693,6 +693,115 @@ class ExecuteSaveSpellTests(unittest.TestCase):
             self.assertEqual(result["roll_result"]["final_total"], 15)
             self.assertEqual(result["roll_result"]["metadata"]["d20_penalty"], 4)
 
+    def test_execute_heightened_spell_forces_selected_target_to_roll_with_disadvantage(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            for spell in caster.spells:
+                if spell.get("spell_id") == "blindness_deafness":
+                    spell["casting_class"] = "sorcerer"
+                    break
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteSaveSpell(
+                EncounterCastSpell(encounter_repo, append_event),
+                SavingThrowRequest(encounter_repo),
+                ResolveSavingThrow(encounter_repo),
+                SavingThrowResult(
+                    encounter_repo,
+                    append_event,
+                    update_conditions=UpdateConditions(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_save_spell_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                base_rolls=[17, 4],
+                metamagic_options={
+                    "selected": ["heightened_spell"],
+                    "heightened_target_id": "ent_enemy_iron_duster_001",
+                },
+            )
+
+            self.assertEqual(result["request"]["context"]["vantage"], "disadvantage")
+            self.assertEqual(result["roll_result"]["metadata"]["chosen_roll"], 4)
+            self.assertFalse(result["resolution"]["success"])
+
+    def test_execute_careful_spell_makes_protected_target_auto_succeed_and_take_zero_damage(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            for spell in caster.spells:
+                if spell.get("spell_id") == "burning_hands":
+                    spell["casting_class"] = "sorcerer"
+                    break
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteSaveSpell(
+                EncounterCastSpell(encounter_repo, append_event),
+                SavingThrowRequest(encounter_repo),
+                ResolveSavingThrow(encounter_repo),
+                SavingThrowResult(
+                    encounter_repo,
+                    append_event,
+                    update_hp=UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_save_spell_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+                base_roll=1,
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+                metamagic_options={
+                    "selected": ["careful_spell"],
+                    "careful_target_ids": ["ent_enemy_iron_duster_001"],
+                },
+            )
+
+            self.assertTrue(result["request"]["context"]["auto_success"])
+            self.assertTrue(result["resolution"]["success"])
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 0)
+
+    def test_execute_save_spell_rejects_second_slot_spending_spell_in_same_turn(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.action_economy["spell_slot_cast_used_this_turn"] = True
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteSaveSpell(
+                EncounterCastSpell(encounter_repo, append_event),
+                SavingThrowRequest(encounter_repo),
+                ResolveSavingThrow(encounter_repo),
+                SavingThrowResult(
+                    encounter_repo,
+                    append_event,
+                    update_hp=UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            with self.assertRaisesRegex(ValueError, "spell_slot_cast_already_used_this_turn"):
+                service.execute(
+                    encounter_id="enc_execute_save_spell_test",
+                    target_id="ent_enemy_iron_duster_001",
+                    spell_id="burning_hands",
+                    base_roll=5,
+                    damage_rolls=[
+                        {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                    ],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

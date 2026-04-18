@@ -92,6 +92,34 @@ class BattlemapRuntimeIntegrationTests(unittest.TestCase):
 
         self.assertIn("runtime command request failed: 502", str(error_context.exception))
 
+    def test_post_runtime_command_preserves_rule_context_from_json_http_error_body(self) -> None:
+        error = HTTPError(
+            url="http://127.0.0.1:8771/runtime/command",
+            code=200,
+            msg="OK",
+            hdrs=None,
+            fp=BytesIO(
+                (
+                    '{"ok":false,"error_code":"spell_slot_cast_already_used_this_turn",'
+                    '"message":"本回合已通过自身施法消耗过一次法术位。",'
+                    '"rule_context":{"reaction_spell_exception":true,"item_cast_exception":true}}'
+                ).encode("utf-8")
+            ),
+        )
+        with patch("scripts.run_battlemap_localhost.urlopen", side_effect=error):
+            payload = post_runtime_command(
+                "http://127.0.0.1:8771",
+                command="cast_spell",
+                args={"encounter_id": "enc_preview_demo"},
+            )
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_code"], "spell_slot_cast_already_used_this_turn")
+        self.assertEqual(
+            payload["rule_context"],
+            {"reaction_spell_exception": True, "item_cast_exception": True},
+        )
+
     def test_main_attempts_runtime_bootstrap_when_runtime_base_url_is_provided(self) -> None:
         fake_server = Mock()
         fake_server.serve_forever.side_effect = RuntimeError("stop")

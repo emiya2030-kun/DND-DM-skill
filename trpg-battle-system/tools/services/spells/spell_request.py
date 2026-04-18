@@ -37,6 +37,7 @@ class SpellRequest:
         target_point: dict[str, Any] | None = None,
         declared_action_cost: str | None = None,
         context: dict[str, Any] | None = None,
+        metamagic_options: dict[str, Any] | None = None,
         allow_out_of_turn_actor: bool = False,
     ) -> dict[str, Any]:
         encounter = self.encounter_repository.get(encounter_id)
@@ -112,6 +113,19 @@ class SpellRequest:
             return availability_error
 
         normalized_target_ids = list(target_entity_ids or [])
+        metamagic = self._resolve_metamagic(
+            encounter=encounter,
+            actor=actor,
+            known_spell=known_spell,
+            spell_definition=spell_definition,
+            action_cost=effective_action_cost,
+            target_entity_ids=normalized_target_ids,
+            metamagic_options=metamagic_options,
+        )
+        if metamagic.get("ok") is False:
+            return metamagic
+        metamagic_summary = metamagic["metamagic"]
+        noticeability = metamagic["noticeability"]
         actor_level = self._resolve_actor_level(actor=actor)
         scaling_mode, resolved_scaling = self._resolve_scaling(
             spell_definition=spell_definition,
@@ -125,6 +139,7 @@ class SpellRequest:
             actor=origin_actor,
             spell_definition=spell_definition,
             target_point=target_point,
+            metamagic=metamagic_summary,
         )
         if target_point_error is not None:
             return target_point_error
@@ -148,6 +163,7 @@ class SpellRequest:
             actor=origin_actor,
             spell_definition=spell_definition,
             target_entity_ids=normalized_target_ids,
+            metamagic=metamagic_summary,
         )
         if single_target_error is not None:
             return single_target_error
@@ -177,6 +193,8 @@ class SpellRequest:
             "spell_origin_via_gaze_of_two_minds": bool(spell_origin.get("via_link")),
             "spell_attack_advantage": bool(sorcerer_modifiers["spell_attack_advantage"]),
             "spell_save_dc_bonus": int(sorcerer_modifiers["spell_save_dc_bonus"]),
+            "metamagic": metamagic_summary,
+            "noticeability": noticeability,
         }
 
     def _find_actor_spell_definition(self, *, actor: Any, spell_id: str) -> dict[str, Any] | None:
@@ -278,6 +296,238 @@ class SpellRequest:
         if not isinstance(innate_sorcery, dict) or not bool(innate_sorcery.get("active")):
             return {"spell_attack_advantage": False, "spell_save_dc_bonus": 0}
         return {"spell_attack_advantage": True, "spell_save_dc_bonus": 1}
+
+    def _resolve_metamagic(
+        self,
+        *,
+        encounter: Any,
+        actor: Any,
+        known_spell: dict[str, Any],
+        spell_definition: dict[str, Any],
+        action_cost: str | None,
+        target_entity_ids: list[str],
+        metamagic_options: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        default_result = {
+            "ok": True,
+            "metamagic": self._build_default_metamagic(),
+            "noticeability": self._build_default_noticeability(),
+        }
+        if not isinstance(metamagic_options, dict):
+            return default_result
+
+        selected = metamagic_options.get("selected")
+        if not isinstance(selected, list):
+            return default_result
+
+        normalized_selected = [str(item).strip().lower() for item in selected if str(item).strip()]
+        if not normalized_selected:
+            return default_result
+        if len(normalized_selected) > 1:
+            return {
+                "ok": False,
+                "error_code": "multiple_metamagic_not_supported",
+                "message": "当前一次施法只支持声明一种超魔法",
+            }
+
+        if self._resolve_spellcasting_class(known_spell=known_spell) != "sorcerer":
+            return {
+                "ok": False,
+                "error_code": "metamagic_requires_sorcerer_spell",
+                "message": "只有术士法术可以使用超魔法",
+            }
+
+        sorcerer = ensure_sorcerer_runtime(actor)
+        level = int(sorcerer.get("level", 0) or 0)
+        if level < 2:
+            return {
+                "ok": False,
+                "error_code": "subtle_spell_requires_sorcerer_level_2",
+                "message": "精妙法术需要至少 2 级术士",
+            }
+
+        sorcery_points = sorcerer.get("sorcery_points")
+        current_points = int(sorcery_points.get("current", 0) or 0) if isinstance(sorcery_points, dict) else 0
+        if current_points < 1:
+            return {
+                "ok": False,
+                "error_code": "insufficient_sorcery_points",
+                "message": "术法点不足，无法使用精妙法术",
+            }
+
+        selected_metamagic = normalized_selected[0]
+        supported_costs = {
+            "subtle_spell": 1,
+            "quickened_spell": 2,
+            "distant_spell": 1,
+            "heightened_spell": 2,
+            "careful_spell": 1,
+        }
+        if selected_metamagic not in supported_costs:
+            return {
+                "ok": False,
+                "error_code": "unknown_metamagic_option",
+                "message": f"未知超魔法选项：{selected_metamagic}",
+            }
+
+        metamagic = self._build_default_metamagic()
+        metamagic["selected"] = [selected_metamagic]
+        metamagic[selected_metamagic] = True
+        metamagic["sorcery_point_cost"] = supported_costs[selected_metamagic]
+
+        if selected_metamagic == "quickened_spell" and action_cost != "action":
+            return {
+                "ok": False,
+                "error_code": "quickened_spell_requires_action_cast_time",
+                "message": "瞬发法术只能作用于施法时间为动作的法术",
+            }
+
+        if selected_metamagic == "distant_spell":
+            if not self._spell_can_use_distant_spell(spell_definition=spell_definition):
+                return {
+                    "ok": False,
+                    "error_code": "distant_spell_requires_range_or_touch_spell",
+                    "message": "远程法术只能用于具有射程或触碰距离的法术",
+                }
+            metamagic["effective_range_override_feet"] = self._resolve_distant_spell_range_override_feet(
+                spell_definition=spell_definition
+            )
+
+        if selected_metamagic == "heightened_spell":
+            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
+                return {
+                    "ok": False,
+                    "error_code": "heightened_spell_requires_saving_throw_spell",
+                    "message": "升阶法术只能用于要求目标进行豁免的法术",
+                }
+            heightened_target_id = metamagic_options.get("heightened_target_id")
+            if not isinstance(heightened_target_id, str) or not heightened_target_id.strip():
+                return {
+                    "ok": False,
+                    "error_code": "heightened_spell_requires_target",
+                    "message": "升阶法术需要指定一个吃劣势的目标",
+                }
+            if heightened_target_id not in target_entity_ids:
+                return {
+                    "ok": False,
+                    "error_code": "heightened_target_not_in_spell_targets",
+                    "message": "升阶法术指定的目标必须属于本次法术目标",
+                }
+            metamagic["heightened_target_id"] = heightened_target_id
+
+        if selected_metamagic == "careful_spell":
+            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
+                return {
+                    "ok": False,
+                    "error_code": "careful_spell_requires_saving_throw_spell",
+                    "message": "谨慎法术只能用于要求目标进行豁免的法术",
+                }
+            careful_target_ids = metamagic_options.get("careful_target_ids")
+            if not isinstance(careful_target_ids, list) or not careful_target_ids:
+                return {
+                    "ok": False,
+                    "error_code": "careful_spell_requires_targets",
+                    "message": "谨慎法术需要提供被保护目标列表",
+                }
+            normalized_careful_target_ids = [str(item).strip() for item in careful_target_ids if str(item).strip()]
+            max_protected_targets = max(1, int(actor.ability_mods.get("cha", 0) or 0))
+            if len(normalized_careful_target_ids) > max_protected_targets:
+                return {
+                    "ok": False,
+                    "error_code": "careful_spell_too_many_targets",
+                    "message": "谨慎法术指定的被保护目标数量超过了魅力调整值上限",
+                }
+            for entity_id in normalized_careful_target_ids:
+                if entity_id not in encounter.entities:
+                    return {
+                        "ok": False,
+                        "error_code": "careful_target_not_in_spell_targets",
+                        "message": "谨慎法术指定的目标必须存在于当前遭遇战中",
+                    }
+            metamagic["careful_target_ids"] = normalized_careful_target_ids
+
+        noticeability = self._build_default_noticeability()
+        if selected_metamagic == "subtle_spell":
+            noticeability = {
+                "casting_is_perceptible": False,
+                "verbal_visible": False,
+                "somatic_visible": False,
+                "material_visible": False,
+                "spell_effect_visible": True,
+            }
+
+        return {
+            "ok": True,
+            "metamagic": metamagic,
+            "noticeability": noticeability,
+        }
+
+    def _build_default_metamagic(self) -> dict[str, Any]:
+        return {
+            "selected": [],
+            "subtle_spell": False,
+            "quickened_spell": False,
+            "distant_spell": False,
+            "heightened_spell": False,
+            "careful_spell": False,
+            "sorcery_point_cost": 0,
+            "heightened_target_id": None,
+            "careful_target_ids": [],
+            "effective_range_override_feet": None,
+        }
+
+    def _build_default_noticeability(self) -> dict[str, Any]:
+        return {
+            "casting_is_perceptible": True,
+            "verbal_visible": True,
+            "somatic_visible": True,
+            "material_visible": True,
+            "spell_effect_visible": True,
+        }
+
+    def _spell_can_use_distant_spell(self, *, spell_definition: dict[str, Any]) -> bool:
+        targeting = spell_definition.get("targeting")
+        if isinstance(targeting, dict):
+            range_kind = targeting.get("range_kind")
+            if isinstance(range_kind, str) and range_kind.strip().lower() == "touch":
+                return True
+            range_feet = targeting.get("range_feet")
+            if isinstance(range_feet, int) and range_feet >= 5:
+                return True
+        base = spell_definition.get("base")
+        if isinstance(base, dict):
+            spell_range = base.get("range")
+            if isinstance(spell_range, str) and spell_range.strip().lower() == "touch":
+                return True
+        return False
+
+    def _resolve_distant_spell_range_override_feet(self, *, spell_definition: dict[str, Any]) -> int | None:
+        targeting = spell_definition.get("targeting")
+        if isinstance(targeting, dict):
+            range_kind = targeting.get("range_kind")
+            if isinstance(range_kind, str) and range_kind.strip().lower() == "touch":
+                return 30
+            range_feet = targeting.get("range_feet")
+            if isinstance(range_feet, int) and range_feet >= 5:
+                return range_feet * 2
+        base = spell_definition.get("base")
+        if isinstance(base, dict):
+            spell_range = base.get("range")
+            if isinstance(spell_range, str) and spell_range.strip().lower() == "touch":
+                return 30
+        return None
+
+    def _spell_requires_saving_throw(self, *, spell_definition: dict[str, Any]) -> bool:
+        save_ability = spell_definition.get("save_ability")
+        if isinstance(save_ability, str) and save_ability.strip():
+            return True
+        resolution = spell_definition.get("resolution")
+        if isinstance(resolution, dict):
+            resolution_save_ability = resolution.get("save_ability")
+            if isinstance(resolution_save_ability, str) and resolution_save_ability.strip():
+                return True
+            return resolution.get("mode") == "save"
+        return False
 
     def _resolve_action_cost(self, *, spell_definition: dict[str, Any]) -> str | None:
         resolution = spell_definition.get("resolution")
@@ -554,6 +804,7 @@ class SpellRequest:
         actor: Any,
         spell_definition: dict[str, Any],
         target_entity_ids: list[str],
+        metamagic: dict[str, Any],
     ) -> dict[str, Any] | None:
         if len(target_entity_ids) != 1:
             return None
@@ -568,7 +819,9 @@ class SpellRequest:
         if target is None:
             return None
 
-        range_feet = targeting.get("range_feet")
+        range_feet = metamagic.get("effective_range_override_feet")
+        if not isinstance(range_feet, int):
+            range_feet = targeting.get("range_feet")
         if isinstance(range_feet, int) and range_feet > 0:
             distance_feet = self._distance_feet(actor, target, encounter)
             if distance_feet > range_feet:
@@ -598,6 +851,7 @@ class SpellRequest:
         actor: Any,
         spell_definition: dict[str, Any],
         target_point: dict[str, Any] | None,
+        metamagic: dict[str, Any],
     ) -> dict[str, Any] | None:
         area_template = spell_definition.get("area_template")
         targeting = spell_definition.get("targeting")
@@ -634,6 +888,7 @@ class SpellRequest:
             target_point=normalized_target_point,
             targeting=targeting,
             encounter=encounter,
+            metamagic=metamagic,
         ):
             return {
                 "ok": False,
@@ -672,10 +927,13 @@ class SpellRequest:
         target_point: dict[str, Any],
         targeting: Any,
         encounter: Any,
+        metamagic: dict[str, Any],
     ) -> bool:
         if not isinstance(targeting, dict):
             return True
-        range_feet = targeting.get("range_feet")
+        range_feet = metamagic.get("effective_range_override_feet")
+        if not isinstance(range_feet, int):
+            range_feet = targeting.get("range_feet")
         if not isinstance(range_feet, int) or range_feet <= 0:
             return True
         actor_center = get_center_position(actor)

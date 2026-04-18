@@ -533,6 +533,72 @@ def write_ray_of_dread_attack_spell_definition(spell_repo_path: Path) -> None:
 
 
 class ExecuteSpellTests(unittest.TestCase):
+    def test_execute_rejects_second_slot_spending_spell_in_same_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            spell_repo_path.write_text(
+                json.dumps(
+                    {
+                        "spell_definitions": {
+                            "fireball": {
+                                "id": "fireball",
+                                "name": "Fireball",
+                                "level": 3,
+                                "base": {"level": 3, "casting_time": "1 action", "concentration": False},
+                                "resolution": {"mode": "save", "save_ability": "dex", "activation": "action"},
+                                "targeting": {
+                                    "type": "area_sphere",
+                                    "range_feet": 150,
+                                    "shape": "sphere",
+                                    "radius_feet": 20,
+                                    "allowed_target_types": ["creature"],
+                                },
+                                "failed_save_outcome": {
+                                    "damage_parts": [
+                                        {"source": "spell:fireball:failed:part_0", "formula": "8d6", "damage_type": "fire"}
+                                    ],
+                                    "conditions": [],
+                                    "note": None,
+                                },
+                                "successful_save_outcome": {
+                                    "damage_parts_mode": "same_as_failed",
+                                    "damage_multiplier": 0.5,
+                                    "conditions": [],
+                                    "note": None,
+                                },
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            encounter = build_encounter()
+            encounter.entities["ent_caster_001"].action_economy["spell_slot_cast_used_this_turn"] = True
+            encounter_repo.save(encounter)
+
+            with self.assertRaisesRegex(ValueError, "spell_slot_cast_already_used_this_turn"):
+                ExecuteSpell(
+                    encounter_repository=encounter_repo,
+                    append_event=AppendEvent(event_repo),
+                    spell_request=SpellRequest(encounter_repo, SpellDefinitionRepository(spell_repo_path)),
+                ).execute(
+                    encounter_id="enc_execute_spell_test",
+                    actor_id="ent_caster_001",
+                    spell_id="fireball",
+                    cast_level=3,
+                    target_point={"x": 2, "y": 1, "anchor": "cell_center"},
+                    declared_action_cost="action",
+                    save_rolls={"ent_target_001": {"base_roll": 8}},
+                    damage_rolls=[{"source": "spell:fireball:failed:part_0", "rolls": [6, 5, 4, 3, 2, 1, 6, 5]}],
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_healing_word_auto_rolls_upcast_and_caps_at_max_hp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -670,6 +736,65 @@ class ExecuteSpellTests(unittest.TestCase):
             updated = encounter_repo.get("enc_execute_spell_test")
             self.assertFalse(updated.entities["ent_caster_001"].action_economy["action_used"])
             self.assertFalse(updated.entities["ent_caster_001"].action_economy["bonus_action_used"])
+            self.assertTrue(updated.entities["ent_caster_001"].action_economy["reaction_used"])
+            self.assertEqual(updated.entities["ent_caster_001"].resources["spell_slots"]["1"]["remaining"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_allows_reaction_spell_even_after_spell_slot_cast_used_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            spell_repo_path.write_text(
+                json.dumps(
+                    {
+                        "spell_definitions": {
+                            "shield": {
+                                "id": "shield",
+                                "name": "Shield",
+                                "level": 1,
+                                "base": {"level": 1, "casting_time": "1 reaction", "concentration": False},
+                                "resolution": {"mode": "no_roll", "activation": "reaction"},
+                                "targeting": {"type": "self", "allowed_target_types": ["self"]},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_encounter()
+            caster = encounter.entities["ent_caster_001"]
+            caster.spells.append({"spell_id": "shield", "name": "Shield", "level": 1})
+            caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
+            caster.action_economy = {
+                "action_used": False,
+                "bonus_action_used": False,
+                "reaction_used": False,
+                "spell_slot_cast_used_this_turn": True,
+            }
+            encounter.current_entity_id = "ent_target_001"
+            encounter.turn_order = ["ent_target_001", "ent_caster_001"]
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_spell_test",
+                actor_id="ent_caster_001",
+                spell_id="shield",
+                cast_level=1,
+                declared_action_cost="reaction",
+                allow_out_of_turn_actor=True,
+            )
+
+            self.assertEqual(result["spell_resolution"]["mode"], "apply_spell_instance")
+            updated = encounter_repo.get("enc_execute_spell_test")
+            self.assertTrue(updated.entities["ent_caster_001"].action_economy["spell_slot_cast_used_this_turn"])
             self.assertTrue(updated.entities["ent_caster_001"].action_economy["reaction_used"])
             self.assertEqual(updated.entities["ent_caster_001"].resources["spell_slots"]["1"]["remaining"], 1)
             encounter_repo.close()

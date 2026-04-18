@@ -97,6 +97,33 @@ class SpellDefinitionRepositoryTests(unittest.TestCase):
         self.assertEqual(spell["targeting"]["allowed_target_types"], ["creature"])
         self.assertGreaterEqual(len(spell["scaling"]["cantrip_by_level"]), 1)
 
+    def test_get_returns_new_batch_one_spell_templates(self) -> None:
+        repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
+
+        ray_of_frost = repo.get("ray_of_frost")
+        burning_hands = repo.get("burning_hands")
+        chromatic_orb = repo.get("chromatic_orb")
+        shocking_grasp = repo.get("shocking_grasp")
+
+        self.assertIsNotNone(ray_of_frost)
+        self.assertEqual(ray_of_frost["targeting"]["range_feet"], 60)
+        self.assertEqual(ray_of_frost["on_cast"]["on_hit"]["damage_parts"][0]["formula"], "1d8")
+
+        self.assertIsNotNone(burning_hands)
+        self.assertEqual(burning_hands["resolution"]["mode"], "save")
+        self.assertEqual(burning_hands["area_template"]["shape"], "cone")
+
+        self.assertIsNotNone(chromatic_orb)
+        self.assertTrue(chromatic_orb["requires_attack_roll"])
+        self.assertEqual(
+            chromatic_orb["scaling"]["slot_level_bonus"]["additional_damage_parts"][0]["formula_per_extra_level"],
+            "1d8",
+        )
+
+        self.assertIsNotNone(shocking_grasp)
+        self.assertEqual(shocking_grasp["targeting"]["range_kind"], "touch")
+        self.assertEqual(shocking_grasp["resolution"]["attack_kind"], "melee_spell")
+
     def test_hex_template_describes_retarget_rule_even_if_not_implemented(self) -> None:
         repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
 

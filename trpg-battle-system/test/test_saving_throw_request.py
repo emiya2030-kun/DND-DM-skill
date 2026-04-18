@@ -243,3 +243,47 @@ class SavingThrowRequestTests(unittest.TestCase):
 
             self.assertNotIn("dodge", request.context["vantage_sources"]["advantage"])
             repo.close()
+
+    def test_execute_applies_heightened_spell_disadvantage_to_selected_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_encounter())
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                metamagic={
+                    "selected": ["heightened_spell"],
+                    "heightened_spell": True,
+                    "heightened_target_id": "ent_enemy_iron_duster_001",
+                    "careful_spell": False,
+                    "careful_target_ids": [],
+                },
+            )
+
+            self.assertEqual(request.context["vantage"], "disadvantage")
+            self.assertIn("metamagic_heightened_spell", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
+    def test_execute_marks_careful_spell_target_as_auto_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_encounter())
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_save_request_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="blindness_deafness",
+                metamagic={
+                    "selected": ["careful_spell"],
+                    "careful_spell": True,
+                    "careful_target_ids": ["ent_enemy_iron_duster_001"],
+                    "heightened_spell": False,
+                    "heightened_target_id": None,
+                },
+            )
+
+            self.assertTrue(request.context["auto_success"])
+            self.assertEqual(request.context["metamagic"]["selected"], ["careful_spell"])
+            repo.close()

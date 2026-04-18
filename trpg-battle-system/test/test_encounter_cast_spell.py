@@ -296,6 +296,7 @@ class EncounterCastSpellTests(unittest.TestCase):
                 self.assertIsNotNone(first_updated)
                 first_summon_id = first_updated.spell_instances[0]["special_runtime"]["summon_entity_ids"][0]
                 first_updated.entities["ent_ally_eric_001"].action_economy["action_used"] = False
+                first_updated.entities["ent_ally_eric_001"].action_economy["spell_slot_cast_used_this_turn"] = False
                 encounter_repo.save(first_updated)
 
                 service.execute(
@@ -735,6 +736,228 @@ class EncounterCastSpellTests(unittest.TestCase):
             assert updated is not None
             self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["1"]["remaining"], 2)
             self.assertIsNone(result["slot_consumed"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_subtle_spell_consumes_sorcery_points_and_records_noticeability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 3,
+                "sorcery_points": {"max": 3, "current": 2},
+            }
+            for spell in caster.spells:
+                if spell.get("spell_id") == "fire_bolt":
+                    spell["casting_class"] = "sorcerer"
+                    break
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="fire_bolt",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=0,
+                metamagic_options={"selected": ["subtle_spell"]},
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            assert updated is not None
+            event = event_repo.list_by_encounter("enc_cast_spell_test")[0]
+            self.assertEqual(updated.entities["ent_ally_eric_001"].class_features["sorcerer"]["sorcery_points"]["current"], 1)
+            self.assertEqual(result["metamagic"]["selected"], ["subtle_spell"])
+            self.assertTrue(result["metamagic"]["subtle_spell"])
+            self.assertFalse(result["metamagic"]["quickened_spell"])
+            self.assertEqual(result["metamagic"]["sorcery_point_cost"], 1)
+            self.assertFalse(result["noticeability"]["casting_is_perceptible"])
+            self.assertEqual(result["metamagic"], event.payload["metamagic"])
+            self.assertEqual(result["noticeability"], event.payload["noticeability"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_subtle_spell_restores_sorcery_points_when_append_event_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 3,
+                "sorcery_points": {"max": 3, "current": 2},
+            }
+            for spell in caster.spells:
+                if spell.get("spell_id") == "fire_bolt":
+                    spell["casting_class"] = "sorcerer"
+                    break
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with patch.object(service.append_event, "execute", side_effect=RuntimeError("append_failed")):
+                with self.assertRaisesRegex(RuntimeError, "append_failed"):
+                    service.execute(
+                        encounter_id="enc_cast_spell_test",
+                        spell_id="fire_bolt",
+                        target_ids=["ent_enemy_iron_duster_001"],
+                        cast_level=0,
+                        metamagic_options={"selected": ["subtle_spell"]},
+                    )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            assert updated is not None
+            self.assertEqual(updated.entities["ent_ally_eric_001"].class_features["sorcerer"]["sorcery_points"]["current"], 2)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_quickened_spell_consumes_two_sorcery_points_and_uses_bonus_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+            }
+            caster.spells.append(
+                {
+                    "spell_id": "chromatic_orb",
+                    "name": "Chromatic Orb",
+                    "level": 1,
+                    "casting_class": "sorcerer",
+                }
+            )
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="chromatic_orb",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=1,
+                metamagic_options={"selected": ["quickened_spell"]},
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            assert updated is not None
+            event = event_repo.list_by_encounter("enc_cast_spell_test")[0]
+            self.assertEqual(result["action_cost"], "bonus_action")
+            self.assertTrue(updated.entities["ent_ally_eric_001"].action_economy["bonus_action_used"])
+            self.assertTrue(updated.entities["ent_ally_eric_001"].action_economy["spell_slot_cast_used_this_turn"])
+            self.assertEqual(updated.entities["ent_ally_eric_001"].class_features["sorcerer"]["sorcery_points"]["current"], 3)
+            self.assertEqual(result["metamagic"]["selected"], ["quickened_spell"])
+            self.assertEqual(result["metamagic"]["sorcery_point_cost"], 2)
+            self.assertEqual(result["metamagic"], event.payload["metamagic"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_quickened_spell_rejects_when_spell_slot_cast_already_used_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+            }
+            caster.action_economy["spell_slot_cast_used_this_turn"] = True
+            caster.spells.append(
+                {
+                    "spell_id": "chromatic_orb",
+                    "name": "Chromatic Orb",
+                    "level": 1,
+                    "casting_class": "sorcerer",
+                }
+            )
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with self.assertRaisesRegex(ValueError, "spell_slot_cast_already_used_this_turn"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="chromatic_orb",
+                    target_ids=["ent_enemy_iron_duster_001"],
+                    cast_level=1,
+                    metamagic_options={"selected": ["quickened_spell"]},
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_rejects_second_slot_spending_spell_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.action_economy["spell_slot_cast_used_this_turn"] = True
+            caster.spells.append(
+                {
+                    "spell_id": "chromatic_orb",
+                    "name": "Chromatic Orb",
+                    "level": 1,
+                    "casting_class": "sorcerer",
+                }
+            )
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with self.assertRaisesRegex(ValueError, "spell_slot_cast_already_used_this_turn"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="chromatic_orb",
+                    target_ids=["ent_enemy_iron_duster_001"],
+                    cast_level=1,
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_allows_cantrip_after_spell_slot_cast_used_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].action_economy["spell_slot_cast_used_this_turn"] = True
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="fire_bolt",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=0,
+            )
+
+            self.assertEqual(result["spell_id"], "fire_bolt")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_free_cast_does_not_mark_spell_slot_cast_used_this_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["paladin"] = {"level": 5}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="find_steed",
+                cast_level=2,
+                target_point={"x": 5, "y": 5, "anchor": "cell_center"},
+                reason="Summon steed",
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertIsNone(result["slot_consumed"])
+            self.assertIsNot(updated.entities["ent_ally_eric_001"].action_economy.get("spell_slot_cast_used_this_turn"), True)
             encounter_repo.close()
             event_repo.close()
 

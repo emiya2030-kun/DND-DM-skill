@@ -129,6 +129,106 @@ LLM 使用规则：
 - 避免出现“仓库代码里已有命令，但连到的仍是旧 runtime 进程”的假联调
 - 把命令集不一致问题前置到启动阶段，而不是拖到战斗操作时才暴露
 
+### 2026-04-18 补充：Metamagic Batch 1 / 超魔法第一批
+
+已完成：
+
+- `SpellRequest.execute(...)` 新增 `metamagic_options`
+- `EncounterCastSpell.execute(...)` 新增 `metamagic_options`
+- `ExecuteSaveSpell.execute(...)` 新增 `metamagic_options`
+- `spell_declared` 事件与施法返回结果新增：
+  - `metamagic`
+  - `noticeability`
+- `SavingThrowRequest` 会读取超魔上下文
+- `SavingThrowResult` 会处理 `Careful Spell / 谨慎法术` 的“成功半伤改零”
+- `Counterspell / 反制法术` 候选收集会跳过 `subtle_spell`
+
+当前规则：
+
+- 当前一次施法只支持声明一种超魔法
+- 当前支持：
+  - `subtle_spell`
+  - `quickened_spell`
+  - `distant_spell`
+  - `heightened_spell`
+  - `careful_spell`
+- 只有术士法术可以使用这些超魔法
+- 施法者至少需要 `2` 级术士
+- 后端会自动扣除对应术法点：
+  - `subtle_spell = 1`
+  - `distant_spell = 1`
+  - `careful_spell = 1`
+  - `quickened_spell = 2`
+  - `heightened_spell = 2`
+- 如果事件写入失败，后端会回滚本次扣除的术法点
+- `noticeability.casting_is_perceptible = false` 主要供 LLM 做剧情判断
+- 当前仍允许 `spell_effect_visible = true`，即法术效果本身依然可见
+- `quickened_spell` 会把原本的动作施法改为附赠动作施法
+- 已实现 2024 施法位规则：
+  - 每回合中，通过施法实际消耗法术位的次数最多为一次
+  - 这条限制只看“是否实际消耗法术位”，不看是不是附赠动作，也不看法术环阶
+  - 戏法、免费施法、物品施法等不消耗法术位的施法，不计入这条限制
+- `heightened_spell` 需要传 `heightened_target_id`
+- `careful_spell` 需要传 `careful_target_ids`
+- `heightened_spell` 会让指定目标对此次法术豁免具有劣势
+- `careful_spell` 会让受保护目标自动通过豁免；若该法术“成功豁免仍受半伤”，则该目标改为 `0` 伤害
+
+LLM 使用规则：
+
+- 普通施法仍然调用 `EncounterCastSpell`
+- 豁免法术整链调用 `ExecuteSaveSpell` 时，也可以直接透传同一份 `metamagic_options`
+- 通用格式：
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["subtle_spell"]
+  }
+}
+```
+
+- `Quickened Spell / 瞬发法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["quickened_spell"]
+  }
+}
+```
+
+- `Distant Spell / 远程法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["distant_spell"]
+  }
+}
+```
+
+- `Heightened Spell / 升阶法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["heightened_spell"],
+    "heightened_target_id": "ent_enemy_001"
+  }
+}
+```
+
+- `Careful Spell / 谨慎法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["careful_spell"],
+    "careful_target_ids": ["ent_ally_001", "ent_ally_002"]
+  }
+}
+```
+
 ### 2026-04-18 补充：玩家召唤物共享宿主回合
 
 已完成：

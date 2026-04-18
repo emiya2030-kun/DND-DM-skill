@@ -49,9 +49,13 @@ class ResolveSavingThrow:
 
         target = self._get_entity_or_raise(encounter, roll_request.actor_entity_id)
         save_ability = roll_request.context.get("save_ability")
+        save_dc = roll_request.context.get("save_dc")
+        auto_success = bool(roll_request.context.get("auto_success"))
         requested_vantage = self._normalize_vantage(roll_request.context.get("vantage", "normal"))
         if not isinstance(save_ability, str) or not save_ability.strip():
             raise ValueError("roll_request.context.save_ability must be a non-empty string")
+        if not isinstance(save_dc, int):
+            raise ValueError("roll_request.context.save_dc must be an integer")
         if not isinstance(additional_bonus, int):
             raise ValueError("additional_bonus must be an integer")
 
@@ -81,6 +85,8 @@ class ResolveSavingThrow:
         exhaustion_penalty = runtime.get_d20_penalty()
         if voluntary_fail or auto_fail:
             final_total = 0
+        elif auto_success:
+            final_total = save_dc
         else:
             final_total = chosen_roll + save_bonus - exhaustion_penalty
             final_total = self._apply_indomitable_might(
@@ -94,6 +100,7 @@ class ResolveSavingThrow:
             {
                 "voluntary_fail": voluntary_fail,
                 "auto_fail": auto_fail,
+                "auto_success": auto_success,
                 "save_ability": normalized_save_ability,
                 "save_modifier": ability_modifier + proficiency_bonus_applied,
                 "vantage": final_vantage,

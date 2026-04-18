@@ -421,6 +421,115 @@
         "note": null
       }
     },
+    "shocking_grasp": {
+      "id": "shocking_grasp",
+      "name": "Shocking Grasp",
+      "level": 0,
+      "save_ability": null,
+      "requires_attack_roll": true,
+      "localization": {
+        "name_zh": "电爪",
+        "name_en": "Shocking Grasp",
+        "rules_text_zh": "你放出闪电，击向一名你试图触碰的生物。对目标发动一次近战法术攻击。若命中，则目标受到1d8点闪电伤害，并且在其下一回合开始前不能执行借机攻击。戏法强化。到达特定等级后，此戏法的伤害将增加1d8：5级（2d8）、11级（3d8）、17级（4d8）。",
+        "rules_text_en": "Lightning springs from you to a creature that you try to touch. Make a melee spell attack against the target. On a hit, the target takes 1d8 lightning damage, and it can't make Opportunity Attacks until the start of its next turn."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师", "奇械师"],
+        "classes_en": ["Sorcerer", "Wizard", "Artificer"]
+      },
+      "base": {
+        "level": 0,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "touch",
+        "range_zh": "触碰",
+        "components": ["V", "S"],
+        "components_zh": ["V", "S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "Make a melee spell attack against a creature you try to touch. On a hit, it takes 1d8 lightning damage, and it can't make Opportunity Attacks until the start of its next turn."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 5,
+        "range_kind": "touch",
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "attack_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "action",
+        "attack_kind": "melee_spell"
+      },
+      "on_cast": {
+        "on_hit": {
+          "damage_parts": [
+            {
+              "source": "spell:shocking_grasp:on_hit:part_0",
+              "formula": "1d8",
+              "damage_type": "lightning"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": "Target can't make opportunity attacks until the start of its next turn."
+        },
+        "on_miss": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": [
+          {
+            "caster_level": 1,
+            "replace_formula": "1d8"
+          },
+          {
+            "caster_level": 5,
+            "replace_formula": "2d8"
+          },
+          {
+            "caster_level": 11,
+            "replace_formula": "3d8"
+          },
+          {
+            "caster_level": 17,
+            "replace_formula": "4d8"
+          }
+        ],
+        "slot_level_bonus": null
+      },
+      "special_rules": {
+        "prevents_opportunity_attacks_until": "start_of_target_next_turn"
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      }
+    },
     "counterspell": {
       "id": "counterspell",
       "name": "Counterspell",
@@ -509,6 +618,335 @@
         "damage_parts": [],
         "conditions": [],
         "note": "Interrupted spell continues."
+      }
+    },
+    "burning_hands": {
+      "id": "burning_hands",
+      "name": "Burning Hands",
+      "level": 1,
+      "save_ability": "dex",
+      "requires_attack_roll": false,
+      "localization": {
+        "name_zh": "燃烧之手",
+        "name_en": "Burning Hands",
+        "rules_text_zh": "你向前喷射出一片火焰。处于15尺锥状区域内的生物必须进行一次敏捷豁免。豁免失败者受到3d6火焰伤害，豁免成功者受到一半伤害。在此锥状区域内的未被着装或携带的易燃物件会开始燃烧。升环施法。你使用的法术位每比一环高一环，此法术的伤害就会提升1d6。",
+        "rules_text_en": "As you hold your hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from your outstretched fingertips. Each creature in a 15-foot cone must make a Dexterity saving throw. A creature takes 3d6 fire damage on a failed save, or half as much damage on a successful one."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师"],
+        "classes_en": ["Sorcerer", "Wizard"]
+      },
+      "base": {
+        "level": 1,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "self",
+        "range_zh": "自身",
+        "components": ["V", "S"],
+        "components_zh": ["V", "S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "Each creature in a 15-foot cone must make a Dexterity saving throw. A creature takes 3d6 fire damage on a failed save, or half as much damage on a successful one."
+      },
+      "targeting": {
+        "type": "area_cone",
+        "range_feet": 0,
+        "requires_line_of_sight": false,
+        "allowed_target_types": ["creature"]
+      },
+      "area_template": {
+        "shape": "cone",
+        "length_feet": 15,
+        "render_mode": "cone_overlay",
+        "persistence": "instant"
+      },
+      "resolution": {
+        "mode": "save",
+        "save_ability": "dex",
+        "save_dc_mode": "caster_spell_dc",
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_failed_save": {
+          "damage_parts": [
+            {
+              "source": "spell:burning_hands:failed:part_0",
+              "formula": "3d6",
+              "damage_type": "fire"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        },
+        "on_successful_save": {
+          "damage_parts_mode": "same_as_failed",
+          "damage_multiplier": 0.5,
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": {
+          "base_slot_level": 1,
+          "additional_damage_parts": [
+            {
+              "source": "spell:burning_hands:slot_scaling",
+              "formula_per_extra_level": "1d6",
+              "damage_type": "fire"
+            }
+          ]
+        }
+      },
+      "special_rules": {
+        "ignites_unattended_flammable_objects": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [
+          {
+            "source": "spell:burning_hands:failed:part_0",
+            "formula": "3d6",
+            "damage_type": "fire"
+          }
+        ],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts_mode": "same_as_failed",
+        "damage_multiplier": 0.5,
+        "conditions": [],
+        "note": null
+      }
+    },
+    "chromatic_orb": {
+      "id": "chromatic_orb",
+      "name": "Chromatic Orb",
+      "level": 1,
+      "save_ability": null,
+      "requires_attack_roll": true,
+      "localization": {
+        "name_zh": "繁彩球",
+        "name_en": "Chromatic Orb",
+        "rules_text_zh": "你向施法距离内某个目标掷出一颗能量球。从强酸、寒冷、火焰、闪电、毒素、雷鸣中选择一个伤害类型，然后对该目标发动一次远程法术攻击。命中时，该目标将受到3d8点你所选类型的伤害。升环施法。使用的法术位每高一环，法术的伤害就增加1d8。",
+        "rules_text_en": "You hurl a 4-inch-diameter sphere of energy at a creature that you can see within range. Choose acid, cold, fire, lightning, poison, or thunder for the type of orb you create, and then make a ranged spell attack against the target. On a hit, the target takes 3d8 damage of the chosen type."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师"],
+        "classes_en": ["Sorcerer", "Wizard"]
+      },
+      "base": {
+        "level": 1,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "90 feet",
+        "range_zh": "90尺",
+        "components": ["V", "S", "M"],
+        "components_zh": ["V", "S", "M（一枚价值50GP+的钻石）"],
+        "material_component_detail": "A diamond worth 50+ GP.",
+        "material_component_detail_zh": "一枚价值50GP+的钻石",
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "Make a ranged spell attack against a creature you can see within range. On a hit, it takes 3d8 damage of the chosen acid, cold, fire, lightning, poison, or thunder type."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 90,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "attack_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_hit": {
+          "damage_parts": [
+            {
+              "source": "spell:chromatic_orb:on_hit:part_0",
+              "formula": "3d8",
+              "damage_type": "chosen_on_cast"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        },
+        "on_miss": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": null,
+        "slot_level_bonus": {
+          "base_slot_level": 1,
+          "additional_damage_parts": [
+            {
+              "source": "spell:chromatic_orb:slot_scaling",
+              "formula_per_extra_level": "1d8",
+              "damage_type": "chosen_on_cast"
+            }
+          ]
+        }
+      },
+      "special_rules": {
+        "choose_damage_type_on_cast": [
+          "acid",
+          "cold",
+          "fire",
+          "lightning",
+          "poison",
+          "thunder"
+        ],
+        "potential_chain_jump": true,
+        "max_jump_count_equals_slot_level": true
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      }
+    },
+    "ray_of_frost": {
+      "id": "ray_of_frost",
+      "name": "Ray of Frost",
+      "level": 0,
+      "save_ability": null,
+      "requires_attack_roll": true,
+      "localization": {
+        "name_zh": "冷冻射线",
+        "name_en": "Ray of Frost",
+        "rules_text_zh": "一道蓝白色的冰冷光束朝施法距离内的一名生物射去。对目标进行一次远程法术攻击。命中时，目标将受到1d8点寒冷伤害，且其速度将被减少10尺，直到你的下一回合开始为止。戏法强化。到达特定等级后，此戏法的伤害将增加1d8：5级（2d8）、11级（3d8）、17级（4d8）。",
+        "rules_text_en": "A frigid beam of blue-white light streaks toward a creature within range. Make a ranged spell attack against the target. On a hit, it takes 1d8 cold damage, and its Speed is reduced by 10 feet until the start of your next turn."
+      },
+      "usage_contexts": ["combat", "exploration"],
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      },
+      "source": {
+        "system": "dnd_2024",
+        "classes_zh": ["术士", "法师", "奇械师"],
+        "classes_en": ["Sorcerer", "Wizard", "Artificer"]
+      },
+      "base": {
+        "level": 0,
+        "school": "evocation",
+        "school_zh": "塑能",
+        "casting_time": "1 action",
+        "casting_time_zh": "动作",
+        "range": "60 feet",
+        "range_zh": "60尺",
+        "components": ["V", "S"],
+        "components_zh": ["V", "S"],
+        "material_component_detail": null,
+        "material_component_detail_zh": null,
+        "duration": "instantaneous",
+        "duration_zh": "立即",
+        "concentration": false,
+        "description": "Make a ranged spell attack against a creature within range. On a hit, it takes 1d8 cold damage, and its Speed is reduced by 10 feet until the start of your next turn."
+      },
+      "targeting": {
+        "type": "single_target",
+        "range_feet": 60,
+        "requires_line_of_sight": true,
+        "allowed_target_types": ["creature"]
+      },
+      "resolution": {
+        "mode": "attack_roll",
+        "save_ability": null,
+        "save_dc_mode": null,
+        "activation": "action"
+      },
+      "on_cast": {
+        "on_hit": {
+          "damage_parts": [
+            {
+              "source": "spell:ray_of_frost:on_hit:part_0",
+              "formula": "1d8",
+              "damage_type": "cold"
+            }
+          ],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": "Target speed is reduced by 10 feet until the start of your next turn."
+        },
+        "on_miss": {
+          "damage_parts": [],
+          "apply_conditions": [],
+          "apply_turn_effects": [],
+          "note": null
+        }
+      },
+      "effect_templates": {},
+      "scaling": {
+        "cantrip_by_level": [
+          {
+            "caster_level": 1,
+            "replace_formula": "1d8"
+          },
+          {
+            "caster_level": 5,
+            "replace_formula": "2d8"
+          },
+          {
+            "caster_level": 11,
+            "replace_formula": "3d8"
+          },
+          {
+            "caster_level": 17,
+            "replace_formula": "4d8"
+          }
+        ],
+        "slot_level_bonus": null
+      },
+      "special_rules": {
+        "speed_reduction_feet": 10,
+        "speed_reduction_duration_until": "start_of_next_self_turn"
+      },
+      "failed_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
+      },
+      "successful_save_outcome": {
+        "damage_parts": [],
+        "conditions": [],
+        "note": null
       }
     },
     "hex": {
