@@ -122,6 +122,37 @@ def build_mark_caster() -> EncounterEntity:
     )
 
 
+def build_paladin_source() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_paladin_001",
+        name="Paladin",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 1, "y": 2},
+        hp={"current": 24, "max": 24, "temp": 0},
+        ac=18,
+        speed={"walk": 30, "remaining": 30},
+        initiative=14,
+        combat_flags={"is_active": True, "is_defeated": False},
+    )
+
+
+def build_enemy_attacker() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_enemy_orc_001",
+        name="Orc",
+        side="enemy",
+        category="monster",
+        controller="gm",
+        position={"x": 4, "y": 2},
+        hp={"current": 15, "max": 15, "temp": 0},
+        ac=13,
+        speed={"walk": 30, "remaining": 30},
+        initiative=12,
+    )
+
+
 def build_encounter() -> Encounter:
     """构造 HP 更新测试用 encounter。"""
     target = build_target()
@@ -188,6 +219,64 @@ def build_mark_spell_instance(*, spell_id: str, caster_entity_id: str, target_id
 
 
 class UpdateHpTests(unittest.TestCase):
+    def test_execute_damage_removes_abjure_foes_effect_and_condition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            paladin = build_paladin_source()
+            attacker = build_enemy_attacker()
+            target = build_target()
+            target.conditions = [f"frightened:{paladin.entity_id}"]
+            target.turn_effects = [
+                {
+                    "effect_id": f"abjure_foes:{paladin.entity_id}:{target.entity_id}",
+                    "effect_type": "abjure_foes_restriction",
+                    "source_entity_id": paladin.entity_id,
+                    "source_ref": "paladin:abjure_foes",
+                    "ends_on_damage": True,
+                    "duration_rounds": 10,
+                }
+            ]
+            encounter = Encounter(
+                encounter_id="enc_hp_test",
+                name="HP Test Encounter",
+                status="active",
+                round=1,
+                current_entity_id=attacker.entity_id,
+                turn_order=[attacker.entity_id, target.entity_id, paladin.entity_id],
+                entities={
+                    attacker.entity_id: attacker,
+                    target.entity_id: target,
+                    paladin.entity_id: paladin,
+                },
+                map=EncounterMap(
+                    map_id="map_hp_test",
+                    name="HP Test Map",
+                    description="A small combat room.",
+                    width=8,
+                    height=8,
+                ),
+            )
+            encounter_repo.save(encounter)
+
+            result = UpdateHp(encounter_repo, AppendEvent(event_repo)).execute(
+                encounter_id="enc_hp_test",
+                target_id=target.entity_id,
+                hp_change=4,
+                reason="test_hit",
+                damage_type="slashing",
+                source_entity_id=attacker.entity_id,
+            )
+
+            updated = encounter_repo.get("enc_hp_test")
+            assert updated is not None
+            updated_target = updated.entities[target.entity_id]
+            self.assertNotIn(f"frightened:{paladin.entity_id}", updated_target.conditions)
+            self.assertEqual(updated_target.turn_effects, [])
+            self.assertEqual(result["class_feature_resolution"]["abjure_foes"]["removed_effects"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_relentless_rage_success_sets_hp_to_double_barbarian_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

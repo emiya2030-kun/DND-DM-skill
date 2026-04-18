@@ -139,6 +139,25 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     radius_feet = aura_of_protection.get("radius_feet")
     aura_of_protection["radius_feet"] = radius_feet if isinstance(radius_feet, int) else 10
 
+    channel_divinity = paladin.setdefault("channel_divinity", {})
+    explicit_channel_divinity_enabled = channel_divinity.get("enabled")
+    channel_divinity["enabled"] = (
+        explicit_channel_divinity_enabled if isinstance(explicit_channel_divinity_enabled, bool) else level >= 3
+    )
+    channel_divinity["max_uses"] = 3 if level >= 11 else 2 if level >= 3 else 0
+    remaining_uses = channel_divinity.get("remaining_uses")
+    channel_divinity["remaining_uses"] = (
+        remaining_uses if isinstance(remaining_uses, int) else channel_divinity["max_uses"]
+    )
+
+    aura_of_courage = paladin.setdefault("aura_of_courage", {})
+    explicit_aura_of_courage_enabled = aura_of_courage.get("enabled")
+    aura_of_courage["enabled"] = (
+        explicit_aura_of_courage_enabled if isinstance(explicit_aura_of_courage_enabled, bool) else level >= 10
+    )
+    aura_of_courage_radius = aura_of_courage.get("radius_feet")
+    aura_of_courage["radius_feet"] = aura_of_courage_radius if isinstance(aura_of_courage_radius, int) else 10
+
     radiant_strikes = paladin.setdefault("radiant_strikes", {})
     explicit_radiant_strikes_enabled = radiant_strikes.get("enabled")
     radiant_strikes["enabled"] = (

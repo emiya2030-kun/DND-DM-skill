@@ -3,10 +3,12 @@ from __future__ import annotations
 from importlib import import_module
 
 __all__ = [
+    "UseAbjureFoes",
     "UseLayOnHands",
 ]
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "UseAbjureFoes": ("tools.services.class_features.paladin.use_abjure_foes", "UseAbjureFoes"),
     "UseLayOnHands": ("tools.services.class_features.paladin.use_lay_on_hands", "UseLayOnHands"),
 }
 

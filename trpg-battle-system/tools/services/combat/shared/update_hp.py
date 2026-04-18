@@ -79,6 +79,9 @@ class UpdateHp:
             if relentless_rage is not None:
                 class_feature_resolution["relentless_rage"] = relentless_rage
                 result["hp_after"] = target.hp["current"]
+            abjure_foes_cleanup = self._clear_abjure_foes_on_damage(target)
+            if abjure_foes_cleanup is not None:
+                class_feature_resolution["abjure_foes"] = abjure_foes_cleanup
             event_type = "damage_applied"
         elif hp_change < 0:
             if bool(target.combat_flags.get("is_dead")):
@@ -188,6 +191,42 @@ class UpdateHp:
 
             response["encounter_state"] = GetEncounterState(self.encounter_repository).execute(encounter_id)
         return response
+
+    def _clear_abjure_foes_on_damage(self, target: EncounterEntity) -> dict[str, Any] | None:
+        turn_effects = target.turn_effects if isinstance(target.turn_effects, list) else []
+        remaining_effects: list[Any] = []
+        removed_source_ids: set[str] = set()
+        removed_effects = 0
+        for effect in turn_effects:
+            if (
+                isinstance(effect, dict)
+                and effect.get("effect_type") == "abjure_foes_restriction"
+                and bool(effect.get("ends_on_damage"))
+            ):
+                source_entity_id = effect.get("source_entity_id")
+                if isinstance(source_entity_id, str) and source_entity_id.strip():
+                    removed_source_ids.add(source_entity_id)
+                removed_effects += 1
+                continue
+            remaining_effects.append(effect)
+
+        if removed_effects == 0:
+            return None
+
+        target.turn_effects = remaining_effects
+        if isinstance(target.conditions, list) and removed_source_ids:
+            target.conditions = [
+                condition
+                for condition in target.conditions
+                if not (
+                    isinstance(condition, str)
+                    and any(condition == f"frightened:{source_id}" for source_id in removed_source_ids)
+                )
+            ]
+        return {
+            "removed_effects": removed_effects,
+            "removed_sources": sorted(removed_source_ids),
+        }
 
     def _maybe_apply_relentless_rage(
         self,

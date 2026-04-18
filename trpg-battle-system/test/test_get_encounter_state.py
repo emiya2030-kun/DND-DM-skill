@@ -381,6 +381,90 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_paladin_channel_divinity_defaults_at_level_three(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 3,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertTrue(paladin["channel_divinity"]["enabled"])
+            self.assertEqual(paladin["channel_divinity"]["max_uses"], 2)
+            self.assertEqual(paladin["channel_divinity"]["remaining_uses"], 2)
+            self.assertIn("channel_divinity", paladin["available_features"])
+
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_paladin_channel_divinity_defaults_at_level_eleven(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 11,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertEqual(paladin["channel_divinity"]["max_uses"], 3)
+            self.assertEqual(paladin["channel_divinity"]["remaining_uses"], 3)
+
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_paladin_channel_divinity_preserves_explicit_remaining_uses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 9,
+                "channel_divinity": {"remaining_uses": 1},
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertEqual(paladin["channel_divinity"]["max_uses"], 2)
+            self.assertEqual(paladin["channel_divinity"]["remaining_uses"], 1)
+
+            repo.close()
+            event_repo.close()
+
+    def test_execute_projects_paladin_aura_of_courage_summary_from_level_ten(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 10,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertTrue(paladin["aura_of_courage"]["enabled"])
+            self.assertEqual(paladin["aura_of_courage"]["radius_feet"], 10)
+            self.assertIn("aura_of_courage", paladin["available_features"])
+
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_barbarian_high_level_feature_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
