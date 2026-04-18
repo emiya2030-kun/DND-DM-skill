@@ -9,6 +9,8 @@ from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.rules.concentration.request_concentration_check import RequestConcentrationCheck
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
+from tools.services.class_features.shared import ensure_ranger_runtime
+from tools.services.class_features.shared.warlock_invocations import has_selected_warlock_invocation
 from tools.services.class_features.shared.proficiency_resolver import resolve_entity_save_proficiencies
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.end_concentration_spell_instances import end_concentration_spell_instances
@@ -636,8 +638,14 @@ class UpdateHp:
             return None
         if not bool(target.combat_flags.get("is_concentrating")):
             return None
+        if self._should_ignore_concentration_check_for_relentless_hunter(encounter_id=encounter_id, target=target):
+            return None
         if self.request_concentration_check is None:
             return None
+        concentration_vantage = self._apply_eldritch_mind_to_concentration_vantage(
+            target=target,
+            concentration_vantage=concentration_vantage,
+        )
 
         return self.request_concentration_check.execute(
             encounter_id=encounter_id,
@@ -646,6 +654,43 @@ class UpdateHp:
             vantage=concentration_vantage,
             source_entity_id=source_entity_id,
         )
+
+    def _should_ignore_concentration_check_for_relentless_hunter(
+        self,
+        *,
+        encounter_id: str,
+        target: EncounterEntity,
+    ) -> bool:
+        ranger = ensure_ranger_runtime(target)
+        relentless_hunter = ranger.get("relentless_hunter")
+        if not isinstance(relentless_hunter, dict) or not bool(relentless_hunter.get("enabled")):
+            return False
+
+        encounter = self._get_encounter_or_raise(encounter_id)
+        for spell_instance in encounter.spell_instances:
+            if not isinstance(spell_instance, dict):
+                continue
+            if spell_instance.get("caster_entity_id") != target.entity_id:
+                continue
+            if str(spell_instance.get("spell_id") or "").strip().lower() != "hunters_mark":
+                continue
+
+            concentration = spell_instance.get("concentration")
+            if isinstance(concentration, dict) and concentration.get("required") and concentration.get("active"):
+                return True
+        return False
+
+    def _apply_eldritch_mind_to_concentration_vantage(
+        self,
+        *,
+        target: EncounterEntity,
+        concentration_vantage: str,
+    ) -> str:
+        if not has_selected_warlock_invocation(target, "eldritch_mind"):
+            return concentration_vantage
+        if concentration_vantage == "disadvantage":
+            return "normal"
+        return "advantage"
 
     def _end_concentration_if_needed(
         self,

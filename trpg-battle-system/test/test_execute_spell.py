@@ -1531,3 +1531,107 @@ class ExecuteSpellTests(unittest.TestCase):
             self.assertEqual(result["spell_resolution"]["resolution_mode"], "attack")
             encounter_repo.close()
             event_repo.close()
+
+    def test_execute_eldritch_blast_adds_agonizing_blast_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_eldritch_blast_attack_spell_definition(spell_repo_path)
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_eldritch_blast_attack_encounter(actor_level=1)
+            encounter.entities["ent_eldritch_caster_001"].class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [
+                            {"invocation_id": "agonizing_blast", "spell_id": "eldritch_blast"},
+                        ]
+                    },
+                }
+            }
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_eldritch_blast_attack_test",
+                actor_id="ent_eldritch_caster_001",
+                spell_id="eldritch_blast",
+                cast_level=0,
+                target_entity_ids=["ent_eldritch_target_001"],
+                declared_action_cost="action",
+                attack_rolls={
+                    "ent_eldritch_target_001": {
+                        "final_total": 17,
+                        "dice_rolls": {"base_rolls": [13], "modifier": 4},
+                    }
+                },
+                damage_rolls={
+                    "ent_eldritch_target_001": [
+                        {"source": "spell:eldritch_blast:on_hit:part_0", "rolls": [8]},
+                        {"source": "warlock:agonizing_blast:eldritch_blast", "rolls": []},
+                    ]
+                },
+            )
+
+            updated = encounter_repo.get("enc_execute_eldritch_blast_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_eldritch_target_001"].hp["current"], 0)
+            self.assertEqual(result["spell_resolution"]["targets"][0]["damage_resolution"]["total_damage"], 12)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_eldritch_blast_pushes_target_with_repelling_blast(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_eldritch_blast_attack_spell_definition(spell_repo_path)
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_eldritch_blast_attack_encounter(actor_level=1)
+            encounter.entities["ent_eldritch_caster_001"].class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [
+                            {"invocation_id": "repelling_blast", "spell_id": "eldritch_blast"},
+                        ]
+                    },
+                }
+            }
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_eldritch_blast_attack_test",
+                actor_id="ent_eldritch_caster_001",
+                spell_id="eldritch_blast",
+                cast_level=0,
+                target_entity_ids=["ent_eldritch_target_001"],
+                declared_action_cost="action",
+                attack_rolls={
+                    "ent_eldritch_target_001": {
+                        "final_total": 17,
+                        "dice_rolls": {"base_rolls": [13], "modifier": 4},
+                    }
+                },
+                damage_rolls={"ent_eldritch_target_001": [6]},
+            )
+
+            updated = encounter_repo.get("enc_execute_eldritch_blast_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_eldritch_target_001"].position, {"x": 10, "y": 5})
+            self.assertEqual(
+                result["spell_resolution"]["targets"][0]["forced_movement"]["moved_feet"],
+                10,
+            )
+            encounter_repo.close()
+            event_repo.close()

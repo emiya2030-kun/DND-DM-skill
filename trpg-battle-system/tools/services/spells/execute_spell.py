@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared.warlock_invocations import has_selected_warlock_invocation
 from tools.services.combat.attack.attack_roll_result import AttackRollResult
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
@@ -17,6 +18,7 @@ from tools.services.combat.shared.update_conditions import UpdateConditions
 from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
+from tools.services.encounter.resolve_forced_movement import ResolveForcedMovement
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.area_geometry import (
     build_spell_area_overlay,
@@ -60,6 +62,7 @@ class ExecuteSpell:
             append_event,
             update_hp=self.update_hp,
         )
+        self.resolve_forced_movement = ResolveForcedMovement(encounter_repository, append_event)
         self.resolve_damage_parts = ResolveDamageParts()
         self.saving_throw_result = SavingThrowResult(
             encounter_repository,
@@ -386,6 +389,7 @@ class ExecuteSpell:
                         spell_definition=spell_definition,
                         resolved_scaling=request_result.get("resolved_scaling"),
                         actor_id=request_result["actor_id"],
+                        actor=prepared_attack_spell["actor"],
                         target=beam["target"],
                     )
                     expected_sources = [part["source"] for part in damage_parts]
@@ -418,6 +422,14 @@ class ExecuteSpell:
                     )
                     beam_result["damage_resolution"] = damage_resolution
                     beam_result["hp_update"] = hp_update
+                    forced_movement = self._resolve_attack_spell_on_hit_forced_movement(
+                        encounter_id=encounter_id,
+                        spell_definition=spell_definition,
+                        actor=prepared_attack_spell["actor"],
+                        target=beam["target"],
+                    )
+                    if forced_movement is not None:
+                        beam_result["forced_movement"] = forced_movement
                 target_resolutions.append(beam_result)
 
             return {
@@ -908,6 +920,7 @@ class ExecuteSpell:
         spell_definition: dict[str, Any],
         resolved_scaling: Any,
         actor_id: str,
+        actor: Any,
         target: Any,
     ) -> list[dict[str, Any]]:
         on_cast = spell_definition.get("on_cast")
@@ -942,6 +955,12 @@ class ExecuteSpell:
             )
 
         damage_parts.extend(self._build_target_effect_damage_parts(actor_id=actor_id, target=target))
+        damage_parts.extend(
+            self._build_warlock_invocation_damage_parts(
+                spell_definition=spell_definition,
+                actor=actor,
+            )
+        )
         return damage_parts
 
     def _build_target_effect_damage_parts(self, *, actor_id: str, target: Any) -> list[dict[str, Any]]:
@@ -973,6 +992,123 @@ class ExecuteSpell:
                     }
                 )
         return damage_parts
+
+    def _build_warlock_invocation_damage_parts(
+        self,
+        *,
+        spell_definition: dict[str, Any],
+        actor: Any,
+    ) -> list[dict[str, Any]]:
+        spell_id = str(spell_definition.get("id") or "").strip().lower()
+        if not spell_id:
+            return []
+        if not has_selected_warlock_invocation(actor, "agonizing_blast", spell_id=spell_id):
+            return []
+
+        ability_mods = getattr(actor, "ability_mods", {}) or {}
+        charisma_modifier = ability_mods.get("cha", 0)
+        if isinstance(charisma_modifier, bool) or not isinstance(charisma_modifier, int):
+            charisma_modifier = 0
+        return [
+            {
+                "source": f"warlock:agonizing_blast:{spell_id}",
+                "formula": str(charisma_modifier),
+                "damage_type": self._infer_primary_damage_type(spell_definition),
+            }
+        ]
+
+    def _infer_primary_damage_type(self, spell_definition: dict[str, Any]) -> str | None:
+        on_cast = spell_definition.get("on_cast")
+        if not isinstance(on_cast, dict):
+            return None
+        on_hit = on_cast.get("on_hit")
+        if not isinstance(on_hit, dict):
+            return None
+        raw_damage_parts = on_hit.get("damage_parts")
+        if not isinstance(raw_damage_parts, list) or not raw_damage_parts:
+            return None
+        first_part = raw_damage_parts[0]
+        if not isinstance(first_part, dict):
+            return None
+        damage_type = first_part.get("damage_type")
+        return damage_type if isinstance(damage_type, str) and damage_type.strip() else None
+
+    def _resolve_attack_spell_on_hit_forced_movement(
+        self,
+        *,
+        encounter_id: str,
+        spell_definition: dict[str, Any],
+        actor: Any,
+        target: Any,
+    ) -> dict[str, Any] | None:
+        spell_id = str(spell_definition.get("id") or "").strip().lower()
+        if spell_id and has_selected_warlock_invocation(actor, "repelling_blast", spell_id=spell_id):
+            forced_movement = self._resolve_linear_push(
+                encounter_id=encounter_id,
+                actor=actor,
+                target=target,
+                steps=2,
+                reason="warlock_repelling_blast",
+            )
+            if forced_movement.get("status") == "resolved":
+                return forced_movement
+        return None
+
+    def _resolve_linear_push(
+        self,
+        *,
+        encounter_id: str,
+        actor: Any,
+        target: Any,
+        steps: int,
+        reason: str,
+    ) -> dict[str, Any]:
+        if str(getattr(target, "size", "medium")).lower() not in {"tiny", "small", "medium", "large"}:
+            return {"status": "no_effect", "reason": "target_too_large"}
+
+        path = self._build_push_path(actor=actor, target=target, steps=steps)
+        forced_result = self.resolve_forced_movement.execute(
+            encounter_id=encounter_id,
+            entity_id=target.entity_id,
+            path=path,
+            reason=reason,
+            source_entity_id=actor.entity_id,
+        )
+        return {
+            "status": "resolved",
+            "target_entity_id": target.entity_id,
+            "target_name": target.name,
+            "start_position": forced_result["start_position"],
+            "final_position": forced_result["final_position"],
+            "attempted_path": forced_result["attempted_path"],
+            "resolved_path": forced_result["resolved_path"],
+            "moved_feet": forced_result["moved_feet"],
+            "blocked": forced_result["blocked"],
+            "block_reason": forced_result["block_reason"],
+            "reason": forced_result["reason"],
+        }
+
+    def _build_push_path(self, *, actor: Any, target: Any, steps: int) -> list[dict[str, int]]:
+        actor_center = get_center_position(actor)
+        target_center = get_center_position(target)
+        dx = self._normalize_axis_delta(target_center["x"] - actor_center["x"])
+        dy = self._normalize_axis_delta(target_center["y"] - actor_center["y"])
+        if dx == 0 and dy == 0:
+            dx = 1
+
+        anchor = {"x": target.position["x"], "y": target.position["y"]}
+        path: list[dict[str, int]] = []
+        for _ in range(max(0, steps)):
+            anchor = {"x": anchor["x"] + dx, "y": anchor["y"] + dy}
+            path.append(dict(anchor))
+        return path
+
+    def _normalize_axis_delta(self, value: float) -> int:
+        if value > 0:
+            return 1
+        if value < 0:
+            return -1
+        return 0
 
     def _index_damage_rolls_for_spell_target(
         self,

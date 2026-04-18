@@ -6,6 +6,10 @@ from typing import Any
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
 from tools.services.class_features.shared import get_monk_runtime, has_fighting_style, resolve_entity_proficiencies
+from tools.services.class_features.shared.warlock_invocations import (
+    get_bound_pact_weapon_damage_type_override,
+    is_bound_pact_weapon,
+)
 
 
 class WeaponProfileResolver:
@@ -55,6 +59,11 @@ class WeaponProfileResolver:
         damage_parts = self._apply_monk_weapon_martial_arts(
             actor=actor,
             weapon=resolved,
+            damage_parts=damage_parts,
+        )
+        damage_parts = self._apply_pact_weapon_damage_type_override(
+            actor=actor,
+            weapon_id=weapon_id,
             damage_parts=damage_parts,
         )
         if damage_parts:
@@ -333,6 +342,8 @@ class WeaponProfileResolver:
         explicit = runtime_weapon.get("is_proficient")
         if isinstance(explicit, bool):
             return explicit
+        if is_bound_pact_weapon(actor, str(resolved_weapon.get("weapon_id") or runtime_weapon.get("weapon_id") or "")):
+            return True
 
         category = str(resolved_weapon.get("category") or "").strip().lower()
         weapon_id = str(resolved_weapon.get("weapon_id") or runtime_weapon.get("weapon_id") or "").strip().lower()
@@ -358,6 +369,20 @@ class WeaponProfileResolver:
             runtime_weapon=runtime_weapon,
             resolved_weapon=resolved_weapon,
         )
+
+    def _apply_pact_weapon_damage_type_override(
+        self,
+        *,
+        actor: EncounterEntity,
+        weapon_id: str,
+        damage_parts: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        damage_type_override = get_bound_pact_weapon_damage_type_override(actor, weapon_id)
+        if damage_type_override is None or not damage_parts:
+            return damage_parts
+        updated_parts = [dict(part) for part in damage_parts]
+        updated_parts[0]["type"] = damage_type_override
+        return updated_parts
 
     def _matches_proficiency_selector(
         self,

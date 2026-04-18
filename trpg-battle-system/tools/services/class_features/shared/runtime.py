@@ -123,6 +123,7 @@ def get_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
 def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     paladin = ensure_class_runtime(entity_or_class_features, "paladin")
     level = int(paladin.get("level", 0) or 0)
+    default_aura_radius_feet = 30 if level >= 18 else 10
 
     lay_on_hands = paladin.setdefault("lay_on_hands", {})
     lay_on_hands["pool_max"] = level * 5 if level > 0 else int(lay_on_hands.get("pool_max", 0) or 0)
@@ -137,7 +138,7 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     explicit_aura_enabled = aura_of_protection.get("enabled")
     aura_of_protection["enabled"] = explicit_aura_enabled if isinstance(explicit_aura_enabled, bool) else level >= 6
     radius_feet = aura_of_protection.get("radius_feet")
-    aura_of_protection["radius_feet"] = radius_feet if isinstance(radius_feet, int) else 10
+    aura_of_protection["radius_feet"] = radius_feet if isinstance(radius_feet, int) else default_aura_radius_feet
 
     channel_divinity = paladin.setdefault("channel_divinity", {})
     explicit_channel_divinity_enabled = channel_divinity.get("enabled")
@@ -156,7 +157,9 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
         explicit_aura_of_courage_enabled if isinstance(explicit_aura_of_courage_enabled, bool) else level >= 10
     )
     aura_of_courage_radius = aura_of_courage.get("radius_feet")
-    aura_of_courage["radius_feet"] = aura_of_courage_radius if isinstance(aura_of_courage_radius, int) else 10
+    aura_of_courage["radius_feet"] = (
+        aura_of_courage_radius if isinstance(aura_of_courage_radius, int) else default_aura_radius_feet
+    )
 
     faithful_steed = paladin.setdefault("faithful_steed", {})
     explicit_faithful_steed_enabled = faithful_steed.get("enabled")
@@ -175,6 +178,177 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     )
 
     return paladin
+
+
+def get_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "ranger")
+    if not runtime:
+        return {}
+    return ensure_ranger_runtime(entity_or_class_features)
+
+
+def ensure_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    ranger = ensure_class_runtime(entity_or_class_features, "ranger")
+    level = int(ranger.get("level", 0) or 0)
+    wisdom_modifier = _extract_ability_modifier(entity_or_class_features, "wis")
+    minimum_wisdom_uses = max(1, wisdom_modifier)
+
+    ranger["weapon_mastery_count"] = 2
+    ranger["extra_attack_count"] = 2 if level >= 5 else 1
+
+    favored_enemy = ranger.setdefault("favored_enemy", {})
+    explicit_favored_enemy_enabled = favored_enemy.get("enabled")
+    favored_enemy["enabled"] = explicit_favored_enemy_enabled if isinstance(explicit_favored_enemy_enabled, bool) else level >= 1
+    free_cast_uses_max = favored_enemy.get("free_cast_uses_max")
+    favored_enemy["free_cast_uses_max"] = free_cast_uses_max if isinstance(free_cast_uses_max, int) else (2 if level >= 1 else 0)
+    favored_enemy.setdefault("spell_id", "hunters_mark")
+    remaining_free_cast_uses = favored_enemy.get("free_cast_uses_remaining")
+    favored_enemy["free_cast_uses_remaining"] = (
+        remaining_free_cast_uses if isinstance(remaining_free_cast_uses, int) else favored_enemy["free_cast_uses_max"]
+    )
+
+    expertise = ranger.setdefault("expertise", {})
+    skills = expertise.get("skills")
+    expertise["skills"] = list(skills) if isinstance(skills, list) else []
+
+    deft_explorer = ranger.setdefault("deft_explorer", {})
+    deft_explorer["enabled"] = level >= 2
+    languages = deft_explorer.get("languages")
+    deft_explorer["languages"] = list(languages) if isinstance(languages, list) else []
+
+    fighting_style = ranger.setdefault("fighting_style", {})
+    fighting_style["enabled"] = level >= 2
+
+    roving = ranger.setdefault("roving", {})
+    roving["enabled"] = level >= 6
+    roving["speed_bonus_feet"] = 10 if level >= 6 else 0
+
+    tireless = ranger.setdefault("tireless", {})
+    tireless["enabled"] = level >= 10
+    temp_hp_uses_max = tireless.get("temp_hp_uses_max")
+    tireless["temp_hp_uses_max"] = (
+        temp_hp_uses_max if isinstance(temp_hp_uses_max, int) else (minimum_wisdom_uses if level >= 10 else 0)
+    )
+    temp_hp_uses_remaining = tireless.get("temp_hp_uses_remaining")
+    tireless["temp_hp_uses_remaining"] = (
+        temp_hp_uses_remaining if isinstance(temp_hp_uses_remaining, int) else tireless["temp_hp_uses_max"]
+    )
+
+    relentless_hunter = ranger.setdefault("relentless_hunter", {})
+    relentless_hunter["enabled"] = level >= 13
+
+    natures_veil = ranger.setdefault("natures_veil", {})
+    natures_veil["enabled"] = level >= 14
+    uses_max = natures_veil.get("uses_max")
+    natures_veil["uses_max"] = uses_max if isinstance(uses_max, int) else (minimum_wisdom_uses if level >= 14 else 0)
+    uses_remaining = natures_veil.get("uses_remaining")
+    natures_veil["uses_remaining"] = uses_remaining if isinstance(uses_remaining, int) else natures_veil["uses_max"]
+
+    precise_hunter = ranger.setdefault("precise_hunter", {})
+    precise_hunter["enabled"] = level >= 17
+
+    feral_senses = ranger.setdefault("feral_senses", {})
+    feral_senses["enabled"] = level >= 18
+    feral_senses["blindsight_feet"] = 30 if level >= 18 else 0
+
+    foe_slayer = ranger.setdefault("foe_slayer", {})
+    foe_slayer["enabled"] = level >= 20
+    foe_slayer["hunters_mark_damage_die"] = "1d10" if level >= 20 else "1d6"
+
+    return ranger
+
+
+def get_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "warlock")
+    if not runtime:
+        return {}
+    return ensure_warlock_runtime(entity_or_class_features)
+
+
+def ensure_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    warlock = ensure_class_runtime(entity_or_class_features, "warlock")
+    level = int(warlock.get("level", 0) or 0)
+
+    warlock["invocations_known"] = _resolve_warlock_invocations_known(level)
+    warlock["cantrips_known"] = _resolve_warlock_cantrips_known(level)
+    warlock["prepared_spells_count"] = _resolve_warlock_prepared_spells_count(level)
+
+    invocations = warlock.setdefault("eldritch_invocations", {})
+    selected = invocations.get("selected")
+    invocations["selected"] = list(selected) if isinstance(selected, list) else []
+    invocations["known"] = warlock["invocations_known"]
+    selected_invocation_ids = {
+        str(entry.get("invocation_id") or entry.get("id") or "").strip().lower()
+        for entry in invocations["selected"]
+        if isinstance(entry, dict)
+    }
+
+    pact_of_the_blade = warlock.setdefault("pact_of_the_blade", {})
+    explicit_pact_enabled = pact_of_the_blade.get("enabled")
+    pact_of_the_blade["enabled"] = (
+        explicit_pact_enabled if isinstance(explicit_pact_enabled, bool) else "pact_of_the_blade" in selected_invocation_ids
+    )
+    bound_weapon_id = pact_of_the_blade.get("bound_weapon_id")
+    pact_of_the_blade["bound_weapon_id"] = bound_weapon_id if isinstance(bound_weapon_id, str) else None
+    bound_weapon_name = pact_of_the_blade.get("bound_weapon_name")
+    pact_of_the_blade["bound_weapon_name"] = bound_weapon_name if isinstance(bound_weapon_name, str) else None
+    damage_type_override = pact_of_the_blade.get("damage_type_override")
+    pact_of_the_blade["damage_type_override"] = (
+        damage_type_override if isinstance(damage_type_override, str) and damage_type_override.strip() else None
+    )
+
+    turn_counters = warlock.get("turn_counters")
+    warlock["turn_counters"] = dict(turn_counters) if isinstance(turn_counters, dict) else {}
+    attack_action_attacks_used = warlock["turn_counters"].get("attack_action_attacks_used")
+    warlock["turn_counters"]["attack_action_attacks_used"] = (
+        attack_action_attacks_used if isinstance(attack_action_attacks_used, int) and attack_action_attacks_used >= 0 else 0
+    )
+
+    lifedrinker = warlock.setdefault("lifedrinker", {})
+    explicit_lifedrinker_enabled = lifedrinker.get("enabled")
+    lifedrinker["enabled"] = (
+        explicit_lifedrinker_enabled
+        if isinstance(explicit_lifedrinker_enabled, bool)
+        else level >= 9 and "lifedrinker" in selected_invocation_ids
+    )
+    used_this_turn = lifedrinker.get("used_this_turn")
+    lifedrinker["used_this_turn"] = used_this_turn if isinstance(used_this_turn, bool) else False
+
+    magical_cunning = warlock.setdefault("magical_cunning", {})
+    explicit_magical_cunning_enabled = magical_cunning.get("enabled")
+    magical_cunning["enabled"] = (
+        explicit_magical_cunning_enabled if isinstance(explicit_magical_cunning_enabled, bool) else level >= 2
+    )
+    available = magical_cunning.get("available")
+    magical_cunning["available"] = available if isinstance(available, bool) else level >= 2
+
+    contact_patron = warlock.setdefault("contact_patron", {})
+    explicit_contact_patron_enabled = contact_patron.get("enabled")
+    contact_patron["enabled"] = (
+        explicit_contact_patron_enabled if isinstance(explicit_contact_patron_enabled, bool) else level >= 9
+    )
+    free_cast_available = contact_patron.get("free_cast_available")
+    contact_patron["free_cast_available"] = (
+        free_cast_available if isinstance(free_cast_available, bool) else level >= 9
+    )
+    contact_patron["spell_id"] = "contact_other_plane"
+    contact_patron["auto_succeeds_save"] = True
+
+    mystic_arcanum = warlock.setdefault("mystic_arcanum", {})
+    for spell_level, required_level in ((6, 11), (7, 13), (8, 15), (9, 17)):
+        bucket = mystic_arcanum.setdefault(str(spell_level), {})
+        bucket["enabled"] = level >= required_level
+        bucket["max_uses"] = 1 if level >= required_level else 0
+        remaining_uses = bucket.get("remaining_uses")
+        bucket["remaining_uses"] = remaining_uses if isinstance(remaining_uses, int) else bucket["max_uses"]
+
+    eldritch_master = warlock.setdefault("eldritch_master", {})
+    explicit_eldritch_master_enabled = eldritch_master.get("enabled")
+    eldritch_master["enabled"] = (
+        explicit_eldritch_master_enabled if isinstance(explicit_eldritch_master_enabled, bool) else level >= 20
+    )
+
+    return warlock
 
 
 def _read_class_features(entity_or_class_features: Any) -> dict[str, Any]:
@@ -206,6 +380,19 @@ def _ensure_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     return entity_or_class_features.class_features
 
 
+def _extract_ability_modifier(entity_or_class_features: Any, ability: str) -> int:
+    if isinstance(entity_or_class_features, dict):
+        ability_mods = entity_or_class_features.get("ability_mods")
+    else:
+        ability_mods = getattr(entity_or_class_features, "ability_mods", None)
+    if not isinstance(ability_mods, dict):
+        return 0
+    value = ability_mods.get(ability)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return 0
+
+
 def _resolve_monk_martial_arts_die(level: int) -> str:
     if level >= 17:
         return "1d12"
@@ -232,3 +419,65 @@ def _resolve_monk_unarmored_movement_bonus(level: int) -> int:
     if level >= 2:
         return 10
     return 0
+
+
+def _resolve_warlock_invocations_known(level: int) -> int:
+    if level >= 18:
+        return 10
+    if level >= 15:
+        return 9
+    if level >= 12:
+        return 8
+    if level >= 9:
+        return 7
+    if level >= 7:
+        return 6
+    if level >= 5:
+        return 5
+    if level >= 2:
+        return 3
+    return 1 if level >= 1 else 0
+
+
+def _resolve_warlock_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 4
+    if level >= 4:
+        return 3
+    return 2 if level >= 1 else 0
+
+
+def _resolve_warlock_prepared_spells_count(level: int) -> int:
+    if level >= 19:
+        return 15
+    if level >= 17:
+        return 14
+    if level >= 16:
+        return 13
+    if level >= 15:
+        return 13
+    if level >= 14:
+        return 12
+    if level >= 13:
+        return 12
+    if level >= 11:
+        return 11
+    if level >= 10:
+        return 10
+    if level >= 9:
+        return 10
+    if level >= 8:
+        return 9
+    if level >= 7:
+        return 8
+    if level >= 6:
+        return 7
+    if level >= 5:
+        return 6
+    if level >= 4:
+        return 5
+    if level >= 3:
+        return 4
+    if level >= 2:
+        return 3
+    return 2 if level >= 1 else 0

@@ -32,14 +32,20 @@ from tools.services.combat.shared.turn_actor_guard import (
 )
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
+    ensure_warlock_runtime,
     ensure_rogue_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
     get_monk_runtime,
+    get_ranger_runtime,
     has_fighting_style,
     has_unconsumed_studied_attack_mark,
     normalize_class_feature_options,
     resolve_extra_attack_count,
+)
+from tools.services.class_features.shared.warlock_invocations import (
+    resolve_pact_weapon_attack_count,
+    uses_charisma_for_pact_weapon,
 )
 
 class AttackRollRequest:
@@ -140,7 +146,7 @@ class AttackRollRequest:
         elif normalized_attack_mode in {"martial_arts_bonus", "flurry_of_blows"}:
             self._ensure_bonus_action_available(actor)
         elif require_action_available:
-            self._ensure_action_available(actor)
+            self._ensure_action_available(actor, weapon)
         self._ensure_two_handed_hands_available(actor, weapon, normalized_grip_mode)
         self._ensure_actor_can_attack(actor_runtime)
         self._ensure_actor_not_charmed(actor_runtime, target.entity_id)
@@ -259,6 +265,11 @@ class AttackRollRequest:
                 "class_feature_options": request_class_feature_options,
                 "next_attack_advantage_turn_effect_ids": next_attack_advantage_turn_effect_ids,
                 "consumed_help_attack_effect_id": consumed_help_attack_effect_id,
+                "max_attack_count": self._resolve_attack_action_max_attacks(actor, weapon),
+                "pact_of_the_blade_uses_charisma": uses_charisma_for_pact_weapon(
+                    actor,
+                    str(weapon.get("weapon_id") or ""),
+                ),
             },
         )
 
@@ -296,6 +307,9 @@ class AttackRollRequest:
             return "dex"
         if self.weapon_profile_resolver.is_monk_weapon(actor, weapon):
             return self.weapon_profile_resolver.resolve_monk_weapon_modifier_name(actor)
+        weapon_id = str(weapon.get("weapon_id") or "").strip()
+        if weapon_id and uses_charisma_for_pact_weapon(actor, weapon_id):
+            return "cha"
 
         properties = {str(prop).lower() for prop in weapon.get("properties", [])}
         normal_range = weapon.get("range", {}).get("normal", 0)
@@ -334,28 +348,30 @@ class AttackRollRequest:
         dy = abs(source_center["y"] - target_center["y"])
         return math.ceil(max(dx, dy)) * 5
 
-    def _ensure_action_available(self, actor: EncounterEntity) -> None:
-        if bool(actor.action_economy.get("action_used")) and not self._can_continue_attack_action_sequence(actor):
+    def _ensure_action_available(self, actor: EncounterEntity, weapon: dict[str, Any]) -> None:
+        if bool(actor.action_economy.get("action_used")) and not self._can_continue_attack_action_sequence(actor, weapon):
             raise ValueError("action_already_used")
 
-    def _can_continue_attack_action_sequence(self, actor: EncounterEntity) -> bool:
-        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
-        fighter = class_features.get("fighter")
-        if not isinstance(fighter, dict):
-            return False
-
-        max_attacks = max(1, resolve_extra_attack_count(class_features))
+    def _can_continue_attack_action_sequence(self, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
+        max_attacks = self._resolve_attack_action_max_attacks(actor, weapon)
         if max_attacks <= 1:
             return False
 
-        used_attacks = self._read_attack_action_attacks_used(fighter)
+        used_attacks = self._read_attack_action_attacks_used(actor, weapon)
         if used_attacks is None:
             return False
 
         return used_attacks < max_attacks
 
-    def _read_attack_action_attacks_used(self, fighter: dict[str, Any]) -> int | None:
-        turn_counters = fighter.get("turn_counters")
+    def _resolve_attack_action_max_attacks(self, actor: EncounterEntity, weapon: dict[str, Any]) -> int:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        generic_max = max(1, resolve_extra_attack_count(class_features))
+        weapon_id = str(weapon.get("weapon_id") or "").strip()
+        pact_max = resolve_pact_weapon_attack_count(actor, weapon_id) if weapon_id else 1
+        return max(generic_max, pact_max)
+
+    def _read_attack_action_attacks_used(self, actor: EncounterEntity, weapon: dict[str, Any]) -> int | None:
+        turn_counters = self._get_attack_action_turn_counters(actor=actor, weapon=weapon)
         if not isinstance(turn_counters, dict):
             return None
 
@@ -363,6 +379,19 @@ class AttackRollRequest:
         if isinstance(used_attacks, bool) or not isinstance(used_attacks, int):
             return 0
         return max(0, used_attacks)
+
+    def _get_attack_action_turn_counters(self, *, actor: EncounterEntity, weapon: dict[str, Any]) -> dict[str, Any] | None:
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        fighter = class_features.get("fighter")
+        if isinstance(fighter, dict):
+            return fighter.get("turn_counters")
+        weapon_id = str(weapon.get("weapon_id") or "").strip()
+        if weapon_id and resolve_pact_weapon_attack_count(actor, weapon_id) > 1:
+            warlock = ensure_warlock_runtime(actor)
+            turn_counters = warlock.get("turn_counters")
+            if isinstance(turn_counters, dict):
+                return turn_counters
+        return None
 
     def _ensure_bonus_action_available(self, actor: EncounterEntity) -> None:
         if bool(actor.action_economy.get("bonus_action_used")):
@@ -458,6 +487,8 @@ class AttackRollRequest:
             disadvantage_sources.append("requested_disadvantage")
 
         for condition in sorted(ATTACK_ADVANTAGE_CONDITIONS):
+            if condition == "invisible" and self._target_can_perceive_actor(target=target, actor=actor):
+                continue
             if actor_runtime.has(condition):
                 advantage_sources.append(f"actor_{condition}")
         for condition in sorted(ATTACK_DISADVANTAGE_CONDITIONS):
@@ -477,6 +508,8 @@ class AttackRollRequest:
             if target_runtime.has(condition):
                 advantage_sources.append(f"target_{condition}")
         for condition in sorted(TARGET_ATTACK_DISADVANTAGE_CONDITIONS):
+            if condition == "invisible" and self._actor_can_perceive_target(actor=actor, target=target):
+                continue
             if target_runtime.has(condition):
                 disadvantage_sources.append(f"target_{condition}")
         if self._target_dodge_applies(actor=actor, target=target, target_runtime=target_runtime):
@@ -529,6 +562,12 @@ class AttackRollRequest:
                 advantage_sources.append("monk_stunning_strike_success")
                 next_attack_advantage_turn_effect_ids.append(effect_id)
 
+        ranger_runtime = get_ranger_runtime(actor)
+        precise_hunter = ranger_runtime.get("precise_hunter")
+        if isinstance(precise_hunter, dict) and precise_hunter.get("enabled"):
+            if self._target_is_hunters_marked_by_actor(target=target, actor_entity_id=actor.entity_id):
+                advantage_sources.append("ranger_precise_hunter")
+
         if attack_kind == "ranged_weapon":
             range_block = weapon.get("thrown_range", {}) if attack_mode == "thrown" else weapon.get("range", {})
             normal_range = int(range_block.get("normal", 0) or 0)
@@ -569,6 +608,20 @@ class AttackRollRequest:
             "disadvantage": disadvantage_sources,
         }, next_attack_advantage_turn_effect_ids, consumed_help_attack_effect_id
 
+    def _target_is_hunters_marked_by_actor(self, *, target: EncounterEntity, actor_entity_id: str) -> bool:
+        turn_effects = getattr(target, "turn_effects", [])
+        if not isinstance(turn_effects, list):
+            return False
+        for effect in turn_effects:
+            if not isinstance(effect, dict):
+                continue
+            if effect.get("source_entity_id") != actor_entity_id:
+                continue
+            source_ref = str(effect.get("source_ref") or "").strip().lower()
+            if source_ref == "hunters_mark":
+                return True
+        return False
+
     def _target_dodge_applies(
         self,
         *,
@@ -583,9 +636,25 @@ class AttackRollRequest:
         if int(target.speed.get("walk", 0) or 0) <= 0:
             return False
         actor_runtime = ConditionRuntime(actor.conditions)
-        if actor_runtime.has("invisible"):
+        if actor_runtime.has("invisible") and not self._target_can_perceive_actor(target=target, actor=actor):
             return False
         return True
+
+    def _actor_can_perceive_target(self, *, actor: EncounterEntity, target: EncounterEntity) -> bool:
+        return self._has_effective_blindsight(observer=actor, other=target)
+
+    def _target_can_perceive_actor(self, *, target: EncounterEntity, actor: EncounterEntity) -> bool:
+        return self._has_effective_blindsight(observer=target, other=actor)
+
+    def _has_effective_blindsight(self, *, observer: EncounterEntity, other: EncounterEntity) -> bool:
+        ranger_runtime = get_ranger_runtime(observer)
+        feral_senses = ranger_runtime.get("feral_senses")
+        if not isinstance(feral_senses, dict) or not bool(feral_senses.get("enabled")):
+            return False
+        blindsight_feet = feral_senses.get("blindsight_feet")
+        if isinstance(blindsight_feet, bool) or not isinstance(blindsight_feet, int) or blindsight_feet <= 0:
+            return False
+        return self._distance_feet(observer, other) <= blindsight_feet
 
     def _normalize_vantage(self, vantage: str) -> str:
         normalized = str(vantage or "normal").lower()
@@ -629,6 +698,9 @@ class AttackRollRequest:
         raw_divine_smite = normalized_class_feature_options.get("divine_smite")
         if isinstance(raw_divine_smite, dict):
             request_class_feature_options["divine_smite"] = dict(raw_divine_smite)
+        raw_lifedrinker = normalized_class_feature_options.get("lifedrinker")
+        if isinstance(raw_lifedrinker, dict):
+            request_class_feature_options["lifedrinker"] = dict(raw_lifedrinker)
         if raw_stunning_strike is None:
             return request_class_feature_options
         if not isinstance(raw_stunning_strike, dict):

@@ -16,10 +16,14 @@ def _import_helpers():
         ensure_class_runtime,
         ensure_fighter_runtime,
         ensure_monk_runtime,
+        ensure_ranger_runtime,
         ensure_rogue_runtime,
+        ensure_warlock_runtime,
         get_class_runtime,
         get_fighter_runtime,
         get_monk_runtime,
+        get_ranger_runtime,
+        get_warlock_runtime,
         normalize_class_feature_options,
         resolve_extra_attack_count,
         resolve_entity_proficiencies,
@@ -31,10 +35,14 @@ def _import_helpers():
         ensure_class_runtime=ensure_class_runtime,
         ensure_fighter_runtime=ensure_fighter_runtime,
         ensure_monk_runtime=ensure_monk_runtime,
+        ensure_ranger_runtime=ensure_ranger_runtime,
         ensure_rogue_runtime=ensure_rogue_runtime,
+        ensure_warlock_runtime=ensure_warlock_runtime,
         get_class_runtime=get_class_runtime,
         get_fighter_runtime=get_fighter_runtime,
         get_monk_runtime=get_monk_runtime,
+        get_ranger_runtime=get_ranger_runtime,
+        get_warlock_runtime=get_warlock_runtime,
         normalize_class_feature_options=normalize_class_feature_options,
         resolve_extra_attack_count=resolve_extra_attack_count,
         resolve_entity_proficiencies=resolve_entity_proficiencies,
@@ -241,6 +249,88 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         self.assertTrue(rogue["uncanny_dodge"]["enabled"])
         self.assertTrue(rogue["reliable_talent"]["enabled"])
         self.assertFalse(rogue["slippery_mind"]["enabled"])
+
+    def test_ensure_ranger_runtime_derives_core_progression_from_level_and_wisdom(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.ability_mods = {"wis": 3}
+        entity.class_features = {"ranger": {"level": 14}}
+
+        ranger = helpers.ensure_ranger_runtime(entity)
+
+        self.assertEqual(ranger["weapon_mastery_count"], 2)
+        self.assertEqual(ranger["favored_enemy"]["free_cast_uses_max"], 2)
+        self.assertEqual(ranger["favored_enemy"]["free_cast_uses_remaining"], 2)
+        self.assertTrue(ranger["roving"]["enabled"])
+        self.assertEqual(ranger["roving"]["speed_bonus_feet"], 10)
+        self.assertTrue(ranger["tireless"]["enabled"])
+        self.assertEqual(ranger["tireless"]["temp_hp_uses_max"], 3)
+        self.assertEqual(ranger["tireless"]["temp_hp_uses_remaining"], 3)
+        self.assertTrue(ranger["natures_veil"]["enabled"])
+        self.assertEqual(ranger["natures_veil"]["uses_max"], 3)
+        self.assertEqual(ranger["natures_veil"]["uses_remaining"], 3)
+        self.assertTrue(ranger["relentless_hunter"]["enabled"])
+        self.assertFalse(ranger["precise_hunter"]["enabled"])
+
+    def test_get_ranger_runtime_preserves_existing_remaining_uses(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.ability_mods = {"wis": 4}
+        entity.class_features = {
+            "ranger": {
+                "level": 14,
+                "favored_enemy": {"free_cast_uses_remaining": 1},
+                "tireless": {"temp_hp_uses_remaining": 2},
+                "natures_veil": {"uses_remaining": 1},
+            }
+        }
+
+        ranger = helpers.get_ranger_runtime(entity)
+
+        self.assertEqual(ranger["favored_enemy"]["free_cast_uses_remaining"], 1)
+        self.assertEqual(ranger["tireless"]["temp_hp_uses_remaining"], 2)
+        self.assertEqual(ranger["natures_veil"]["uses_remaining"], 1)
+
+    def test_ensure_warlock_runtime_derives_core_progression_from_level(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"warlock": {"level": 17}}
+
+        warlock = helpers.ensure_warlock_runtime(entity)
+
+        self.assertEqual(warlock["invocations_known"], 9)
+        self.assertEqual(warlock["cantrips_known"], 4)
+        self.assertEqual(warlock["prepared_spells_count"], 14)
+        self.assertTrue(warlock["magical_cunning"]["enabled"])
+        self.assertTrue(warlock["contact_patron"]["enabled"])
+        self.assertTrue(warlock["contact_patron"]["free_cast_available"])
+        self.assertEqual(warlock["mystic_arcanum"]["6"]["remaining_uses"], 1)
+        self.assertEqual(warlock["mystic_arcanum"]["7"]["remaining_uses"], 1)
+        self.assertEqual(warlock["mystic_arcanum"]["8"]["remaining_uses"], 1)
+        self.assertEqual(warlock["mystic_arcanum"]["9"]["remaining_uses"], 1)
+        self.assertFalse(warlock["eldritch_master"]["enabled"])
+
+    def test_get_warlock_runtime_preserves_existing_remaining_uses(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "warlock": {
+                "level": 17,
+                "magical_cunning": {"available": False},
+                "contact_patron": {"free_cast_available": False},
+                "mystic_arcanum": {
+                    "6": {"remaining_uses": 0},
+                    "7": {"remaining_uses": 0},
+                },
+            }
+        }
+
+        warlock = helpers.get_warlock_runtime(entity)
+
+        self.assertFalse(warlock["magical_cunning"]["available"])
+        self.assertFalse(warlock["contact_patron"]["free_cast_available"])
+        self.assertEqual(warlock["mystic_arcanum"]["6"]["remaining_uses"], 0)
+        self.assertEqual(warlock["mystic_arcanum"]["7"]["remaining_uses"], 0)
 
     def test_parse_class_feature_options_normalizes_known_flags(self) -> None:
         helpers = _import_helpers()

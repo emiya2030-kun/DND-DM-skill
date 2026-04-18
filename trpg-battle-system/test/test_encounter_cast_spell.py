@@ -160,6 +160,113 @@ class EncounterCastSpellTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_find_steed_defaults_to_adjacent_open_space_when_target_point_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["paladin"] = {"level": 5, "faithful_steed": {"free_cast_available": False}}
+            encounter.entities["ent_enemy_iron_duster_001"].position = {"x": 3, "y": 2}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="find_steed",
+                cast_level=2,
+                reason="Summon steed",
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            summon_id = result["spell_instance"]["special_runtime"]["summon_entity_ids"][0]
+            self.assertEqual(updated.entities[summon_id].position, {"x": 0, "y": 2})
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_steed_rejects_target_point_beyond_thirty_feet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["paladin"] = {"level": 5, "faithful_steed": {"free_cast_available": False}}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+
+            with self.assertRaisesRegex(ValueError, "find_steed_target_point_out_of_range"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_steed",
+                    cast_level=2,
+                    target_point={"x": 9, "y": 2, "anchor": "cell_center"},
+                    reason="Summon steed",
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_consumes_derived_multiclass_spell_slot_when_resources_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.resources = {}
+            caster.class_features = {
+                "ranger": {"level": 4},
+                "sorcerer": {"level": 3},
+            }
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="blindness_deafness",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=3,
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["slot_consumed"]["slot_level"], 3)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["3"]["max"], 2)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["3"]["remaining"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_consumes_derived_warlock_pact_magic_slot_when_resources_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.resources = {}
+            caster.class_features = {
+                "warlock": {"level": 5},
+            }
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="blindness_deafness",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=3,
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["slot_consumed"]["slot_level"], 3)
+            self.assertEqual(result["slot_consumed"]["resource_pool"], "pact_magic_slots")
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["pact_magic_slots"]["slot_level"], 3)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["pact_magic_slots"]["max"], 2)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["pact_magic_slots"]["remaining"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_rejects_spellcasting_in_untrained_armor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -334,6 +441,58 @@ class EncounterCastSpellTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_consumes_ranger_favored_enemy_free_cast_before_spell_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["ranger"] = {"level": 1}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="hunters_mark",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=1,
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertIsNone(result["slot_consumed"])
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["1"]["remaining"], 2)
+            self.assertEqual(
+                updated.entities["ent_ally_eric_001"].class_features["ranger"]["favored_enemy"]["free_cast_uses_remaining"],
+                1,
+            )
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_uses_foe_slayer_damage_die_for_hunters_mark_at_level_twenty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["ranger"] = {"level": 20}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="hunters_mark",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=1,
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            target = updated.entities["ent_enemy_iron_duster_001"]
+            self.assertEqual(target.turn_effects[0]["attack_bonus_damage_parts"][0]["formula"], "1d10")
+            encounter_repo.close()
+            event_repo.close()
+
     def test_execute_reads_spell_definition_from_global_repository(self) -> None:
         """测试施法声明可以直接从全局法术知识库读取模板。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -412,7 +571,7 @@ class EncounterCastSpellTests(unittest.TestCase):
                     encounter_id="enc_cast_spell_test",
                     spell_id="blindness_deafness",
                     target_ids=["ent_enemy_iron_duster_001"],
-                    cast_level=2,
+                    cast_level=4,
                 )
             encounter_repo.close()
             event_repo.close()
@@ -436,6 +595,6 @@ class EncounterCastSpellTests(unittest.TestCase):
             self.assertIn("encounter_state", result)
             current = result["encounter_state"]["current_turn_entity"]
             self.assertEqual(current["id"], "ent_ally_eric_001")
-            self.assertEqual(current["resources"]["summary"], "Spell Slots: 1st 2/2, 3st 0/1")
+            self.assertEqual(current["resources"]["summary"], "Spell Slots: 1st 2/2, 2st 1/1, 3st 0/1")
             encounter_repo.close()
             event_repo.close()

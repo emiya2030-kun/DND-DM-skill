@@ -465,6 +465,26 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_paladin_aura_expansion_at_level_eighteen(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features["paladin"] = {
+                "level": 18,
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            paladin = state["current_turn_entity"]["resources"]["class_features"]["paladin"]
+
+            self.assertEqual(paladin["aura_of_protection"]["radius_feet"], 30)
+            self.assertEqual(paladin["aura_of_courage"]["radius_feet"], 30)
+
+            repo.close()
+            event_repo.close()
+
     def test_execute_projects_paladin_faithful_steed_summary_at_level_five(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -1150,6 +1170,80 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertIn("cantrips", actions["spells"])
             self.assertEqual(actions["spell_slots_available"]["1"], 1)
             repo.close()
+
+    def test_execute_projects_warlock_pact_magic_into_actions_and_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.resources = {}
+            player.class_features = {
+                "warlock": {"level": 5},
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            current = state["current_turn_entity"]
+
+            self.assertEqual(current["available_actions"]["spell_slots_available"]["3"], 2)
+            self.assertEqual(
+                current["resources"]["pact_magic_slots"],
+                {"slot_level": 3, "max": 2, "remaining": 2},
+            )
+            self.assertIn("Pact Magic", current["resources"]["summary"])
+            repo.close()
+
+    def test_execute_projects_warlock_runtime_summary_from_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "warlock": {"level": 17},
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            warlock = state["current_turn_entity"]["resources"]["class_features"]["warlock"]
+
+            self.assertEqual(warlock["level"], 17)
+            self.assertEqual(warlock["invocations_known"], 9)
+            self.assertEqual(warlock["cantrips_known"], 4)
+            self.assertEqual(warlock["prepared_spells_count"], 14)
+            self.assertTrue(warlock["magical_cunning"]["enabled"])
+            self.assertTrue(warlock["contact_patron"]["enabled"])
+            self.assertIn("contact_patron", warlock["available_features"])
+            self.assertIn("mystic_arcanum", warlock["available_features"])
+            repo.close()
+
+    def test_execute_projects_ranger_runtime_summary_from_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.ability_mods["wis"] = 3
+            player.class_features["ranger"] = {"level": 18}
+            repo.save(encounter)
+
+            state = GetEncounterState(repo, event_repo).execute("enc_view_test")
+            ranger = state["current_turn_entity"]["resources"]["class_features"]["ranger"]
+
+            self.assertEqual(ranger["level"], 18)
+            self.assertEqual(ranger["weapon_mastery_count"], 2)
+            self.assertEqual(ranger["favored_enemy"]["free_cast_uses_max"], 2)
+            self.assertTrue(ranger["roving"]["enabled"])
+            self.assertEqual(ranger["roving"]["speed_bonus_feet"], 10)
+            self.assertTrue(ranger["tireless"]["enabled"])
+            self.assertEqual(ranger["tireless"]["temp_hp_uses_max"], 3)
+            self.assertTrue(ranger["natures_veil"]["enabled"])
+            self.assertEqual(ranger["natures_veil"]["uses_max"], 3)
+            self.assertTrue(ranger["precise_hunter"]["enabled"])
+            self.assertEqual(ranger["feral_senses"]["blindsight_feet"], 30)
+            self.assertIn("natures_veil", ranger["available_features"])
+            self.assertIn("feral_senses", ranger["available_features"])
+            repo.close()
+            event_repo.close()
 
     def test_execute_projects_pending_reaction_requests_and_pending_movement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

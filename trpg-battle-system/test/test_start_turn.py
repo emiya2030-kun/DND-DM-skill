@@ -197,6 +197,22 @@ class StartTurnTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 40)
             repo.close()
 
+    def test_start_turn_applies_ranger_roving_when_not_in_heavy_armor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].class_features = {"ranger": {"level": 6}}
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.turns.turn_effects.random.randint", return_value=1):
+                updated = StartTurn(repo).execute("enc_start_turn_test")
+
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["walk"], 40)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["remaining"], 40)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["climb"], 40)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].speed["swim"], 40)
+            repo.close()
+
     def test_execute_also_applies_start_of_turn_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

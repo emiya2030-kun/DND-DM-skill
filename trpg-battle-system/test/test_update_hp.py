@@ -1496,5 +1496,100 @@ class UpdateHpTests(unittest.TestCase):
             event_repo.close()
             encounter_repo.close()
 
+    def test_execute_eldritch_mind_upgrades_concentration_check_vantage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_goblin_001"].combat_flags = {
+                "is_active": True,
+                "is_defeated": False,
+                "is_concentrating": True,
+            }
+            encounter.entities["ent_enemy_goblin_001"].ability_mods = {"con": 2}
+            encounter.entities["ent_enemy_goblin_001"].save_proficiencies = ["con"]
+            encounter.entities["ent_enemy_goblin_001"].proficiency_bonus = 2
+            encounter.entities["ent_enemy_goblin_001"].class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "eldritch_mind"}]
+                    },
+                }
+            }
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(
+                encounter_repo,
+                AppendEvent(event_repo),
+                RequestConcentrationCheck(encounter_repo),
+            )
+            result = service.execute(
+                encounter_id="enc_hp_test",
+                target_id="ent_enemy_goblin_001",
+                hp_change=8,
+                reason="Force damage",
+                damage_type="force",
+                source_entity_id="ent_enemy_goblin_001",
+                concentration_vantage="disadvantage",
+            )
+
+            self.assertEqual(result["concentration_check_request"]["roll_type"], "concentration_check")
+            self.assertEqual(result["concentration_check_request"]["context"]["save_dc"], 10)
+            self.assertEqual(result["concentration_check_request"]["context"]["vantage"], "normal")
+            event_repo.close()
+            encounter_repo.close()
+
+    def test_execute_skips_concentration_check_for_relentless_hunter_hunters_mark(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            ranger = build_player_target()
+            ranger.entity_id = "ent_ranger_001"
+            ranger.name = "Ranger"
+            ranger.ability_mods = {"wis": 3, "con": 2}
+            ranger.save_proficiencies = ["con"]
+            ranger.proficiency_bonus = 3
+            ranger.class_features = {"ranger": {"level": 13}}
+            ranger.combat_flags = {
+                "is_active": True,
+                "is_defeated": False,
+                "is_concentrating": True,
+            }
+            encounter.entities[ranger.entity_id] = ranger
+            encounter.spell_instances = [
+                {
+                    "instance_id": "spell_inst_hunters_mark_001",
+                    "spell_id": "hunters_mark",
+                    "spell_name": "Hunter's Mark",
+                    "caster_entity_id": ranger.entity_id,
+                    "caster_name": ranger.name,
+                    "cast_level": 1,
+                    "concentration": {"required": True, "active": True},
+                    "lifecycle": {"status": "active"},
+                    "targets": [{"entity_id": "ent_enemy_goblin_001", "turn_effect_ids": ["effect_hm_001"]}],
+                }
+            ]
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(
+                encounter_repo,
+                AppendEvent(event_repo),
+                RequestConcentrationCheck(encounter_repo),
+            )
+            result = service.execute(
+                encounter_id="enc_hp_test",
+                target_id=ranger.entity_id,
+                hp_change=8,
+                reason="Force damage",
+                damage_type="force",
+                source_entity_id="ent_enemy_goblin_001",
+            )
+
+            self.assertNotIn("concentration_check_request", result)
+            event_repo.close()
+            encounter_repo.close()
+
 if __name__ == "__main__":
     unittest.main()

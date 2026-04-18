@@ -14,9 +14,13 @@ from tools.services.combat.attack.weapon_mastery_effects import (
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
+    build_available_spell_slots_view,
     ensure_monk_runtime,
     ensure_paladin_runtime,
+    ensure_ranger_runtime,
     ensure_rogue_runtime,
+    ensure_spell_slots_runtime,
+    ensure_warlock_runtime,
     has_fighting_style,
 )
 from tools.services.map.build_map_notes import BuildMapNotes
@@ -60,8 +64,37 @@ MARTIAL_CLASS_SUMMARIES = {
         "available_features": ["rage", "reckless_attack", "danger_sense"],
     },
     "ranger": {
-        "fields": ["level"],
+        "fields": [
+            "level",
+            "weapon_mastery_count",
+            "favored_enemy",
+            "deft_explorer",
+            "fighting_style",
+            "roving",
+            "tireless",
+            "relentless_hunter",
+            "natures_veil",
+            "precise_hunter",
+            "feral_senses",
+            "foe_slayer",
+        ],
         "available_features": ["favored_enemy", "weapon_mastery"],
+    },
+    "warlock": {
+        "fields": [
+            "level",
+            "invocations_known",
+            "cantrips_known",
+            "prepared_spells_count",
+            "eldritch_invocations",
+            "pact_of_the_blade",
+            "lifedrinker",
+            "magical_cunning",
+            "contact_patron",
+            "mystic_arcanum",
+            "eldritch_master",
+        ],
+        "available_features": ["eldritch_invocations", "pact_magic"],
     },
 }
 
@@ -190,6 +223,7 @@ class GetEncounterState:
                 {
                     "id": entity.entity_id,
                     "name": entity.name,
+                    "initiative": entity.initiative,
                     "type": entity.side,
                     "hp": self._format_hp_status(entity),
                     "ac": entity.ac,
@@ -663,12 +697,7 @@ class GetEncounterState:
         return grouped_spells
 
     def _build_spell_slots_view(self, entity: EncounterEntity) -> dict[str, int]:
-        spell_slots = entity.resources.get("spell_slots", {})
-        return {
-            level: slot_data["remaining"]
-            for level, slot_data in spell_slots.items()
-            if isinstance(slot_data, dict) and "remaining" in slot_data
-        }
+        return build_available_spell_slots_view(entity)
 
     def _build_weapon_ranges(self, encounter: Encounter, entity: EncounterEntity) -> dict[str, Any]:
         max_melee_range = self._max_melee_range(entity)
@@ -784,16 +813,19 @@ class GetEncounterState:
 
     def _build_resources_view(self, entity: EncounterEntity) -> dict[str, Any]:
         spell_slots = self._build_spell_slots_resource_view(entity)
+        pact_magic_slots = self._build_pact_magic_slots_resource_view(entity)
         feature_uses = self._build_feature_uses_resource_view(entity)
         class_features = self._build_class_feature_resource_view(entity)
         return {
             "summary": self._format_resources_summary(entity),
             "spell_slots": spell_slots,
+            "pact_magic_slots": pact_magic_slots,
             "feature_uses": feature_uses,
             "class_features": class_features,
         }
 
     def _format_resources_summary(self, entity: EncounterEntity) -> str:
+        ensure_spell_slots_runtime(entity)
         parts: list[str] = []
 
         spell_slots = entity.resources.get("spell_slots", {})
@@ -804,6 +836,14 @@ class GetEncounterState:
                     slot_parts.append(f"{level}st {slot_data['remaining']}/{slot_data['max']}")
             if slot_parts:
                 parts.append("Spell Slots: " + ", ".join(slot_parts))
+
+        pact_magic_slots = entity.resources.get("pact_magic_slots", {})
+        if isinstance(pact_magic_slots, dict):
+            slot_level = pact_magic_slots.get("slot_level")
+            remaining = pact_magic_slots.get("remaining")
+            maximum = pact_magic_slots.get("max")
+            if isinstance(slot_level, int) and isinstance(remaining, int) and isinstance(maximum, int):
+                parts.append(f"Pact Magic: {slot_level}st {remaining}/{maximum}")
 
         feature_uses = entity.resources.get("feature_uses", {})
         if feature_uses:
@@ -819,6 +859,7 @@ class GetEncounterState:
         return " | ".join(parts)
 
     def _build_spell_slots_resource_view(self, entity: EncounterEntity) -> dict[str, dict[str, int]]:
+        ensure_spell_slots_runtime(entity)
         spell_slots = entity.resources.get("spell_slots", {})
         if not isinstance(spell_slots, dict):
             return {}
@@ -836,6 +877,22 @@ class GetEncounterState:
                 "max": maximum,
             }
         return projected
+
+    def _build_pact_magic_slots_resource_view(self, entity: EncounterEntity) -> dict[str, int]:
+        ensure_spell_slots_runtime(entity)
+        pact_magic_slots = entity.resources.get("pact_magic_slots", {})
+        if not isinstance(pact_magic_slots, dict):
+            return {}
+        slot_level = pact_magic_slots.get("slot_level")
+        remaining = pact_magic_slots.get("remaining")
+        maximum = pact_magic_slots.get("max")
+        if not isinstance(slot_level, int) or not isinstance(remaining, int) or not isinstance(maximum, int):
+            return {}
+        return {
+            "slot_level": slot_level,
+            "remaining": remaining,
+            "max": maximum,
+        }
 
     def _build_feature_uses_resource_view(self, entity: EncounterEntity) -> dict[str, dict[str, int]]:
         feature_uses = entity.resources.get("feature_uses", {})
@@ -872,6 +929,10 @@ class GetEncounterState:
                 bucket = ensure_paladin_runtime(entity)
             elif class_id == "barbarian":
                 bucket = ensure_barbarian_runtime(entity)
+            elif class_id == "ranger":
+                bucket = ensure_ranger_runtime(entity)
+            elif class_id == "warlock":
+                bucket = ensure_warlock_runtime(entity)
             projected[class_id] = {
                 field: bucket[field]
                 for field in summary["fields"]
@@ -908,6 +969,40 @@ class GetEncounterState:
                     available_features.append("persistent_rage")
                 if level >= 18:
                     available_features.append("indomitable_might")
+            if class_id == "ranger":
+                level = int(bucket.get("level", 0) or 0)
+                if level >= 2:
+                    available_features.extend(["deft_explorer", "fighting_style"])
+                if level >= 5:
+                    available_features.append("extra_attack")
+                if level >= 6:
+                    available_features.append("roving")
+                if level >= 10:
+                    available_features.append("tireless")
+                if level >= 13:
+                    available_features.append("relentless_hunter")
+                if level >= 14:
+                    available_features.append("natures_veil")
+                if level >= 17:
+                    available_features.append("precise_hunter")
+                if level >= 18:
+                    available_features.append("feral_senses")
+                if level >= 20:
+                    available_features.append("foe_slayer")
+            if class_id == "warlock":
+                level = int(bucket.get("level", 0) or 0)
+                if isinstance(bucket.get("pact_of_the_blade"), dict) and bucket["pact_of_the_blade"].get("enabled"):
+                    available_features.append("pact_of_the_blade")
+                if isinstance(bucket.get("lifedrinker"), dict) and bucket["lifedrinker"].get("enabled"):
+                    available_features.append("lifedrinker")
+                if level >= 2:
+                    available_features.append("magical_cunning")
+                if level >= 9:
+                    available_features.append("contact_patron")
+                if level >= 11:
+                    available_features.append("mystic_arcanum")
+                if level >= 20:
+                    available_features.append("eldritch_master")
             projected[class_id]["available_features"] = available_features
 
         fighter = class_features.get("fighter")

@@ -269,6 +269,42 @@ def build_paladin_actor() -> EncounterEntity:
     return actor
 
 
+def build_warlock_pact_actor(
+    *,
+    level: int = 5,
+    invocation_ids: Optional[list[str]] = None,
+) -> EncounterEntity:
+    actor = build_actor()
+    actor.name = "Blade Warlock"
+    actor.ability_mods = {"str": 1, "dex": 0, "con": 2, "int": 0, "wis": 0, "cha": 4}
+    actor.proficiency_bonus = 3
+    actor.hp = {"current": 12, "max": 20, "temp": 0}
+    actor.resources = {"hit_dice": {"die": "d8", "remaining": 2}}
+    actor.weapons = [
+        {
+            "weapon_id": "longsword",
+            "name": "Longsword",
+            "category": "martial",
+            "kind": "melee",
+            "damage": [{"formula": "1d8", "type": "slashing"}],
+            "properties": ["versatile"],
+            "range": {"normal": 5, "long": 5},
+        }
+    ]
+    selected = [{"invocation_id": invocation_id} for invocation_id in (invocation_ids or ["pact_of_the_blade"])]
+    actor.class_features = {
+        "warlock": {
+            "level": level,
+            "eldritch_invocations": {"selected": selected},
+            "pact_of_the_blade": {
+                "enabled": True,
+                "bound_weapon_id": "longsword",
+            },
+        }
+    }
+    return actor
+
+
 def build_undead_target() -> EncounterEntity:
     target = build_target()
     target.hp = {"current": 30, "max": 30, "temp": 0}
@@ -277,6 +313,116 @@ def build_undead_target() -> EncounterEntity:
 
 
 class ExecuteAttackTests(unittest.TestCase):
+    def test_execute_pact_weapon_uses_charisma_for_attack_and_damage(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(level=5)
+            target = build_target()
+            target.hp = {"current": 20, "max": 20, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=19,
+                dice_rolls={"base_rolls": [13], "modifier": 6},
+                damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [3]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["request"]["context"]["modifier"], "cha")
+            self.assertEqual(result["request"]["context"]["modifier_value"], 4)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 7)
+            self.assertEqual(updated.entities[target.entity_id].hp["current"], 13)
+
+    def test_execute_thirsting_blade_allows_second_pact_weapon_attack_in_same_action(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(level=5, invocation_ids=["pact_of_the_blade", "thirsting_blade"])
+            target = build_target()
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            first = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=19,
+                dice_rolls={"base_rolls": [13], "modifier": 6},
+                damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [3]}],
+            )
+            second = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=18,
+                dice_rolls={"base_rolls": [12], "modifier": 6},
+                damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [2]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            warlock = updated.entities[actor.entity_id].class_features["warlock"]
+            self.assertNotEqual(first.get("status"), "invalid_attack")
+            self.assertNotEqual(second.get("status"), "invalid_attack")
+            self.assertEqual(warlock["turn_counters"]["attack_action_attacks_used"], 2)
+            self.assertTrue(updated.entities[actor.entity_id].action_economy["action_used"])
+
+    def test_execute_lifedrinker_adds_damage_and_heals_when_declared(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(level=9, invocation_ids=["pact_of_the_blade", "lifedrinker"])
+            target = build_target()
+            target.hp = {"current": 20, "max": 20, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=19,
+                dice_rolls={"base_rolls": [13], "modifier": 6},
+                damage_rolls=[
+                    {"source": "weapon:longsword:part_0", "rolls": [3]},
+                    {"source": "warlock_lifedrinker", "rolls": [4]},
+                ],
+                class_feature_options={"lifedrinker": {"enabled": True, "damage_type": "necrotic", "hit_die_roll": 5}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 11)
+            self.assertEqual(updated.entities[target.entity_id].hp["current"], 9)
+            self.assertEqual(updated.entities[actor.entity_id].hp["current"], 19)
+            self.assertEqual(updated.entities[actor.entity_id].resources["hit_dice"]["remaining"], 1)
     def test_execute_applies_divine_smite_damage_and_consumes_spell_slot(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_paladin_actor()
@@ -313,6 +459,91 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 14)
             self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["source"], "paladin_divine_smite")
             self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["formula"], "2d8")
+
+    def test_execute_divine_smite_uses_derived_multiclass_spell_slots_when_resources_missing(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.source_ref["spellcasting_ability"] = "cha"
+            actor.resources = {}
+            actor.class_features = {
+                "paladin": {"level": 2},
+                "sorcerer": {"level": 3},
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "chosen_roll": 13, "modifier": 5, "vantage": "normal"},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [4]},
+                    {"source": "paladin_divine_smite", "rolls": [3, 4, 5]},
+                ],
+                class_feature_options={"divine_smite": {"slot_level": 2}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities[actor.entity_id].resources["spell_slots"]["2"]["max"], 3)
+            self.assertEqual(updated.entities[actor.entity_id].resources["spell_slots"]["2"]["remaining"], 2)
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["formula"], "3d8")
+
+    def test_execute_divine_smite_uses_derived_warlock_pact_magic_slots_when_resources_missing(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.source_ref["spellcasting_ability"] = "cha"
+            actor.resources = {}
+            actor.class_features = {
+                "paladin": {"level": 2},
+                "warlock": {"level": 3},
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "chosen_roll": 13, "modifier": 5, "vantage": "normal"},
+                damage_rolls=[
+                    {"source": "weapon:rapier:part_0", "rolls": [4]},
+                    {"source": "paladin_divine_smite", "rolls": [3, 4, 5]},
+                ],
+                class_feature_options={"divine_smite": {"slot_level": 2}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["slot_level"], 2)
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["max"], 2)
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["remaining"], 1)
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["formula"], "3d8")
 
     def test_execute_divine_smite_adds_extra_die_against_undead(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):

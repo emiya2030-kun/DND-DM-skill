@@ -5,7 +5,14 @@ from tools.services.class_features.barbarian.runtime import ensure_barbarian_run
 from tools.services.combat.actions import clear_turn_effect_type
 from tools.services.combat.attack.weapon_mastery_effects import get_weapon_mastery_speed_penalty
 from tools.services.combat.defense.armor_profile_resolver import get_armor_speed_penalty
-from tools.services.class_features.shared import ensure_monk_runtime, ensure_rogue_runtime, get_class_runtime, get_monk_runtime
+from tools.services.class_features.shared import (
+    ensure_monk_runtime,
+    ensure_rogue_runtime,
+    ensure_ranger_runtime,
+    ensure_warlock_runtime,
+    get_class_runtime,
+    get_monk_runtime,
+)
 
 
 def reset_turn_resources(entity: EncounterEntity) -> None:
@@ -21,11 +28,20 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
     base_walk_speed = _resolve_base_walk_speed(entity=entity, combat_flags=combat_flags)
     current_walk_speed = max(
         0,
-        base_walk_speed + _get_monk_unarmored_movement_bonus(entity) + _get_barbarian_fast_movement_bonus(entity),
+        base_walk_speed
+        + _get_monk_unarmored_movement_bonus(entity)
+        + _get_barbarian_fast_movement_bonus(entity)
+        + _get_ranger_roving_bonus(entity),
     )
     entity.speed["walk"] = current_walk_speed
     speed_penalty = get_weapon_mastery_speed_penalty(entity) + get_armor_speed_penalty(entity)
     entity.speed["remaining"] = max(0, current_walk_speed - speed_penalty)
+    if _get_ranger_roving_bonus(entity) > 0:
+        entity.speed["climb"] = current_walk_speed
+        entity.speed["swim"] = current_walk_speed
+    else:
+        entity.speed.pop("climb", None)
+        entity.speed.pop("swim", None)
     combat_flags["base_walk_speed"] = base_walk_speed
     combat_flags["movement_spent_feet"] = 0
     combat_flags.pop("light_bonus_trigger", None)
@@ -55,6 +71,15 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         stunning_strike = monk.get("stunning_strike")
         if isinstance(stunning_strike, dict):
             stunning_strike["uses_this_turn"] = 0
+    warlock = class_features.get("warlock")
+    if isinstance(warlock, dict):
+        warlock = ensure_warlock_runtime(entity)
+        turn_counters = warlock.get("turn_counters")
+        if isinstance(turn_counters, dict):
+            turn_counters["attack_action_attacks_used"] = 0
+        lifedrinker = warlock.get("lifedrinker")
+        if isinstance(lifedrinker, dict):
+            lifedrinker["used_this_turn"] = False
 
 
 def _resolve_base_walk_speed(*, entity: EncounterEntity, combat_flags: dict[str, object]) -> int:
@@ -90,6 +115,25 @@ def _get_barbarian_fast_movement_bonus(entity: EncounterEntity) -> int:
         if isinstance(category, str) and category.strip().lower() == "heavy":
             return 0
     return 10
+
+
+def _get_ranger_roving_bonus(entity: EncounterEntity) -> int:
+    ranger_runtime = get_class_runtime(entity, "ranger")
+    if not ranger_runtime:
+        return 0
+    ranger = ensure_ranger_runtime(entity)
+    roving = ranger.get("roving")
+    if not isinstance(roving, dict) or not roving.get("enabled"):
+        return 0
+    armor = entity.equipped_armor
+    if isinstance(armor, dict):
+        category = armor.get("category")
+        if isinstance(category, str) and category.strip().lower() == "heavy":
+            return 0
+    bonus = roving.get("speed_bonus_feet")
+    if isinstance(bonus, int) and bonus > 0:
+        return bonus
+    return 0
 
 
 def start_turn(encounter: Encounter) -> Encounter:
