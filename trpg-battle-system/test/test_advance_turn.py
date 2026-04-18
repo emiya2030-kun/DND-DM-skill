@@ -87,7 +87,7 @@ class AdvanceTurnTests(unittest.TestCase):
 
             self.assertEqual(result["encounter_id"], "enc_advance_turn_test")
             self.assertEqual(result["encounter_state"]["current_turn_entity"]["id"], "ent_ally_lia_001")
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "0 feet")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "0 尺")
             self.assertTrue(result["encounter_state"]["current_turn_entity"]["actions"]["action_used"])
             repo.close()
 

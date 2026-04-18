@@ -65,6 +65,24 @@ def build_encounter(*, action_used: bool = False, current_entity_id: str = "ent_
     )
 
 
+def build_shared_turn_summon() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_summon_001",
+        name="Imp",
+        side="ally",
+        category="summon",
+        controller="player",
+        position={"x": 2, "y": 3},
+        hp={"current": 21, "max": 21, "temp": 0},
+        ac=13,
+        speed={"walk": 20, "remaining": 20, "fly": 40},
+        initiative=8,
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": False},
+        turn_effects=[],
+        source_ref={"summoner_entity_id": "ent_actor_001", "source_spell_id": "find_familiar"},
+    )
+
+
 class DisengageStateEffectsTests(unittest.TestCase):
     def test_add_or_replace_turn_effect_replaces_same_type(self) -> None:
         actor = build_actor()
@@ -129,4 +147,20 @@ class UseDisengageTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "not_actor_turn"):
                 UseDisengage(repo).execute(encounter_id="enc_disengage_test", actor_id="ent_actor_001")
+            repo.close()
+
+    def test_execute_allows_shared_turn_summon_on_owner_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            summon = build_shared_turn_summon()
+            encounter.entities[summon.entity_id] = summon
+            repo.save(encounter)
+
+            UseDisengage(repo).execute(encounter_id="enc_disengage_test", actor_id="ent_summon_001")
+
+            updated = repo.get("enc_disengage_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(has_disengage_effect(updated.entities["ent_summon_001"]))
+            self.assertFalse(updated.entities["ent_actor_001"].action_economy["action_used"])
             repo.close()

@@ -126,9 +126,9 @@ def test_create_summoned_entity_inserts_entity_after_caster_in_turn_order() -> N
         insert_after_entity_id="ent_paladin_001",
     )
 
-    assert encounter.turn_order == ["ent_paladin_001", summon.entity_id, "ent_enemy_001"]
+    assert encounter.turn_order == ["ent_paladin_001", "ent_enemy_001"]
     assert encounter.entities[summon.entity_id].initiative == encounter.entities["ent_paladin_001"].initiative
-    assert result["inserted_after"] == "ent_paladin_001"
+    assert result["shared_turn_owner_id"] == "ent_paladin_001"
 
 
 def test_execute_find_steed_replaces_previous_steed_from_same_caster() -> None:
@@ -172,6 +172,42 @@ def test_execute_find_steed_replaces_previous_steed_from_same_caster() -> None:
         active_summon_ids = [entity_id for entity_id, entity in updated.entities.items() if entity.category == "summon"]
         assert len(active_summon_ids) == 1
         assert first_summon_id not in active_summon_ids
+
+        encounter_repo.close()
+        event_repo.close()
+
+
+def test_execute_find_steed_projects_summon_into_turn_order_with_shared_initiative() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+        event_repo = EventRepository(Path(tmp_dir) / "events.json")
+        encounter = build_find_steed_encounter()
+        caster = encounter.entities["ent_paladin_001"]
+        caster.resources["spell_slots"] = {"2": {"max": 2, "remaining": 2}}
+        caster.class_features["paladin"] = {"level": 5, "faithful_steed": {"free_cast_available": False}}
+        caster.spells = [
+            {
+                "spell_id": "find_steed",
+                "name": "Find Steed",
+                "level": 2,
+                "base": {"level": 2, "casting_time": "1 action", "concentration": False},
+            }
+        ]
+        encounter_repo.save(encounter)
+
+        service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+        result = service.execute(
+            encounter_id="enc_find_steed_test",
+            spell_id="find_steed",
+            cast_level=2,
+            target_point={"x": 5, "y": 5, "anchor": "cell_center"},
+            include_encounter_state=True,
+        )
+
+        turn_order = result["encounter_state"]["turn_order"]
+        assert [item["name"] for item in turn_order] == ["Paladin", "Enemy"]
+        assert turn_order[0]["initiative"] == 15
+        assert turn_order[1]["initiative"] == 10
 
         encounter_repo.close()
         event_repo.close()

@@ -423,6 +423,133 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(updated.entities[target.entity_id].hp["current"], 9)
             self.assertEqual(updated.entities[actor.entity_id].hp["current"], 19)
             self.assertEqual(updated.entities[actor.entity_id].resources["hit_dice"]["remaining"], 1)
+
+    def test_execute_eldritch_smite_adds_force_damage_consumes_pact_slot_and_knocks_prone(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(level=5, invocation_ids=["pact_of_the_blade", "eldritch_smite"])
+            target = build_target()
+            target.hp = {"current": 40, "max": 40, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=19,
+                dice_rolls={"base_rolls": [13], "modifier": 6},
+                damage_rolls=[
+                    {"source": "weapon:longsword:part_0", "rolls": [3]},
+                    {"source": "warlock_eldritch_smite", "rolls": [1, 2, 3, 4]},
+                ],
+                class_feature_options={"eldritch_smite": {"enabled": True, "slot_level": 3, "knock_prone": True}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 17)
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["source"], "warlock_eldritch_smite")
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["formula"], "4d8")
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][1]["damage_type"], "force")
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["slot_level"], 3)
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["remaining"], 1)
+            self.assertIn("prone", updated.entities[target.entity_id].conditions)
+
+    def test_execute_eldritch_smite_does_not_consume_pact_slot_on_miss(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(level=5, invocation_ids=["pact_of_the_blade", "eldritch_smite"])
+            actor.resources["pact_magic_slots"] = {"slot_level": 3, "max": 2, "remaining": 2}
+            target = build_target()
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=8,
+                dice_rolls={"base_rolls": [2], "modifier": 6},
+                damage_rolls=[{"source": "weapon:longsword:part_0", "rolls": [3]}],
+                class_feature_options={"eldritch_smite": {"enabled": True, "slot_level": 3, "knock_prone": True}},
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertFalse(result["resolution"]["hit"])
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["remaining"], 2)
+
+    def test_execute_eldritch_smite_is_limited_to_once_per_turn(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_warlock_pact_actor(
+                level=5,
+                invocation_ids=["pact_of_the_blade", "thirsting_blade", "eldritch_smite"],
+            )
+            actor.resources["pact_magic_slots"] = {"slot_level": 3, "max": 2, "remaining": 2}
+            target = build_target()
+            target.hp = {"current": 40, "max": 40, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            first = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="longsword",
+                final_total=19,
+                dice_rolls={"base_rolls": [13], "modifier": 6},
+                damage_rolls=[
+                    {"source": "weapon:longsword:part_0", "rolls": [3]},
+                    {"source": "warlock_eldritch_smite", "rolls": [1, 2, 3, 4]},
+                ],
+                class_feature_options={"eldritch_smite": {"enabled": True, "slot_level": 3}},
+            )
+
+            self.assertTrue(first["resolution"]["hit"])
+
+            with self.assertRaisesRegex(ValueError, "eldritch_smite_already_used_this_turn"):
+                service.execute(
+                    encounter_id="enc_execute_attack_test",
+                    target_id=target.entity_id,
+                    weapon_id="longsword",
+                    final_total=18,
+                    dice_rolls={"base_rolls": [12], "modifier": 6},
+                    damage_rolls=[
+                        {"source": "weapon:longsword:part_0", "rolls": [2]},
+                        {"source": "warlock_eldritch_smite", "rolls": [4, 4, 4, 4]},
+                    ],
+                    class_feature_options={"eldritch_smite": {"enabled": True, "slot_level": 3}},
+                )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities[actor.entity_id].resources["pact_magic_slots"]["remaining"], 1)
+
     def test_execute_applies_divine_smite_damage_and_consumes_spell_slot(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
             actor = build_paladin_actor()

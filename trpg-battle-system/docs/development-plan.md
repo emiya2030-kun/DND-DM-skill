@@ -40,6 +40,120 @@
 - `python3 -m unittest discover -s test -v`
 - 最近一次结果：`576 tests OK`
 
+### 2026-04-18 补充：飞行移动
+
+已完成：
+
+- `validate_movement_path(...)` 支持 `movement_mode`
+- `MoveEncounterEntity.execute(...)` 支持 `movement_mode`
+- `BeginMoveEncounterEntity.execute(...)` / `execute_with_state(...)` 支持 `movement_mode`
+- `ContinuePendingMovement` 会继承 pending movement 中的 `movement_mode`
+- `runtime move_and_attack` 支持透传 `movement_mode`
+
+当前可用值：
+
+- `walk`
+- `fly`
+- `swim`
+- `climb`
+
+当前规则：
+
+- `movement_mode=fly` 时，移动距离按实体的 `speed.fly` 结算
+- 飞行移动忽视困难地形额外消耗
+- 飞行移动仍然受地图边界、墙体、目标格占位、借机攻击流程约束
+- pending movement / 借机打断后续走会继续沿用同一 `movement_mode`
+
+LLM 使用建议：
+
+- 需要明确声明飞行时，在相关移动调用上传 `movement_mode: "fly"`
+- 如果不传，默认仍按 `walk` 处理
+
+### 2026-04-18 补充：runtime 纯移动命令
+
+已完成：
+
+- 新增 runtime command：`move_entity`
+
+调用参数：
+
+```json
+{
+  "command": "move_entity",
+  "args": {
+    "encounter_id": "enc_preview_demo",
+    "actor_id": "ent_familiar_425418266f7d",
+    "target_position": {"x": 11, "y": 4},
+    "use_dash": false,
+    "movement_mode": "fly"
+  }
+}
+```
+
+字段说明：
+
+- `encounter_id`：遭遇战 id
+- `actor_id`：当前要移动的实体 id
+- `target_position`：目标格坐标
+- `use_dash`：可选；是否冲刺
+- `movement_mode`：可选；默认 `walk`
+
+返回语义：
+
+- 如果移动过程中触发借机等反应窗，`result.movement_status = "waiting_reaction"`
+- 如果移动成功完成，`result.movement_status = "completed"`
+- `encounter_state` 始终返回最新状态
+
+LLM 使用规则：
+
+- 只做纯移动时，优先用 `move_entity`
+- 需要移动后立刻攻击时，再用 `move_and_attack`
+- 有飞行速度的实体在飞行移动时，显式传 `movement_mode: "fly"`
+
+### 2026-04-18 补充：runtime 启动命令完整性校验
+
+已完成：
+
+- `run_battle_runtime.py` 启动前会执行本地命令注册表自检
+- `run_battlemap_localhost.py` 连接远端 runtime 前会校验 `/runtime/health`
+
+当前规则：
+
+- runtime 本地自检会扫描 `runtime/commands/` 下的命令模块
+- 若发现存在命令模块但未注册进 `COMMAND_HANDLERS`，runtime 会直接启动失败
+- battlemap localhost 连接 runtime 时，默认要求远端 `commands` 覆盖当前仓库里的全部 `COMMAND_HANDLERS`
+- 若远端 runtime 少任何一个本地命令，例如 `move_entity`，battlemap localhost 会直接拒绝启动
+
+目的：
+
+- 避免出现“仓库代码里已有命令，但连到的仍是旧 runtime 进程”的假联调
+- 把命令集不一致问题前置到启动阶段，而不是拖到战斗操作时才暴露
+
+### 2026-04-18 补充：玩家召唤物共享宿主回合
+
+已完成：
+
+- 新增共享回合判定 helper
+- 玩家控制、且 `source_ref.summoner_entity_id` 指向玩家实体的 `summon`
+  - 不再插入 `turn_order`
+  - 保留实体本身、地图占位与独立动作经济
+- 动作合法性从“必须等于 `current_entity_id`”提升为“当前回合编组成员可行动”
+- `GetEncounterState` 新增 `current_turn_group`
+- 旧遭遇战若先攻表里仍残留玩家召唤物节点，读取时会自动标准化移除
+
+当前语义：
+
+- 玩家可以在同一回合里交错操纵宿主与召唤物
+- 例如：角色移动 -> 魔宠协助 -> 角色攻击
+- 召唤物继续使用自己的 `actor_id` 调用现有动作接口
+- 共享回合召唤物不会再单独开始 / 结束自己的独立回合
+
+LLM 使用规则：
+
+- 先读取 `current_turn_group`
+- 若目标召唤物出现在 `controlled_members` 中，则本回合可以直接操作它
+- 对外命令参数不变，仍然传该召唤物自己的 `actor_id`
+
 ## 阶段划分与状态
 
 ### 阶段 1: 数据骨架
@@ -258,6 +372,665 @@
 仍待继续扩展的方向：
 
 - 更多 reaction 模板
+
+## Warlock LLM 调用约定
+
+### Armor of Shadows / 幽影护甲
+
+用途：
+
+- 以动作对自己施放 `Mage Armor / 法师护甲`
+- 不消耗法术位
+
+服务：
+
+- `UseArmorOfShadows`
+
+调用参数：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001"
+}
+```
+
+参数说明：
+
+- `encounter_id`：当前遭遇战 ID
+- `actor_id`：要使用幽影护甲的术士实体 ID
+
+调用前提：
+
+- 当前必须轮到 `actor_id`
+- `actor_id` 需要拥有 `Armor of Shadows / 幽影护甲`
+- `actor_id` 的动作尚未使用
+- `actor_id` 不能穿着护甲；若已穿护甲，后端会报 `mage_armor_requires_unarmored_target`
+
+成功后后端会写入：
+
+- `warlock.armor_of_shadows.enabled = true`
+- 在 `actor.turn_effects` 中写入一个 `effect_type = "mage_armor"` 的持续效果
+- 刷新实体 AC 为 `13 + 敏捷调整值`
+
+LLM 使用规则：
+
+- 这是一个主动声明能力，直接调用 `UseArmorOfShadows`
+- 不需要传法术位参数，后端不会扣 `spell_slots` 或 `pact_magic_slots`
+- 如果目标已经穿着护甲，不要调用
+- 如果角色已经有 `mage_armor`，后端会刷新该效果，不会重复叠加
+
+持续时间规则：
+
+- 当前系统把这类 `8 小时` 防护统一建模为 `持续到长休`
+- 对 `Mage Armor / 法师护甲`，额外保留“穿上护甲则提前结束”的规则
+- 目前长休自动清理器还没实现，所以这个时长规则先记录在运行态和文档里，由后续长休系统统一收口
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "armor_of_shadows": {
+          "enabled": true
+        },
+        "available_features": [
+          "eldritch_invocations",
+          "pact_magic",
+          "armor_of_shadows",
+          "magical_cunning"
+        ]
+      }
+    }
+  }
+}
+```
+
+### Fiendish Vigor / 邪魔活力
+
+用途：
+
+- 以动作施放一次无需法术位的 `False Life / 虚假生命`
+- 当前实现按该法术的最大值直接给予临时生命值
+
+服务：
+
+- `UseFiendishVigor`
+
+调用参数：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001"
+}
+```
+
+参数说明：
+
+- `encounter_id`：当前遭遇战 ID
+- `actor_id`：要使用邪魔活力的术士实体 ID
+
+调用前提：
+
+- 当前必须轮到 `actor_id`
+- `actor_id` 需要拥有 `Fiendish Vigor / 邪魔活力`
+- `actor_id` 的动作尚未使用
+
+成功后后端会写入：
+
+- 通过 `GrantTemporaryHp` 给自身结算临时生命值
+- 当前实现固定按 `False Life / 虚假生命` 最大值处理，即 `12` 点临时生命值
+- 不会消耗 `spell_slots` 或 `pact_magic_slots`
+
+LLM 使用规则：
+
+- 这是一个主动声明能力，直接调用 `UseFiendishVigor`
+- 如果角色当前没有更高的临时生命值，就会替换成 12
+- 如果角色当前已有更高的临时生命值，后端会保留原值
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "fiendish_vigor": {
+          "enabled": true
+        },
+        "available_features": [
+          "eldritch_invocations",
+          "pact_magic",
+          "fiendish_vigor",
+          "magical_cunning"
+        ]
+      }
+    }
+  }
+}
+```
+
+### Gaze of Two Minds / 共视感官
+
+用途：
+
+- 以附赠动作与一个自愿生物建立感官连接。
+
+服务：
+
+- `UseGazeOfTwoMinds`
+
+调用参数：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001",
+  "target_id": "ent_ally_001"
+}
+```
+
+参数说明：
+
+- `encounter_id`：当前遭遇战 ID
+- `actor_id`：施放共视感官的术士实体 ID
+- `target_id`：要建立连接的目标实体 ID
+
+调用前提：
+
+- 当前必须轮到 `actor_id`
+- `actor_id` 需要拥有 `Gaze of Two Minds / 共视感官`
+- `actor_id` 的附赠动作尚未使用
+- `target_id` 必须位于触及范围内，也就是 5 尺内
+
+成功后后端会写入术士运行态：
+
+- `linked_entity_id`
+- `linked_entity_name`
+- `remaining_source_turn_ends`
+- `special_senses`
+
+LLM 使用规则：
+
+- 先用 `UseGazeOfTwoMinds` 建立连接。
+- 后续施法时不用额外传新参数，后端会自动读取当前连接状态。
+- 如果 `can_cast_via_link = true`，则单体攻击法术会按连接目标的位置做射程与视线校验。
+- 如果目标超出 60 尺，后端会自动退回施法者自身位置，不会继续借位施法。
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "gaze_of_two_minds": {
+          "enabled": true,
+          "linked_entity_id": "ent_ally_001",
+          "linked_entity_name": "Scout",
+          "remaining_source_turn_ends": 2,
+          "special_senses": {
+            "darkvision": 60
+          },
+          "can_cast_via_link": true,
+          "distance_to_link_feet": 5
+        }
+      }
+    }
+  }
+}
+```
+
+### Pact of the Chain / 链之魔契
+
+用途：
+
+- 以一个魔法动作无耗位召唤或替换你的特殊魔宠
+- 当前实现直接走职业特性服务，不依赖通用 `EncounterCastSpell`
+
+服务：
+
+- `UsePactOfTheChain`
+
+调用参数：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001",
+  "familiar_form": "pseudodragon",
+  "creature_type": "celestial",
+  "target_point": {
+    "x": 3,
+    "y": 2,
+    "anchor": "cell_center"
+  }
+}
+```
+
+参数说明：
+
+- `encounter_id`：当前遭遇战 ID
+- `actor_id`：使用链之魔契的术士实体 ID
+- `familiar_form`：当前支持的魔宠形态之一
+  - `slaad_tadpole`
+  - `pseudodragon`
+  - `owl`
+  - `skeleton`
+  - `zombie`
+  - `sprite`
+  - `quasit`
+  - `imp`
+  - `sphinx_of_wonder`
+- `creature_type`：可选；当 `familiar_form = owl` 时可传，例如 `celestial / fey / fiend`
+- `target_point`：可选；若不传，后端会自动把魔宠放在施法者身边最近的合法未占据格
+
+调用前提：
+
+- 当前必须轮到 `actor_id`
+- `actor_id` 需要拥有 `Pact of the Chain / 链之魔契`
+- `actor_id` 的动作尚未使用
+- 如果传了 `target_point`，则必须在施法者 `10 尺` 内且是合法未占据格
+
+后端行为：
+
+- 召唤物会加入地图与遭遇战实体表
+- 召唤物会自己掷先攻，并按先攻插入 `turn_order`
+- 若术士已有旧魔宠，后端会先移除旧魔宠，再放入新魔宠
+- 不消耗 `spell_slots` 或 `pact_magic_slots`
+- 会写入术士运行态：
+  - `warlock.pact_of_the_chain.familiar_entity_id`
+  - `warlock.pact_of_the_chain.familiar_name`
+  - `warlock.pact_of_the_chain.familiar_form_id`
+
+LLM 使用规则：
+
+- 这是一个主动声明能力，直接调用 `UsePactOfTheChain`
+- 若玩家没有指定落点，可以省略 `target_point`
+- 若玩家明确指定落点，就把格点传给后端校验
+- 若玩家想更换魔宠形态，直接再次调用；后端会自动替换旧魔宠
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "pact_of_the_chain": {
+          "enabled": true,
+          "familiar_entity_id": "ent_familiar_001",
+          "familiar_name": "Pseudodragon",
+          "familiar_form_id": "pseudodragon"
+        },
+        "available_features": [
+          "eldritch_invocations",
+          "pact_magic",
+          "pact_of_the_chain",
+          "magical_cunning"
+        ]
+      }
+    }
+  }
+}
+```
+
+### Eldritch Mind / 魔能意志
+
+用途：
+
+- 被动强化专注维持
+- 使角色进行“保持专注”的体质豁免时具有优势
+
+触发方式：
+
+- 不单独调用服务
+- 后端在 `RequestConcentrationCheck` 时自动读取该祈唤
+
+后端行为：
+
+- 如果术士拥有 `Eldritch Mind / 魔能意志`，专注检定请求默认会变为 `advantage`
+- 如果外部已经给了 `disadvantage`，当前实现会先与该优势抵消，结果变为 `normal`
+
+LLM 使用规则：
+
+- 不需要额外声明
+- 只要角色已选择该祈唤，专注检定链会自动生效
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "eldritch_mind": {
+          "enabled": true
+        },
+        "available_features": [
+          "eldritch_invocations",
+          "pact_magic",
+          "eldritch_mind",
+          "magical_cunning"
+        ]
+      }
+    }
+  }
+}
+```
+
+### Devil's Sight / 魔鬼视界
+
+用途：
+
+- 被动提供 120 尺特殊视觉
+- 目前只作为 LLM 可读规则摘要，不直接改战斗判定
+
+触发方式：
+
+- 不单独调用服务
+- 后端在 `warlock` 运行态与 `GetEncounterState` 中自动投影
+
+后端行为：
+
+- 若术士拥有 `Devil's Sight / 魔鬼视界`，运行态会写入：
+  - `enabled = true`
+  - `range_feet = 120`
+  - `sees_magical_darkness = true`
+
+当前限制：
+
+- 现在还没有把 `魔法黑暗 / magical darkness` 正式接入视线判定
+- 所以这项能力当前主要是给 LLM 读取，并在如 `Darkness / 黑暗术` 之类配合中手动参考
+
+LLM 使用规则：
+
+- 不需要主动声明
+- 当战场上存在普通黑暗或魔法黑暗相关描述时，优先查看施法者是否有 `devils_sight`
+- 目前后端不会自动因为该能力修改命中、视线或可见性结果
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "class_features": {
+      "warlock": {
+        "devils_sight": {
+          "enabled": true,
+          "range_feet": 120,
+          "sees_magical_darkness": true
+        },
+        "available_features": [
+          "eldritch_invocations",
+          "pact_magic",
+          "devils_sight",
+          "magical_cunning"
+        ]
+      }
+    }
+  }
+}
+```
+
+### Eldritch Smite / 魔能斩
+
+用途：
+
+- 当术士以契约武器命中目标后，消耗一个契约法术位，附加力场伤害，并可选择将目标击倒。
+
+触发方式：
+
+- 不单独调用服务。
+- 通过 `ExecuteAttack` 的 `class_feature_options.eldritch_smite` 显式声明触发。
+
+调用参数：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "target_id": "ent_enemy_001",
+  "weapon_id": "longsword",
+  "final_total": 19,
+  "dice_rolls": {
+    "base_rolls": [13],
+    "modifier": 6
+  },
+  "damage_rolls": [
+    {
+      "source": "weapon:longsword:part_0",
+      "rolls": [3]
+    },
+    {
+      "source": "warlock_eldritch_smite",
+      "rolls": [1, 2, 3, 4]
+    }
+  ],
+  "class_feature_options": {
+    "eldritch_smite": {
+      "enabled": true,
+      "slot_level": 3,
+      "knock_prone": true
+    }
+  }
+}
+```
+
+## Spell Notes For LLM
+
+### Disguise Self / 易容术
+
+用途：
+
+- 标准一环自我幻术
+- 当前实现目标是“可施放、可投影、可让 LLM 看到识破规则”
+
+调用方式：
+
+- 通过 `ExecuteSpell`
+- 当前推荐直接把它当作普通自我法术使用
+
+调用参数示例：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001",
+  "spell_id": "disguise_self",
+  "cast_level": 1,
+  "declared_action_cost": "action"
+}
+```
+
+后端行为：
+
+- 若法术定义的 `targeting.type = self`，后端会自动把施法者自己补成目标
+- 会生成一个活动中的 `spell_instance`
+- 会给施法者写入一个 `effect_type = disguise_self` 的持续效果
+
+当前限制：
+
+- 当前系统不做“研究动作识破幻术”的自动规则执行
+- 但可以在效果元数据中记录：
+  - 外观描述
+  - 身高变化
+  - 体态描述
+  - “物理检查会穿过去”
+  - “可通过 Investigation vs spell DC 识破”
+- 这些信息主要给 LLM 读取并用于叙事判断
+
+持续时间规则：
+
+- 按当前统一约定，`1 小时` 类效果先按“持续到长休”处理
+- 后续等长休系统与更完整时长系统补上后，再统一收口
+
+参数说明：
+
+- `class_feature_options.eldritch_smite.enabled`：是否声明本次攻击命中后触发魔能斩
+- `class_feature_options.eldritch_smite.slot_level`：本次要消耗的契约法术位环级
+- `class_feature_options.eldritch_smite.knock_prone`：命中后是否尝试将目标击倒
+
+调用前提：
+
+- `actor_id` 必须拥有 `Eldritch Smite / 魔能斩`
+- 当前攻击必须使用已绑定的 `Pact of the Blade / 刃之魔契` 武器
+- 本回合尚未使用过魔能斩
+- 必须有一个与 `slot_level` 完全一致且仍可用的 `pact_magic_slots`
+
+后端行为：
+
+- 只有命中时才会生效
+- 额外伤害公式为 `1d8 + 每法术位环级 1d8`
+- 后端实现为 `(slot_level + 1)d8` 力场伤害
+- 只消耗 `pact_magic_slots`，不会消耗普通 `spell_slots`
+- 若 `knock_prone = true`，则对 `Huge / 巨型` 及以下目标附加 `prone`
+- 若目标体型超过 `Huge / 巨型`，则不会击倒，但仍正常造成额外伤害
+
+成功后后端会写入：
+
+- `warlock.eldritch_smite.used_this_turn = true`
+- `resources.pact_magic_slots.remaining`
+
+LLM 使用规则：
+
+- 只有在“契约武器已经命中”且“本回合还没用过魔能斩”时，才声明 `eldritch_smite`
+- `slot_level` 必须与当前可用的契约法术位环级一致
+- 如果想附带击倒效果，再传 `knock_prone = true`
+- 若攻击未命中，不要声明魔能斩
+
+`GetEncounterState` 里建议 LLM 重点读取：
+
+```json
+{
+  "resources": {
+    "pact_magic_slots": {
+      "slot_level": 3,
+      "max": 2,
+      "remaining": 2
+    },
+    "class_features": {
+      "warlock": {
+        "eldritch_smite": {
+          "enabled": true,
+          "used_this_turn": false
+        }
+      }
+    }
+  }
+}
+```
+
+### Find Familiar Special Forms / 寻获魔宠特殊形态数据
+
+用途：
+
+- 为 `Find Familiar / 寻获魔宠` 与后续 `Pact of the Chain / 链之魔契` 提前补齐特殊形态的数据底座
+- 当前先提供召唤实体 builder 与结构化资料，不直接开放新的玩家动作服务
+
+当前已内置的特殊形态：
+
+- `slaad_tadpole`
+- `pseudodragon`
+- `owl`
+- `skeleton`
+- `zombie`
+- `sprite`
+- `quasit`
+- `imp`
+- `sphinx_of_wonder`
+
+当前数据落点：
+
+- 可直接用于攻击链的动作写入 `EncounterEntity.weapons`
+- 不进入当前自动战斗结算的特殊能力写入 `source_ref`
+  - `traits_metadata`
+  - `actions_metadata`
+  - `reactions_metadata`
+  - `special_senses`
+  - `languages`
+  - `condition_immunities`
+
+当前限制：
+
+- 这一层只是数据 builder，不负责把魔宠正式召入战斗
+- `链之魔契 / Pact of the Chain` 的控制逻辑、魔宠独立先攻、特殊动作按钮、变形/隐形/真心视界等主动能力还没接服务
+- 因此这些特殊能力当前主要给 LLM 读取，用于叙事与规则判断
+
+LLM 使用规则：
+
+- 如果战场上已经存在这类魔宠实体，优先从该实体的 `source_ref` 读取其特殊感官、特质与动作说明
+- 若看到 `weapons` 中存在可攻击条目，可以按普通攻击链使用这些攻击
+- 若是 `source_ref.actions_metadata` 或 `source_ref.reactions_metadata` 中的能力，当前默认视为“规则已记录、系统未自动化”，由 LLM 判断是否可叙述或暂不触发
+
+### Find Familiar / 寻获魔宠
+
+用途：
+
+- 通过 `EncounterCastSpell` 正式把魔宠召入战斗
+- 当前已支持一只普通形态：`owl`
+
+调用方式：
+
+- `EncounterCastSpell.execute(...)`
+
+调用参数示例：
+
+```json
+{
+  "encounter_id": "enc_xxx",
+  "actor_id": "ent_warlock_001",
+  "spell_id": "find_familiar",
+  "cast_level": 1,
+  "target_point": {
+    "x": 3,
+    "y": 2,
+    "anchor": "cell_center"
+  },
+  "spell_options": {
+    "familiar_form": "owl",
+    "creature_type": "celestial"
+  }
+}
+```
+
+参数说明：
+
+- `spell_options.familiar_form` 为必填
+- 当前支持值：
+  - `slaad_tadpole`
+  - `pseudodragon`
+  - `owl`
+  - `skeleton`
+  - `zombie`
+  - `sprite`
+  - `quasit`
+  - `imp`
+  - `sphinx_of_wonder`
+- 当 `spell_options.familiar_form = owl` 时，可额外传 `spell_options.creature_type`
+  - 可省略；当前后端省略时默认按 `fey` 记录
+- `target_point` 可省略；省略时后端会自动找施法者身边最近的合法未占据格
+
+调用前提：
+
+- 必须掌握 `find_familiar`
+- 必须提供 `spell_options.familiar_form`
+- 若提供 `target_point`，则必须位于施法者 `10 尺` 内且是合法未占据格
+
+后端行为：
+
+- 会创建 `spell_instance`
+- 会创建对应特殊形态召唤物实体并加入地图
+- 召唤物会自己掷先攻，并按先攻插入 `turn_order`
+- 同一施法者再次施放时，会先移除旧魔宠，再放入新魔宠
+
+当前限制：
+
+- 目前普通动物形态只支持 `owl`
+- 暂不支持通过通用 `ExecuteSpell` 传 `spell_options`
+- 这一轮只保证 `EncounterCastSpell` 直调稳定可用
 - 更多职业特性与子职
 - 更复杂的战斗外施法与探索期逻辑
 
@@ -357,6 +1130,7 @@
 ### 生命值、倒地与死亡
 
 - [x] temp hp
+- [x] GrantTemporaryHp 基础服务
 - [x] resistance / vulnerability / immunity
 - [x] 0 HP
 - [x] dying / unconscious / stable / dead
@@ -420,8 +1194,25 @@
 - [ ] 更完整的 Deflect Energy 细化规则
 - [ ] 更复杂的战斗外施法
 - [ ] 更完整的社交 / 探索 / 长休系统
+- [ ] 临时生命值的长休清空尚未接入
+  - 当前已支持临时生命值吸收伤害与通用授予服务
+  - 但由于长休系统尚未实现，"无持续时间的临时生命值在长休结束时清空" 这条规则仍未落地
 - [ ] 更完整的装备持握与弹药管理
 - [ ] 更完整的 LLM 战斗协议文档拆分
+
+## 玩家可见层中文化约定
+
+- `GetEncounterState` 属于玩家可见投影层，默认应输出中文展示文案。
+- 内部 runtime / repository / event payload 继续保留稳定英文 id。
+  - 例如：`spell_id`、`weapon_id`、`entity_id`、`effect_type`、`damage_type` 不因展示层中文化而改变。
+- 中文化优先放在投影层完成，不在底层状态里回写中文。
+- 当前已在投影层中文化的典型内容包括：
+  - 生命状态摘要
+  - 条件与持续效果标签
+  - 距离 / 网格 / 移动力单位
+  - 法术位与契约魔法摘要
+  - 常见武器 / 法术展示名与伤害类型
+- 后续新增对外动作调用接口时，除参数协议外，必须同步补充一段面向 LLM 的中文调用说明，写入本文件或相邻开发文档，避免调用层与展示层脱节。
 
 ## 维护方式
 

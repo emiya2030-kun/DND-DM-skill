@@ -698,6 +698,9 @@ class AttackRollRequest:
         raw_divine_smite = normalized_class_feature_options.get("divine_smite")
         if isinstance(raw_divine_smite, dict):
             request_class_feature_options["divine_smite"] = dict(raw_divine_smite)
+        raw_eldritch_smite = normalized_class_feature_options.get("eldritch_smite")
+        if isinstance(raw_eldritch_smite, dict):
+            request_class_feature_options["eldritch_smite"] = dict(raw_eldritch_smite)
         raw_lifedrinker = normalized_class_feature_options.get("lifedrinker")
         if isinstance(raw_lifedrinker, dict):
             request_class_feature_options["lifedrinker"] = dict(raw_lifedrinker)

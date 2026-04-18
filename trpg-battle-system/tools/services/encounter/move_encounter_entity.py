@@ -16,7 +16,7 @@ from tools.services.combat.defense.armor_profile_resolver import get_armor_speed
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
-from tools.services.encounter.movement_rules import get_occupied_cells, validate_movement_path
+from tools.services.encounter.movement_rules import get_occupied_cells, normalize_movement_mode, validate_movement_path
 from tools.services.encounter.zones import resolve_zone_effects
 
 
@@ -37,6 +37,7 @@ class MoveEncounterEntity:
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
         free_movement_feet: int = 0,
+        movement_mode: str = "walk",
     ) -> Encounter:
         encounter = self.repository.get(encounter_id)
         if encounter is None:
@@ -53,6 +54,7 @@ class MoveEncounterEntity:
         runtime = self._safe_condition_runtime(entity.conditions)
         if runtime.has("grappled"):
             raise ValueError("cannot_move_while_grappled")
+        normalized_movement_mode = normalize_movement_mode(entity, movement_mode)
 
         if not isinstance(target_position, dict) or "x" not in target_position or "y" not in target_position:
             raise ValueError("invalid_target_position")
@@ -70,6 +72,7 @@ class MoveEncounterEntity:
                 target_position=target_position,
                 count_movement=count_movement,
                 use_dash=use_dash,
+                movement_mode=normalized_movement_mode,
             )
         finally:
             if dragged_target is not None and original_dragged_position is not None:
@@ -79,10 +82,16 @@ class MoveEncounterEntity:
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(entity)
         armor_speed_penalty = get_armor_speed_penalty(entity)
         distance_already_moved = self._movement_spent_feet(entity)
-        effective_walk_speed = max(0, entity.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
+        effective_speed = max(
+            0,
+            int(entity.speed.get(normalized_movement_mode, 0) or 0)
+            - exhaustion_penalty
+            - mastery_speed_penalty
+            - armor_speed_penalty,
+        )
         if has_active_grapple_target(encounter, entity):
-            effective_walk_speed //= 2
-        total_available_movement = effective_walk_speed * (2 if use_dash else 1)
+            effective_speed //= 2
+        total_available_movement = effective_speed * (2 if use_dash else 1)
         available_movement = max(0, total_available_movement - distance_already_moved)
         usable_free_movement_feet = max(0, free_movement_feet)
         if result.feet_cost > available_movement + usable_free_movement_feet:
@@ -95,7 +104,7 @@ class MoveEncounterEntity:
             spent_after_move = distance_already_moved + counted_cost
             combat_flags = self._ensure_combat_flags_dict(entity)
             combat_flags["movement_spent_feet"] = spent_after_move
-            entity.speed["remaining"] = max(0, effective_walk_speed - min(spent_after_move, effective_walk_speed))
+            entity.speed["remaining"] = max(0, effective_speed - min(spent_after_move, effective_speed))
 
         dragged_position = resolve_dragged_target_position(
             start_position=start_position,
@@ -133,6 +142,7 @@ class MoveEncounterEntity:
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
         free_movement_feet: int = 0,
+        movement_mode: str = "walk",
     ) -> dict[str, Any]:
         updated = self.execute(
             encounter_id=encounter_id,
@@ -142,6 +152,7 @@ class MoveEncounterEntity:
             use_dash=use_dash,
             allow_out_of_turn_actor=allow_out_of_turn_actor,
             free_movement_feet=free_movement_feet,
+            movement_mode=movement_mode,
         )
         current_entity = updated.entities[entity_id]
         return {

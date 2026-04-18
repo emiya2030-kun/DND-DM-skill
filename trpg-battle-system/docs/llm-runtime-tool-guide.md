@@ -86,6 +86,14 @@ const currentState = window.getEncounterState()
 
 根据玩家意图，调用对应 service tool。
 
+关于玩家召唤物共享回合：
+
+- `GetEncounterState` 现在会返回 `current_turn_group`
+- 其中 `controlled_members` 表示本回合可直接操纵的实体
+- 玩家召唤物、魔宠、受控坐骑如果并入宿主回合，仍然继续使用原有动作命令
+- 这类单位不需要新接口，仍然直接传它自己的 `actor_id`
+- 只要该单位出现在当前 `current_turn_group.controlled_members` 中，就可以合法行动
+
 关于专注法术：
 
 - 如果 `ExecuteConcentrationCheck` 结算失败，系统不只是把施法者的 `is_concentrating` 改成 `false`
@@ -217,6 +225,26 @@ window.applyEncounterState(nextState)
 - 给前端渲染整页
 
 返回重点：
+
+- `current_turn_entity`
+  - 当前宿主行动者
+- `current_turn_group`
+  - 当前回合可操纵编组摘要
+  - 结构示例：
+
+```json
+{
+  "owner_entity_id": "ent_warlock_lv5_001",
+  "owner_name": "Kael",
+  "controlled_members": [
+    {"entity_id": "ent_warlock_lv5_001", "name": "Kael", "relation": "owner"},
+    {"entity_id": "ent_familiar_5152238c5994", "name": "Sphinx of Wonder", "relation": "summon"}
+  ]
+}
+```
+
+- `turn_order`
+  - 共享回合召唤物不会单独占据先攻节点
 
 - `current_turn_entity`
 - `turn_order`

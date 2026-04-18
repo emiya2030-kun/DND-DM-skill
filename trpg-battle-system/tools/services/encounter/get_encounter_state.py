@@ -23,6 +23,8 @@ from tools.services.class_features.shared import (
     ensure_warlock_runtime,
     has_fighting_style,
 )
+from tools.services.class_features.shared.warlock_invocations import resolve_gaze_of_two_minds_origin
+from tools.services.shared_turns import list_current_turn_group_members
 from tools.services.map.build_map_notes import BuildMapNotes
 from tools.services.map.render_battlemap_view import RenderBattlemapView
 
@@ -87,7 +89,14 @@ MARTIAL_CLASS_SUMMARIES = {
             "cantrips_known",
             "prepared_spells_count",
             "eldritch_invocations",
+            "pact_of_the_chain",
+            "armor_of_shadows",
+            "fiendish_vigor",
+            "eldritch_mind",
+            "devils_sight",
             "pact_of_the_blade",
+            "gaze_of_two_minds",
+            "eldritch_smite",
             "lifedrinker",
             "magical_cunning",
             "contact_patron",
@@ -96,6 +105,78 @@ MARTIAL_CLASS_SUMMARIES = {
         ],
         "available_features": ["eldritch_invocations", "pact_magic"],
     },
+}
+
+DISPLAY_NAME_MAP = {
+    "Rapier": "刺剑",
+    "Eldritch Blast": "魔能爆",
+    "Hold Person": "定身类人",
+    "Blindness/Deafness": "目盲/耳聋术",
+    "Burning Hands": "燃烧之手",
+    "Sacred Flame": "圣火术",
+    "Fireball": "火球术",
+}
+
+DAMAGE_TYPE_MAP = {
+    "acid": "强酸",
+    "bludgeoning": "钝击",
+    "cold": "寒冷",
+    "fire": "火焰",
+    "force": "力场",
+    "lightning": "闪电",
+    "necrotic": "暗蚀",
+    "piercing": "穿刺",
+    "poison": "毒素",
+    "psychic": "心灵",
+    "radiant": "光耀",
+    "slashing": "挥砍",
+    "thunder": "雷鸣",
+}
+
+CONDITION_NAME_MAP = {
+    "blinded": "目盲",
+    "charmed": "魅惑",
+    "deafened": "耳聋",
+    "exhaustion": "力竭",
+    "frightened": "恐慌",
+    "grappled": "擒抱",
+    "incapacitated": "失能",
+    "invisible": "隐形",
+    "paralyzed": "麻痹",
+    "petrified": "石化",
+    "poisoned": "中毒",
+    "prone": "倒地",
+    "restrained": "束缚",
+    "stunned": "震慑",
+    "unconscious": "昏迷",
+}
+
+CHECK_KEY_MAP = {
+    "acrobatics": "杂技",
+    "animal_handling": "驯兽",
+    "arcana": "奥秘",
+    "athletics": "运动",
+    "deception": "欺瞒",
+    "history": "历史",
+    "insight": "洞悉",
+    "intimidation": "威吓",
+    "investigation": "调查",
+    "medicine": "医药",
+    "nature": "自然",
+    "perception": "察觉",
+    "performance": "表演",
+    "persuasion": "游说",
+    "religion": "宗教",
+    "sleight_of_hand": "巧手",
+    "stealth": "隐匿",
+    "survival": "求生",
+}
+
+HP_STATUS_MAP = {
+    "DOWN": "倒地",
+    "HEALTHY": "健康",
+    "WOUNDED": "受伤",
+    "BLOODIED": "重伤",
 }
 
 
@@ -132,6 +213,7 @@ class GetEncounterState:
             "encounter_name": encounter.name,
             "round": encounter.round,
             "current_turn_entity": self._build_current_turn_entity(encounter, current_entity),
+            "current_turn_group": self._build_current_turn_group(encounter),
             "turn_order": self._build_turn_order(encounter, current_entity),
             "active_spell_summaries": self._build_active_spell_summaries(encounter),
             "retargetable_spell_actions": self._build_retargetable_spell_actions(
@@ -183,7 +265,7 @@ class GetEncounterState:
             "class": entity.entity_def_id,
             "description": self._extract_description(entity),
             "position": self._format_position(entity),
-            "movement_remaining": f"{entity.speed['remaining']} feet",
+            "movement_remaining": f"{entity.speed['remaining']} 尺",
             "ac": entity.ac,
             "speed": effective_speed,
             "effective_speed": effective_speed,
@@ -206,7 +288,7 @@ class GetEncounterState:
             "weapon_ranges": self._build_weapon_ranges(encounter, entity),
             "conditions": self._format_conditions(encounter, entity),
             "ongoing_effects": self._build_entity_ongoing_effects(encounter, entity),
-            "resources": self._build_resources_view(entity),
+            "resources": self._build_resources_view(encounter, entity),
             "death_saves": self._format_death_saves(entity),
         }
 
@@ -237,6 +319,26 @@ class GetEncounterState:
             )
         return items
 
+    def _build_current_turn_group(self, encounter: Encounter) -> dict[str, Any] | None:
+        members = list_current_turn_group_members(encounter)
+        if not members:
+            return None
+        owner = members[0]
+        controlled_members: list[dict[str, Any]] = []
+        for index, entity in enumerate(members):
+            controlled_members.append(
+                {
+                    "entity_id": entity.entity_id,
+                    "name": entity.name,
+                    "relation": "owner" if index == 0 else "summon",
+                }
+            )
+        return {
+            "owner_entity_id": owner.entity_id,
+            "owner_name": owner.name,
+            "controlled_members": controlled_members,
+        }
+
     def _build_active_spell_summaries(self, encounter: Encounter) -> list[str]:
         summaries: list[str] = []
         for instance in encounter.spell_instances:
@@ -246,7 +348,7 @@ class GetEncounterState:
 
             concentration = instance.get("concentration", {})
             caster_name = instance.get("caster_name") or "未知施法者"
-            spell_name = instance.get("spell_name") or instance.get("spell_id") or "未知法术"
+            spell_name = self._localize_display_name(instance.get("spell_name") or instance.get("spell_id") or "未知法术")
             if concentration.get("required") and concentration.get("active"):
                 summaries.append(f"{caster_name}正在专注：{spell_name}")
             else:
@@ -268,17 +370,17 @@ class GetEncounterState:
                 continue
             effect_type = str(effect.get("effect_type") or "").strip().lower()
             if effect_type == "disengage":
-                effect_labels.append("Disengage")
+                effect_labels.append("脱离")
             elif effect_type == "dodge":
-                effect_labels.append("Dodge")
+                effect_labels.append("闪避")
             elif effect_type == "help_attack":
                 source_name = effect.get("source_name") or "未知角色"
-                effect_labels.append(f"受到{source_name}的 Help（攻击）")
+                effect_labels.append(f"受到{source_name}的协助（攻击）")
             elif effect_type == "help_ability_check":
                 source_name = effect.get("source_name") or "未知角色"
                 help_check = effect.get("help_check") or {}
                 check_key = help_check.get("check_key") or "未知检定"
-                effect_labels.append(f"受到{source_name}的 Help（{check_key}）")
+                effect_labels.append(f"受到{source_name}的协助（{self._localize_check_key(check_key)}）")
         active_grapple = entity.combat_flags.get("active_grapple", {}) if isinstance(entity.combat_flags, dict) else {}
         target_id = active_grapple.get("target_entity_id")
         if isinstance(target_id, str):
@@ -328,8 +430,8 @@ class GetEncounterState:
         return {
             "name": encounter.map.name,
             "description": encounter.map.description,
-            "dimensions": f"{encounter.map.width} x {encounter.map.height} tiles",
-            "grid_size": f"Each tile represents {encounter.map.grid_size_feet} feet",
+            "dimensions": f"{encounter.map.width} x {encounter.map.height} 格",
+            "grid_size": f"每格代表 {encounter.map.grid_size_feet} 尺",
         }
 
     def _build_reaction_requests(self, encounter: Encounter) -> list[dict[str, Any]]:
@@ -560,7 +662,7 @@ class GetEncounterState:
             cost_text = f"，消耗 {feet_cost} 尺移动力" if isinstance(feet_cost, int) else ""
             return f"{actor_name}从 {from_position} 移动到 {to_position}{cost_text}{dash_text}。"
         if event_type == "attack_resolved":
-            attack_name = payload.get("attack_name") or "攻击"
+            attack_name = self._localize_display_name(payload.get("attack_name") or "攻击")
             final_total = payload.get("final_total")
             target_ac = payload.get("target_ac")
             if bool(payload.get("hit")):
@@ -569,18 +671,18 @@ class GetEncounterState:
             return f"{actor_name}用{attack_name}攻击{target_name}未命中（{final_total} 对 AC {target_ac}）。"
         if event_type == "damage_applied":
             hp_change = payload.get("hp_change")
-            reason = payload.get("reason") or "伤害"
+            reason = self._localize_display_name(payload.get("reason") or "伤害")
             if isinstance(hp_change, int):
                 return f"{actor_name}对{target_name}造成 {hp_change} 点伤害（{reason}）。"
             return f"{target_name}受到伤害（{reason}）。"
         if event_type == "healing_applied":
             hp_change = payload.get("hp_change")
-            reason = payload.get("reason") or "治疗"
+            reason = self._localize_display_name(payload.get("reason") or "治疗")
             if isinstance(hp_change, int):
                 return f"{actor_name}为{target_name}恢复 {abs(hp_change)} 点生命（{reason}）。"
             return f"{target_name}恢复了生命值（{reason}）。"
         if event_type == "spell_declared":
-            spell_name = payload.get("spell_name") or payload.get("spell_id") or "法术"
+            spell_name = self._localize_display_name(payload.get("spell_name") or payload.get("spell_id") or "法术")
             target_ids = payload.get("target_ids")
             target_label = ""
             if isinstance(target_ids, list) and target_ids:
@@ -595,7 +697,7 @@ class GetEncounterState:
             cast_level_text = f"（{cast_level}环）" if isinstance(cast_level, int) and cast_level > 0 else ""
             return f"{actor_name}施放了{spell_name}{cast_level_text}{target_label}。"
         if event_type == "saving_throw_resolved":
-            spell_name = payload.get("spell_name") or payload.get("spell_id") or "法术效果"
+            spell_name = self._localize_display_name(payload.get("spell_name") or payload.get("spell_id") or "法术效果")
             save_ability = str(payload.get("save_ability") or "").upper()
             final_total = payload.get("final_total")
             save_dc = payload.get("save_dc")
@@ -648,7 +750,7 @@ class GetEncounterState:
         if event_type == "turn_ended":
             return f"{actor_name}结束了自己的回合。"
         if event_type == "spell_retargeted":
-            spell_name = payload.get("spell_name") or payload.get("spell_id") or "标记法术"
+            spell_name = self._localize_display_name(payload.get("spell_name") or payload.get("spell_id") or "标记法术")
             previous_target_name = self._entity_name_or_fallback(encounter, payload.get("previous_target_id"), "未知目标")
             new_target_name = self._entity_name_or_fallback(encounter, payload.get("new_target_id"), "未知目标")
             return f"{actor_name}将{spell_name}从{previous_target_name}转移到了{new_target_name}。"
@@ -659,13 +761,15 @@ class GetEncounterState:
         for index, weapon in enumerate(entity.weapons):
             damage_parts = weapon.get("damage", [])
             damage_text = " + ".join(
-                f"{part['formula']} {part['type'].capitalize()}" for part in damage_parts if "formula" in part and "type" in part
+                f"{part['formula']} {self._localize_damage_type(part['type'])}"
+                for part in damage_parts
+                if "formula" in part and "type" in part
             )
             items.append(
                 {
                     "slot": weapon.get("slot", f"weapon_{index + 1}"),
                     "weapon_id": weapon.get("weapon_id"),
-                    "name": weapon.get("name"),
+                    "name": self._localize_display_name(weapon.get("name")),
                     "damage": damage_text,
                     "properties": weapon.get("properties", []),
                     "bonus": self._format_weapon_bonus(weapon),
@@ -687,7 +791,7 @@ class GetEncounterState:
             grouped_spells[group_key].append(
                 {
                     "id": spell.get("spell_id"),
-                    "name": spell.get("name"),
+                    "name": self._localize_display_name(spell.get("name")),
                     "description": spell.get("description"),
                     "damage": spell.get("damage", []),
                     "requires_attack_roll": spell.get("requires_attack_roll", False),
@@ -709,8 +813,8 @@ class GetEncounterState:
         ]
 
         return {
-            "max_melee_range": f"{max_melee_range} ft" if max_melee_range else "0 ft",
-            "max_ranged_range": f"{max_ranged_range} ft" if max_ranged_range else "0 ft",
+            "max_melee_range": f"{max_melee_range} 尺" if max_melee_range else "0 尺",
+            "max_ranged_range": f"{max_ranged_range} 尺" if max_ranged_range else "0 尺",
             "targets_within_melee_range": self._filter_targets_by_range(entity, enemy_targets, max_melee_range),
             "targets_within_ranged_range": self._filter_targets_by_range(entity, enemy_targets, max_ranged_range),
         }
@@ -741,7 +845,7 @@ class GetEncounterState:
                     {
                         "entity_id": target.entity_id,
                         "name": target.name,
-                        "distance": f"{distance_feet} ft",
+                        "distance": f"{distance_feet} 尺",
                     }
                 )
         return visible_targets
@@ -781,7 +885,7 @@ class GetEncounterState:
     ) -> str | None:
         if current_entity is None or entity.entity_id == current_entity.entity_id:
             return None
-        return f"{self._distance_feet(current_entity, entity)} ft"
+        return f"{self._distance_feet(current_entity, entity)} 尺"
 
     def _format_hp(self, entity: EncounterEntity) -> str:
         return f"{entity.hp['current']} / {entity.hp['max']} HP"
@@ -798,7 +902,7 @@ class GetEncounterState:
             status = "WOUNDED"
         else:
             status = "BLOODIED"
-        return f"{current_hp}/{max_hp} HP ({percent}%) [{status}]"
+        return f"{current_hp}/{max_hp} HP ({percent}%) [{HP_STATUS_MAP.get(status, status)}]"
 
     def _format_position(self, entity: EncounterEntity) -> str:
         return f"({entity.position['x']}, {entity.position['y']})"
@@ -806,16 +910,17 @@ class GetEncounterState:
     def _format_conditions(self, encounter: Encounter, entity: EncounterEntity) -> str | list[str]:
         effect_labels = self._build_entity_ongoing_effects(encounter, entity)
         if not entity.conditions and not effect_labels:
-            return "No active conditions."
+            return "无状态"
+        localized_conditions = [self._localize_condition_label(encounter, condition) for condition in entity.conditions]
         if not effect_labels:
-            return ", ".join(entity.conditions)
-        return self._dedupe_preserve_order([*entity.conditions, *effect_labels])
+            return ", ".join(localized_conditions)
+        return self._dedupe_preserve_order([*localized_conditions, *effect_labels])
 
-    def _build_resources_view(self, entity: EncounterEntity) -> dict[str, Any]:
+    def _build_resources_view(self, encounter: Encounter, entity: EncounterEntity) -> dict[str, Any]:
         spell_slots = self._build_spell_slots_resource_view(entity)
         pact_magic_slots = self._build_pact_magic_slots_resource_view(entity)
         feature_uses = self._build_feature_uses_resource_view(entity)
-        class_features = self._build_class_feature_resource_view(entity)
+        class_features = self._build_class_feature_resource_view(encounter, entity)
         return {
             "summary": self._format_resources_summary(entity),
             "spell_slots": spell_slots,
@@ -833,9 +938,9 @@ class GetEncounterState:
             slot_parts = []
             for level, slot_data in sorted(spell_slots.items(), key=lambda item: item[0]):
                 if isinstance(slot_data, dict) and "remaining" in slot_data and "max" in slot_data:
-                    slot_parts.append(f"{level}st {slot_data['remaining']}/{slot_data['max']}")
+                    slot_parts.append(f"{self._format_spell_level_label(level)} {slot_data['remaining']}/{slot_data['max']}")
             if slot_parts:
-                parts.append("Spell Slots: " + ", ".join(slot_parts))
+                parts.append("法术位：" + ", ".join(slot_parts))
 
         pact_magic_slots = entity.resources.get("pact_magic_slots", {})
         if isinstance(pact_magic_slots, dict):
@@ -843,7 +948,7 @@ class GetEncounterState:
             remaining = pact_magic_slots.get("remaining")
             maximum = pact_magic_slots.get("max")
             if isinstance(slot_level, int) and isinstance(remaining, int) and isinstance(maximum, int):
-                parts.append(f"Pact Magic: {slot_level}st {remaining}/{maximum}")
+                parts.append(f"契约魔法：{self._format_spell_level_label(slot_level)} {remaining}/{maximum}")
 
         feature_uses = entity.resources.get("feature_uses", {})
         if feature_uses:
@@ -855,7 +960,7 @@ class GetEncounterState:
                 parts.append(", ".join(feature_parts))
 
         if not parts:
-            return "No tracked resources."
+            return "无追踪资源"
         return " | ".join(parts)
 
     def _build_spell_slots_resource_view(self, entity: EncounterEntity) -> dict[str, dict[str, int]]:
@@ -913,7 +1018,7 @@ class GetEncounterState:
             }
         return projected
 
-    def _build_class_feature_resource_view(self, entity: EncounterEntity) -> dict[str, Any]:
+    def _build_class_feature_resource_view(self, encounter: Encounter, entity: EncounterEntity) -> dict[str, Any]:
         class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
         projected: dict[str, Any] = {}
 
@@ -938,6 +1043,13 @@ class GetEncounterState:
                 for field in summary["fields"]
                 if field in bucket
             }
+            if class_id == "warlock":
+                gaze = bucket.get("gaze_of_two_minds")
+                if isinstance(gaze, dict):
+                    projected[class_id]["gaze_of_two_minds"] = dict(gaze)
+                    origin = resolve_gaze_of_two_minds_origin(encounter, entity)
+                    projected[class_id]["gaze_of_two_minds"]["can_cast_via_link"] = bool(origin.get("can_cast_via_link"))
+                    projected[class_id]["gaze_of_two_minds"]["distance_to_link_feet"] = origin.get("distance_to_link_feet")
             if class_id == "rogue" and int(bucket.get("level", 0) or 0) >= 2:
                 projected[class_id]["cunning_action"] = {
                     "bonus_dash": True,
@@ -991,8 +1103,22 @@ class GetEncounterState:
                     available_features.append("foe_slayer")
             if class_id == "warlock":
                 level = int(bucket.get("level", 0) or 0)
+                if isinstance(bucket.get("armor_of_shadows"), dict) and bucket["armor_of_shadows"].get("enabled"):
+                    available_features.append("armor_of_shadows")
+                if isinstance(bucket.get("fiendish_vigor"), dict) and bucket["fiendish_vigor"].get("enabled"):
+                    available_features.append("fiendish_vigor")
+                if isinstance(bucket.get("eldritch_mind"), dict) and bucket["eldritch_mind"].get("enabled"):
+                    available_features.append("eldritch_mind")
+                if isinstance(bucket.get("devils_sight"), dict) and bucket["devils_sight"].get("enabled"):
+                    available_features.append("devils_sight")
                 if isinstance(bucket.get("pact_of_the_blade"), dict) and bucket["pact_of_the_blade"].get("enabled"):
                     available_features.append("pact_of_the_blade")
+                if isinstance(bucket.get("pact_of_the_chain"), dict) and bucket["pact_of_the_chain"].get("enabled"):
+                    available_features.append("pact_of_the_chain")
+                if isinstance(bucket.get("gaze_of_two_minds"), dict) and bucket["gaze_of_two_minds"].get("enabled"):
+                    available_features.append("gaze_of_two_minds")
+                if isinstance(bucket.get("eldritch_smite"), dict) and bucket["eldritch_smite"].get("enabled"):
+                    available_features.append("eldritch_smite")
                 if isinstance(bucket.get("lifedrinker"), dict) and bucket["lifedrinker"].get("enabled"):
                     available_features.append("lifedrinker")
                 if level >= 2:
@@ -1036,9 +1162,9 @@ class GetEncounterState:
             return None
         parts = []
         if attack_bonus is not None:
-            parts.append(f"+{attack_bonus} attack")
+            parts.append(f"+{attack_bonus} 命中")
         if damage_bonus is not None:
-            parts.append(f"+{damage_bonus} damage")
+            parts.append(f"+{damage_bonus} 伤害")
         return ", ".join(parts)
 
     def _extract_level(self, entity: EncounterEntity) -> int | None:
@@ -1066,7 +1192,7 @@ class GetEncounterState:
 
     def _format_spell_source_label(self, instance: dict[str, Any]) -> str:
         caster_name = instance.get("caster_name") or "未知施法者"
-        spell_name = instance.get("spell_name") or instance.get("spell_id") or "未知法术"
+        spell_name = self._localize_display_name(instance.get("spell_name") or instance.get("spell_id") or "未知法术")
         return f"来自{caster_name}的{spell_name}"
 
     def _dedupe_preserve_order(self, values: list[str]) -> list[str]:
@@ -1127,11 +1253,11 @@ class GetEncounterState:
     ) -> str:
         if reason == "weapon_mastery_push":
             if moved_feet <= 0:
-                return f"{target_name}尝试被 Push 推离，但被{self._format_block_reason(block_reason)}阻挡，位置未改变。"
+                return f"{target_name}尝试被推离，但被{self._format_block_reason(block_reason)}阻挡，位置未改变。"
             destination = self._format_compact_position(final_position)
             if blocked:
-                return f"{target_name}被 Push 推离 {moved_feet} 尺，移动到 {destination}，随后被{self._format_block_reason(block_reason)}阻挡。"
-            return f"{target_name}被 Push 推离 {moved_feet} 尺，移动到 {destination}。"
+                return f"{target_name}被推离 {moved_feet} 尺，移动到 {destination}，随后被{self._format_block_reason(block_reason)}阻挡。"
+            return f"{target_name}被推离 {moved_feet} 尺，移动到 {destination}。"
         destination = self._format_compact_position(final_position)
         return f"{target_name}发生了强制位移，最终到达 {destination}。"
 
@@ -1248,7 +1374,7 @@ class GetEncounterState:
             damage_type = str(part.get("type") or "未知")
             final_damage = part.get("final_damage")
             if isinstance(final_damage, int):
-                parts.append(f"{final_damage} 点{damage_type}")
+                parts.append(f"{final_damage} 点{self._localize_damage_type(damage_type)}")
         if not parts:
             return f"造成 {total_damage} 点伤害。"
         return f"造成 {total_damage} 点伤害（{'，'.join(parts)}）。"
@@ -1266,11 +1392,12 @@ class GetEncounterState:
             condition = item.get("condition")
             if not isinstance(condition, str):
                 continue
+            localized_condition = CONDITION_NAME_MAP.get(condition, condition)
             operation = item.get("operation")
             if operation == "apply":
-                applied.append(condition)
+                applied.append(localized_condition)
             elif operation == "remove":
-                removed.append(condition)
+                removed.append(localized_condition)
 
         parts: list[str] = []
         if applied:
@@ -1289,3 +1416,43 @@ class GetEncounterState:
             return event_repository.list_by_encounter(encounter_id)
         finally:
             event_repository.close()
+
+    def _localize_display_name(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return str(value)
+        localized = DISPLAY_NAME_MAP.get(value)
+        if localized is not None:
+            return localized
+        for english, chinese in DISPLAY_NAME_MAP.items():
+            value = value.replace(english, chinese)
+        return value
+
+    def _localize_damage_type(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return "未知"
+        return DAMAGE_TYPE_MAP.get(value.lower(), value)
+
+    def _localize_check_key(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return "未知检定"
+        return CHECK_KEY_MAP.get(value.lower(), value)
+
+    def _localize_condition_label(self, encounter: Encounter, value: Any) -> str:
+        if not isinstance(value, str):
+            return str(value)
+        if value.startswith("grappled:"):
+            grappler_id = value.split(":", 1)[1]
+            grappler_name = self._entity_name_or_fallback(encounter, grappler_id, grappler_id)
+            return f"被{grappler_name}擒抱"
+        if ":" in value:
+            base, suffix = value.split(":", 1)
+            localized_base = CONDITION_NAME_MAP.get(base, base)
+            return f"{localized_base}:{suffix}"
+        return CONDITION_NAME_MAP.get(value, value)
+
+    def _format_spell_level_label(self, level: Any) -> str:
+        if isinstance(level, str) and level.isdigit():
+            return f"{int(level)}环"
+        if isinstance(level, int):
+            return f"{level}环"
+        return str(level)

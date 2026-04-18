@@ -140,6 +140,35 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 4)
             repo.close()
 
+    def test_execute_applies_ranger_expertise_to_skill_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_sabur_001"].skill_modifiers = {}
+            encounter.entities["ent_ally_sabur_001"].source_ref["skill_proficiencies"] = ["survival"]
+            encounter.entities["ent_ally_sabur_001"].class_features["ranger"] = {
+                "level": 2,
+                "expertise": {"skills": ["survival"]},
+            }
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="skill",
+                check="survival",
+                dc=15,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_roll=10,
+            )
+
+            self.assertEqual(result.final_total, 16)
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 4)
+            repo.close()
+
     def test_execute_reliable_talent_raises_low_skill_roll_to_ten(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

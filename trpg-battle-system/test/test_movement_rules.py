@@ -31,9 +31,13 @@ def build_entity(
     initiative: int = 10,
     size: str = "medium",
     speed_walk: int = 30,
+    speed_fly: int | None = None,
     speed_remaining: int = 30,
     conditions: list[str] | None = None,
 ) -> EncounterEntity:
+    speed = {"walk": speed_walk, "remaining": speed_remaining}
+    if speed_fly is not None:
+        speed["fly"] = speed_fly
     return EncounterEntity(
         entity_id=entity_id,
         name=name,
@@ -43,7 +47,7 @@ def build_entity(
         position={"x": x, "y": y},
         hp={"current": 20, "max": 20, "temp": 0},
         ac=14,
-        speed={"walk": speed_walk, "remaining": speed_remaining},
+        speed=speed,
         initiative=initiative,
         size=size,
         conditions=conditions or [],
@@ -153,6 +157,24 @@ class MovementRulesTests(unittest.TestCase):
         )
 
         self.assertEqual(result.feet_cost, 10)
+
+    def test_flying_ignores_difficult_terrain_cost(self) -> None:
+        mover = build_entity("ent_pc", name="Eric", x=2, y=2, speed_walk=30, speed_fly=40)
+        encounter = build_encounter(
+            mover,
+            terrain=[{"x": 3, "y": 2, "type": "difficult_terrain"}],
+        )
+
+        result = validate_movement_path(
+            encounter=encounter,
+            entity_id=mover.entity_id,
+            target_position={"x": 3, "y": 2},
+            count_movement=True,
+            use_dash=False,
+            movement_mode="fly",
+        )
+
+        self.assertEqual(result.feet_cost, 5)
 
     def test_large_creature_checks_full_footprint_for_target(self) -> None:
         mover = build_entity(

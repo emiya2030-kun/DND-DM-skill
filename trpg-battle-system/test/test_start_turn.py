@@ -183,6 +183,31 @@ class StartTurnTests(unittest.TestCase):
             self.assertEqual(updated.entities["ent_ally_eric_001"].combat_flags["movement_spent_feet"], 0)
             repo.close()
 
+    def test_start_turn_resets_warlock_eldritch_smite_turn_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            encounter.entities["ent_ally_eric_001"].class_features = {
+                "warlock": {
+                    "level": 5,
+                    "eldritch_invocations": {
+                        "selected": [
+                            {"invocation_id": "pact_of_the_blade"},
+                            {"invocation_id": "eldritch_smite"},
+                        ]
+                    },
+                    "eldritch_smite": {"used_this_turn": True},
+                }
+            }
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.turns.turn_effects.random.randint", return_value=1):
+                updated = StartTurn(repo).execute("enc_start_turn_test")
+
+            warlock = updated.entities["ent_ally_eric_001"].class_features["warlock"]
+            self.assertFalse(warlock["eldritch_smite"]["used_this_turn"])
+            repo.close()
+
     def test_start_turn_applies_barbarian_fast_movement_when_not_in_heavy_armor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -283,7 +308,7 @@ class StartTurnTests(unittest.TestCase):
 
             self.assertEqual(result["encounter_id"], "enc_start_turn_test")
             self.assertEqual(result["encounter_state"]["current_turn_entity"]["id"], "ent_ally_eric_001")
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "30 feet")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "30 尺")
             self.assertFalse(result["encounter_state"]["current_turn_entity"]["actions"]["action_used"])
             repo.close()
 
@@ -592,6 +617,52 @@ class StartTurnTests(unittest.TestCase):
             updated = StartTurn(repo).execute("enc_start_turn_test")
 
             self.assertFalse(any(effect.get("effect_id") == "help_check_1" for effect in updated.entities[ally.entity_id].turn_effects))
+            self.assertFalse(any(effect.get("effect_id") == "help_attack_1" for effect in updated.entities[enemy.entity_id].turn_effects))
+            repo.close()
+
+    def test_execute_expires_help_effects_created_by_shared_turn_summon(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            summon = EncounterEntity(
+                entity_id="ent_summon_001",
+                name="Sphinx",
+                side="ally",
+                category="summon",
+                controller="player",
+                position={"x": 2, "y": 2},
+                hp={"current": 24, "max": 24, "temp": 0},
+                ac=13,
+                speed={"walk": 20, "remaining": 20, "fly": 40},
+                initiative=9,
+                source_ref={"summoner_entity_id": "ent_ally_eric_001", "source_spell_id": "find_familiar"},
+            )
+            enemy = EncounterEntity(
+                entity_id="ent_enemy_goblin_001",
+                name="Goblin",
+                side="enemy",
+                category="monster",
+                controller="gm",
+                position={"x": 3, "y": 2},
+                hp={"current": 9, "max": 9, "temp": 0},
+                ac=13,
+                speed={"walk": 30, "remaining": 30},
+                initiative=8,
+                turn_effects=[
+                    {
+                        "effect_id": "help_attack_1",
+                        "effect_type": "help_attack",
+                        "source_entity_id": "ent_summon_001",
+                        "expires_on": "source_next_turn_start",
+                    }
+                ],
+            )
+            encounter.entities[summon.entity_id] = summon
+            encounter.entities[enemy.entity_id] = enemy
+            repo.save(encounter)
+
+            updated = StartTurn(repo).execute("enc_start_turn_test")
+
             self.assertFalse(any(effect.get("effect_id") == "help_attack_1" for effect in updated.entities[enemy.entity_id].turn_effects))
             repo.close()
 

@@ -11,6 +11,7 @@ from tools.services.combat.attack.weapon_mastery_effects import remove_expired_w
 from tools.services.combat.grapple.shared import release_grapple_if_invalid
 from tools.services.combat.rules.death_saves.resolve_death_save import resolve_death_save
 from tools.services.encounter.get_encounter_state import GetEncounterState
+from tools.services.shared_turns import list_current_turn_group_members
 from tools.services.encounter.turns.turn_effects import resolve_turn_effects
 from tools.services.encounter.turns.turn_engine import start_turn
 from tools.services.encounter.zones import resolve_zone_effects
@@ -135,6 +136,9 @@ def _has_knockout_protection(entity: EncounterEntity) -> bool:
 def _expire_source_turn_help_effects(encounter: Encounter, source_entity_id: str | None) -> None:
     if not isinstance(source_entity_id, str) or not source_entity_id:
         return
+    expiring_source_ids = {entity.entity_id for entity in list_current_turn_group_members(encounter)}
+    if not expiring_source_ids:
+        expiring_source_ids = {source_entity_id}
     for entity in encounter.entities.values():
         entity.turn_effects = [
             effect
@@ -142,7 +146,7 @@ def _expire_source_turn_help_effects(encounter: Encounter, source_entity_id: str
             if not (
                 isinstance(effect, dict)
                 and effect.get("effect_type") in {"help_attack", "help_ability_check", "protection"}
-                and effect.get("source_entity_id") == source_entity_id
+                and effect.get("source_entity_id") in expiring_source_ids
                 and effect.get("expires_on") == "source_next_turn_start"
             )
         ]

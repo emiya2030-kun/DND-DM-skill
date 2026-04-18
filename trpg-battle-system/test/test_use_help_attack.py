@@ -51,6 +51,28 @@ def build_enemy(*, side: str = "enemy", position: tuple[int, int] = (3, 2)) -> E
     )
 
 
+def build_shared_turn_summon() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_summon_001",
+        name="Sphinx of Wonder",
+        side="ally",
+        category="summon",
+        controller="player",
+        position={"x": 2, "y": 3},
+        hp={"current": 24, "max": 24, "temp": 0},
+        ac=13,
+        speed={"walk": 20, "remaining": 20, "fly": 40},
+        initiative=8,
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": False},
+        turn_effects=[],
+        source_ref={
+            "summoner_entity_id": "ent_actor_001",
+            "source_spell_id": "find_familiar",
+            "summon_template": "find_familiar",
+        },
+    )
+
+
 def build_encounter(
     *,
     action_used: bool = False,
@@ -123,6 +145,27 @@ class UseHelpAttackTests(unittest.TestCase):
             self.assertTrue(actor.action_economy["action_used"])
             self.assertTrue(any(effect.get("effect_type") == "help_attack" for effect in target.turn_effects))
             self.assertEqual(result["actor_id"], "ent_actor_001")
+            repo.close()
+
+    def test_execute_allows_shared_turn_summon_to_help_on_owner_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            summon = build_shared_turn_summon()
+            encounter.entities[summon.entity_id] = summon
+            repo.save(encounter)
+
+            result = UseHelpAttack(repo).execute(
+                encounter_id="enc_help_attack_test",
+                actor_id="ent_summon_001",
+                target_id="ent_enemy_001",
+            )
+
+            updated = repo.get("enc_help_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(updated.entities["ent_summon_001"].action_economy["action_used"])
+            self.assertFalse(updated.entities["ent_actor_001"].action_economy["action_used"])
+            self.assertEqual(result["actor_id"], "ent_summon_001")
             repo.close()
 
     def test_execute_rejects_when_target_not_within_five_feet(self) -> None:

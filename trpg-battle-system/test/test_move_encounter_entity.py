@@ -30,9 +30,13 @@ def build_entity(
     initiative: int = 10,
     size: str = "medium",
     speed_walk: int = 30,
+    speed_fly: int | None = None,
     speed_remaining: int = 30,
     conditions: list[str] | None = None,
 ) -> EncounterEntity:
+    speed = {"walk": speed_walk, "remaining": speed_remaining}
+    if speed_fly is not None:
+        speed["fly"] = speed_fly
     return EncounterEntity(
         entity_id=entity_id,
         name=name,
@@ -42,7 +46,7 @@ def build_entity(
         position={"x": x, "y": y},
         hp={"current": 20, "max": 20, "temp": 0},
         ac=14,
-        speed={"walk": speed_walk, "remaining": speed_remaining},
+        speed=speed,
         initiative=initiative,
         size=size,
         conditions=conditions or [],
@@ -137,6 +141,36 @@ class MoveEncounterEntityTests(unittest.TestCase):
             entity = updated.entities["ent_ally_eric_001"]
             self.assertEqual(entity.position, {"x": 5, "y": 2})
             self.assertEqual(entity.speed["remaining"], 15)
+            repo.close()
+
+    def test_move_entity_can_use_fly_speed_and_ignore_difficult_terrain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            service = MoveEncounterEntity(repo)
+            encounter = build_service_encounter(
+                terrain=[
+                    {"x": 3, "y": 2, "type": "difficult_terrain"},
+                    {"x": 4, "y": 2, "type": "difficult_terrain"},
+                    {"x": 5, "y": 2, "type": "difficult_terrain"},
+                ]
+            )
+            flyer = encounter.entities["ent_ally_eric_001"]
+            flyer.speed["fly"] = 40
+            flyer.speed["walk"] = 20
+            flyer.speed["remaining"] = 20
+            repo.save(encounter)
+
+            updated = service.execute(
+                encounter_id=encounter.encounter_id,
+                entity_id="ent_ally_eric_001",
+                target_position={"x": 8, "y": 2},
+                movement_mode="fly",
+            )
+
+            entity = updated.entities["ent_ally_eric_001"]
+            self.assertEqual(entity.position, {"x": 8, "y": 2})
+            self.assertEqual(entity.speed["remaining"], 10)
+            self.assertEqual(entity.combat_flags["movement_spent_feet"], 30)
             repo.close()
 
     def test_move_entity_rejects_non_current_turn_actor(self) -> None:

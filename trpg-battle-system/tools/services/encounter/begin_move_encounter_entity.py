@@ -25,6 +25,7 @@ from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.movement_rules import (
     MovementValidationResult,
     get_center_position,
+    normalize_movement_mode,
     validate_movement_path,
 )
 from tools.services.events.append_event import AppendEvent
@@ -64,6 +65,7 @@ class BeginMoveEncounterEntity:
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
         ignore_opportunity_attacks_for_this_move: bool = False,
+        movement_mode: str = "walk",
     ) -> dict[str, Any]:
         result = self.execute_with_state(
             encounter_id=encounter_id,
@@ -73,6 +75,7 @@ class BeginMoveEncounterEntity:
             use_dash=use_dash,
             allow_out_of_turn_actor=allow_out_of_turn_actor,
             ignore_opportunity_attacks_for_this_move=ignore_opportunity_attacks_for_this_move,
+            movement_mode=movement_mode,
         )
         response = dict(result)
         response["status"] = result["movement_status"]
@@ -88,6 +91,7 @@ class BeginMoveEncounterEntity:
         use_dash: bool = False,
         allow_out_of_turn_actor: bool = False,
         ignore_opportunity_attacks_for_this_move: bool = False,
+        movement_mode: str = "walk",
     ) -> dict[str, Any]:
         encounter = self._get_encounter_or_raise(encounter_id)
         mover = resolve_current_turn_actor_or_raise(
@@ -96,6 +100,7 @@ class BeginMoveEncounterEntity:
             allow_out_of_turn_actor=allow_out_of_turn_actor,
             entity_label="entity",
         )
+        normalized_movement_mode = normalize_movement_mode(mover, movement_mode)
         mover_runtime = self._safe_condition_runtime(mover.conditions)
         if mover_runtime.has("grappled"):
             raise ValueError("cannot_move_while_grappled")
@@ -111,11 +116,12 @@ class BeginMoveEncounterEntity:
                 target_position=target_position,
                 count_movement=count_movement,
                 use_dash=use_dash,
+                movement_mode=normalized_movement_mode,
             )
         finally:
             if dragged_target is not None and original_dragged_position is not None:
                 dragged_target.position = original_dragged_position
-        self._ensure_movement_available(encounter, mover, result, use_dash)
+        self._ensure_movement_available(encounter, mover, result, use_dash, normalized_movement_mode)
 
         first_trigger = None
         movement_ignores_opportunity_attacks = ignore_opportunity_attacks_for_this_move or has_disengage_effect(mover)
@@ -129,7 +135,14 @@ class BeginMoveEncounterEntity:
                 start_position=start_position,
                 walked_path=[dict(step.anchor) for step in result.path],
             )
-            self._apply_movement_progress(encounter, mover, result.feet_cost, use_dash, count_movement)
+            self._apply_movement_progress(
+                encounter,
+                mover,
+                result.feet_cost,
+                use_dash,
+                count_movement,
+                normalized_movement_mode,
+            )
             self.repository.save(encounter)
             return {
                 "encounter_id": encounter_id,
@@ -152,6 +165,7 @@ class BeginMoveEncounterEntity:
             int(first_trigger["feet_spent_before_trigger"]),
             use_dash,
             count_movement,
+            normalized_movement_mode,
         )
         request = first_trigger["request"]
         pending_movement_id = f"move_{uuid4().hex[:12]}"
@@ -164,6 +178,7 @@ class BeginMoveEncounterEntity:
             remaining_path=first_trigger["remaining_path"],
             count_movement=count_movement,
             use_dash=use_dash,
+            movement_mode=normalized_movement_mode,
             reactor_entity_id=str(request["actor_entity_id"]),
             request_payloads={str(request["actor_entity_id"]): dict(request.get("payload", {}))},
             request_overrides={str(request["actor_entity_id"]): dict(request)},
@@ -201,6 +216,7 @@ class BeginMoveEncounterEntity:
             "remaining_path": first_trigger["remaining_path"],
             "count_movement": count_movement,
             "use_dash": use_dash,
+            "movement_mode": normalized_movement_mode,
             "status": "waiting_reaction",
             "waiting_request_id": request_id,
         }
@@ -268,6 +284,7 @@ class BeginMoveEncounterEntity:
         remaining_path: list[dict[str, int]],
         count_movement: bool,
         use_dash: bool,
+        movement_mode: str,
         reactor_entity_id: str,
         request_payloads: dict[str, dict[str, Any]],
         request_overrides: dict[str, dict[str, Any]],
@@ -286,6 +303,7 @@ class BeginMoveEncounterEntity:
                 "remaining_path": remaining_path,
                 "count_movement": count_movement,
                 "use_dash": use_dash,
+                "movement_mode": movement_mode,
                 "phase": "after_step_before_continue",
             },
             "trigger_mover_id": mover.entity_id,
@@ -346,16 +364,20 @@ class BeginMoveEncounterEntity:
         mover: EncounterEntity,
         movement: MovementValidationResult,
         use_dash: bool,
+        movement_mode: str,
     ) -> None:
         runtime = self._safe_condition_runtime(mover.conditions)
         exhaustion_penalty = runtime.get_speed_penalty_feet()
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(mover)
         armor_speed_penalty = get_armor_speed_penalty(mover)
         distance_already_moved = self._movement_spent_feet(mover)
-        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
+        effective_speed = max(
+            0,
+            int(mover.speed.get(movement_mode, 0) or 0) - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty,
+        )
         if has_active_grapple_target(encounter, mover):
-            effective_walk_speed //= 2
-        total_available_movement = effective_walk_speed * (2 if use_dash else 1)
+            effective_speed //= 2
+        total_available_movement = effective_speed * (2 if use_dash else 1)
         available_movement = max(0, total_available_movement - distance_already_moved)
         if movement.feet_cost > available_movement:
             raise ValueError("insufficient_movement")
@@ -376,6 +398,7 @@ class BeginMoveEncounterEntity:
         feet_spent_delta: int,
         use_dash: bool,
         count_movement: bool,
+        movement_mode: str,
     ) -> None:
         if not count_movement:
             return
@@ -383,14 +406,17 @@ class BeginMoveEncounterEntity:
         exhaustion_penalty = runtime.get_speed_penalty_feet()
         mastery_speed_penalty = get_weapon_mastery_speed_penalty(mover)
         armor_speed_penalty = get_armor_speed_penalty(mover)
-        effective_walk_speed = max(0, mover.speed["walk"] - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty)
+        effective_speed = max(
+            0,
+            int(mover.speed.get(movement_mode, 0) or 0) - exhaustion_penalty - mastery_speed_penalty - armor_speed_penalty,
+        )
         if has_active_grapple_target(encounter, mover):
-            effective_walk_speed //= 2
+            effective_speed //= 2
         spent_before = self._movement_spent_feet(mover)
         spent_after = spent_before + feet_spent_delta
         mover.combat_flags["movement_spent_feet"] = spent_after
-        mover.speed["remaining"] = max(0, effective_walk_speed - min(spent_after, effective_walk_speed))
-        if use_dash and spent_after > effective_walk_speed:
+        mover.speed["remaining"] = max(0, effective_speed - min(spent_after, effective_speed))
+        if use_dash and spent_after > effective_speed:
             mover.speed["remaining"] = 0
 
     def _drag_active_grapple_target(

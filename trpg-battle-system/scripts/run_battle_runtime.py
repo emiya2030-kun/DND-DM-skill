@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from runtime.context import build_runtime_context
 from runtime.http_server import ThreadingHTTPServer, build_runtime_handler_class
+from runtime.commands import validate_runtime_command_registry
 
 
 def main() -> None:
@@ -20,6 +21,7 @@ def main() -> None:
     parser.add_argument("--port", default=8771, type=int)
     args = parser.parse_args()
 
+    validate_runtime_command_registry()
     context = build_runtime_context()
     handler_class = build_runtime_handler_class(runtime_context=context)
     server = ThreadingHTTPServer((args.host, args.port), handler_class)

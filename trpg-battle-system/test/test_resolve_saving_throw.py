@@ -76,6 +76,7 @@ def build_paladin_ally(
     cha_mod: int,
     position: tuple[int, int] = (4, 3),
     conditions: Optional[list[str]] = None,
+    level: int = 6,
 ) -> EncounterEntity:
     return EncounterEntity(
         entity_id=entity_id,
@@ -91,7 +92,7 @@ def build_paladin_ally(
         ability_mods={"cha": cha_mod},
         proficiency_bonus=3,
         conditions=conditions or [],
-        class_features={"paladin": {"level": 6}},
+        class_features={"paladin": {"level": level}},
     )
 
 
@@ -463,6 +464,36 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertEqual(result.metadata["aura_of_protection_bonus"], 0)
             self.assertIsNone(result.metadata["aura_of_protection_source"])
             self.assertEqual(result.final_total, 14)
+            repo.close()
+
+    def test_execute_applies_aura_of_protection_bonus_from_level_eighteen_paladin_within_thirty_feet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            paladin = build_paladin_ally(
+                entity_id="ent_enemy_paladin_001",
+                cha_mod=4,
+                position=(9, 2),
+                level=18,
+            )
+            encounter.entities[paladin.entity_id] = paladin
+            encounter.turn_order.append(paladin.entity_id)
+            repo.save(encounter)
+
+            request = SavingThrowRequest(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                target_id="ent_enemy_guard_001",
+                spell_id="hold_person",
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.metadata["aura_of_protection_bonus"], 4)
+            self.assertEqual(result.metadata["aura_of_protection_source"], paladin.entity_id)
+            self.assertEqual(result.final_total, 18)
             repo.close()
 
     def test_execute_uses_class_template_save_proficiencies(self) -> None:

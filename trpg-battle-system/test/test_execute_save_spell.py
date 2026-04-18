@@ -621,7 +621,7 @@ class ExecuteSaveSpellTests(unittest.TestCase):
 
             self.assertIn("encounter_state", result)
             self.assertEqual(result["encounter_state"]["encounter_id"], "enc_execute_save_spell_test")
-            self.assertEqual(result["encounter_state"]["turn_order"][1]["hp"], "14/18 HP (78%) [HEALTHY]")
+            self.assertEqual(result["encounter_state"]["turn_order"][1]["hp"], "14/18 HP (78%) [健康]")
 
     def test_execute_save_spell_auto_fails_for_paralyzed_target(self) -> None:
         """测试 ExecuteSaveSpell 会在目标麻痹时直接算失败。"""

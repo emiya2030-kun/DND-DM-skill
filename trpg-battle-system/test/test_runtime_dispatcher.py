@@ -14,6 +14,9 @@ class RuntimeDispatcherTests(unittest.TestCase):
     def test_command_handlers_include_execute_attack(self) -> None:
         self.assertIn("execute_attack", COMMAND_HANDLERS)
 
+    def test_command_handlers_include_move_entity(self) -> None:
+        self.assertIn("move_entity", COMMAND_HANDLERS)
+
     def test_unknown_command_returns_structured_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             context = build_runtime_context(data_dir=Path(tmp_dir))

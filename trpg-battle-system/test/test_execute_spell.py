@@ -490,6 +490,48 @@ def write_eldritch_blast_attack_spell_definition(spell_repo_path: Path) -> None:
     )
 
 
+def write_ray_of_dread_attack_spell_definition(spell_repo_path: Path) -> None:
+    spell_repo_path.write_text(
+        json.dumps(
+            {
+                "spell_definitions": {
+                    "ray_of_dread": {
+                        "id": "ray_of_dread",
+                        "name": "Ray of Dread",
+                        "level": 1,
+                        "base": {
+                            "level": 1,
+                            "casting_time": "1 action",
+                            "concentration": False,
+                        },
+                        "requires_attack_roll": True,
+                        "resolution": {"mode": "attack_roll", "activation": "action"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 15,
+                            "requires_line_of_sight": True,
+                            "allowed_target_types": ["creature"],
+                        },
+                        "on_cast": {
+                            "on_hit": {
+                                "damage_parts": [
+                                    {
+                                        "source": "spell:ray_of_dread:on_hit:part_0",
+                                        "formula": "2d8",
+                                        "damage_type": "necrotic",
+                                    }
+                                ]
+                            },
+                            "on_miss": {"damage_parts": []},
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 class ExecuteSpellTests(unittest.TestCase):
     def test_execute_healing_word_auto_rolls_upcast_and_caps_at_max_hp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1039,6 +1081,95 @@ class ExecuteSpellTests(unittest.TestCase):
             self.assertEqual(len(updated.spell_instances), 1)
             self.assertEqual(updated.spell_instances[0]["spell_id"], "hunters_mark")
             self.assertEqual(updated.spell_instances[0]["targets"][0]["entity_id"], "ent_target_001")
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_disguise_self_defaults_to_self_target_and_projects_disguise_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            spell_repo_path.write_text(
+                json.dumps(
+                    {
+                        "spell_definitions": {
+                            "disguise_self": {
+                                "id": "disguise_self",
+                                "name": "Disguise Self",
+                                "level": 1,
+                                "base": {
+                                    "level": 1,
+                                    "casting_time": "1 action",
+                                    "concentration": False,
+                                },
+                                "resolution": {
+                                    "mode": "no_roll",
+                                    "activation": "action",
+                                },
+                                "targeting": {
+                                    "type": "self",
+                                    "allowed_target_types": ["creature"],
+                                },
+                                "on_cast": {
+                                    "on_resolve": {
+                                        "apply_turn_effects": [
+                                            {"effect_template_id": "disguise_self_effect"}
+                                        ]
+                                    }
+                                },
+                                "effect_templates": {
+                                    "disguise_self_effect": {
+                                        "name": "Disguise Self",
+                                        "effect_type": "disguise_self",
+                                        "trigger": "end_of_turn",
+                                        "duration_model": "until_long_rest",
+                                        "disguise_profile": {
+                                            "appearance_name": "Town Guard",
+                                            "height_delta_feet": 1,
+                                            "body_shape": "lean",
+                                            "physical_inspection_passes_through": True,
+                                            "investigation_check_reveals_illusion": True
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+            encounter = build_encounter()
+            caster = encounter.entities["ent_caster_001"]
+            caster.spells.append({"spell_id": "disguise_self", "name": "Disguise Self", "level": 1})
+            caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_spell_test",
+                actor_id="ent_caster_001",
+                spell_id="disguise_self",
+                cast_level=1,
+                declared_action_cost="action",
+            )
+
+            self.assertEqual(result["spell_resolution"]["mode"], "apply_spell_instance")
+            updated = encounter_repo.get("enc_execute_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_caster_001"].resources["spell_slots"]["1"]["remaining"], 1)
+            self.assertEqual(len(updated.entities["ent_caster_001"].turn_effects), 1)
+            self.assertEqual(updated.entities["ent_caster_001"].turn_effects[0]["effect_type"], "disguise_self")
+            self.assertEqual(
+                updated.entities["ent_caster_001"].turn_effects[0]["disguise_profile"]["appearance_name"],
+                "Town Guard",
+            )
+            self.assertEqual(len(updated.spell_instances), 1)
+            self.assertEqual(updated.spell_instances[0]["targets"][0]["entity_id"], "ent_caster_001")
             encounter_repo.close()
             event_repo.close()
 
@@ -1633,5 +1764,125 @@ class ExecuteSpellTests(unittest.TestCase):
                 result["spell_resolution"]["targets"][0]["forced_movement"]["moved_feet"],
                 10,
             )
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_attack_spell_can_use_gaze_of_two_minds_origin_for_range_and_los(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_ray_of_dread_attack_spell_definition(spell_repo_path)
+            spell_repo = SpellDefinitionRepository(spell_repo_path)
+
+            caster = EncounterEntity(
+                entity_id="ent_gaze_caster_001",
+                name="Watcher",
+                side="ally",
+                category="pc",
+                controller="player",
+                position={"x": 1, "y": 1},
+                hp={"current": 18, "max": 18, "temp": 0},
+                ac=13,
+                speed={"walk": 30, "remaining": 30},
+                initiative=16,
+                source_ref={"caster_level": 5, "spellcasting_ability": "cha", "entity_type": "humanoid"},
+                ability_mods={"cha": 4},
+                proficiency_bonus=3,
+                resources={"spell_slots": {"1": {"max": 1, "remaining": 1}}},
+                spells=[{"spell_id": "ray_of_dread", "name": "Ray of Dread", "level": 1}],
+                class_features={
+                    "warlock": {
+                        "level": 5,
+                        "eldritch_invocations": {
+                            "selected": [{"invocation_id": "gaze_of_two_minds"}]
+                        },
+                        "gaze_of_two_minds": {
+                            "linked_entity_id": "ent_gaze_ally_001",
+                            "linked_entity_name": "Scout",
+                            "remaining_source_turn_ends": 1,
+                        },
+                    }
+                },
+            )
+            ally = EncounterEntity(
+                entity_id="ent_gaze_ally_001",
+                name="Scout",
+                side="ally",
+                category="pc",
+                controller="player",
+                position={"x": 6, "y": 1},
+                hp={"current": 16, "max": 16, "temp": 0},
+                ac=14,
+                speed={"walk": 30, "remaining": 30},
+                initiative=12,
+            )
+            target = EncounterEntity(
+                entity_id="ent_gaze_target_001",
+                name="Cultist",
+                side="enemy",
+                category="npc",
+                controller="gm",
+                position={"x": 8, "y": 1},
+                hp={"current": 18, "max": 18, "temp": 0},
+                ac=12,
+                speed={"walk": 30, "remaining": 30},
+                initiative=10,
+                source_ref={"entity_type": "humanoid"},
+            )
+            encounter = Encounter(
+                encounter_id="enc_execute_gaze_spell_test",
+                name="Execute Gaze Spell Test",
+                status="active",
+                round=1,
+                current_entity_id=caster.entity_id,
+                turn_order=[caster.entity_id, ally.entity_id, target.entity_id],
+                entities={caster.entity_id: caster, ally.entity_id: ally, target.entity_id: target},
+                map=EncounterMap(
+                    map_id="map_execute_gaze_spell_test",
+                    name="Gaze Spell Map",
+                    description="Map for gaze spell origin tests.",
+                    width=12,
+                    height=12,
+                    terrain=[
+                        {
+                            "terrain_id": "wall_between_caster_and_target",
+                            "type": "wall",
+                            "x": 4,
+                            "y": 1,
+                            "blocks_movement": True,
+                            "blocks_los": True,
+                        }
+                    ],
+                ),
+            )
+            encounter_repo.save(encounter)
+
+            result = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, spell_repo),
+            ).execute(
+                encounter_id="enc_execute_gaze_spell_test",
+                actor_id="ent_gaze_caster_001",
+                spell_id="ray_of_dread",
+                cast_level=3,
+                target_entity_ids=["ent_gaze_target_001"],
+                declared_action_cost="action",
+                attack_rolls={
+                    "ent_gaze_target_001": {
+                        "final_total": 17,
+                        "dice_rolls": {"base_rolls": [10], "modifier": 7},
+                    }
+                },
+                damage_rolls={"ent_gaze_target_001": [5, 4]},
+            )
+
+            updated = encounter_repo.get("enc_execute_gaze_spell_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["spell_resolution"]["targets"][0]["attack"]["hit"])
+            self.assertEqual(updated.entities["ent_gaze_target_001"].hp["current"], 9)
+            self.assertEqual(updated.entities["ent_gaze_caster_001"].resources["pact_magic_slots"]["remaining"], 1)
             encounter_repo.close()
             event_repo.close()

@@ -195,7 +195,7 @@ class UpdateConditionsTests(unittest.TestCase):
 
             self.assertIn("encounter_state", result)
             self.assertEqual(result["encounter_state"]["encounter_id"], "enc_condition_test")
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["conditions"], "blinded")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["conditions"], "目盲")
             encounter_repo.close()
             event_repo.close()
 

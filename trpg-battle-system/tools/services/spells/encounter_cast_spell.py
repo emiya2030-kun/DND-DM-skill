@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from random import randint
 from uuid import uuid4
 
 from tools.models.encounter import Encounter
@@ -10,14 +11,24 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.repositories.zone_definition_repository import ZoneDefinitionRepository
 from tools.services.combat.defense.armor_profile_resolver import ArmorProfileResolver
-from tools.services.class_features.shared import ensure_paladin_runtime
+from tools.services.class_features.shared import (
+    consume_exact_spell_slot,
+    ensure_paladin_runtime,
+    ensure_ranger_runtime,
+    restore_consumed_spell_slot,
+)
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
 from tools.services.spells.area_geometry import build_spell_zone_instance
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
-from tools.services.spells.summons.create_summoned_entity import create_summoned_entity
+from tools.services.spells.summons.create_summoned_entity import (
+    create_summoned_entity,
+    create_summoned_entity_by_initiative,
+)
+from tools.services.spells.summons.find_familiar_builder import build_find_familiar_entity
 from tools.services.spells.summons.find_steed_builder import build_find_steed_entity
+from tools.services.spells.summons.placement import resolve_summon_target_point
 from tools.services.combat.shared.turn_actor_guard import (
     get_entity_or_raise,
     resolve_current_turn_actor_or_raise,
@@ -30,6 +41,18 @@ if TYPE_CHECKING:
 
 class EncounterCastSpell:
     """声明一次施法，并在需要时扣除法术位。"""
+
+    _FIND_FAMILIAR_CREATURE_TYPES = {
+        "slaad_tadpole": "aberration",
+        "pseudodragon": "dragon",
+        "skeleton": "undead",
+        "zombie": "undead",
+        "sprite": "fey",
+        "quasit": "fiend",
+        "imp": "fiend",
+        "sphinx_of_wonder": "celestial",
+    }
+    _FIND_FAMILIAR_GENERIC_FORMS = {"owl"}
 
     def __init__(
         self,
@@ -63,6 +86,7 @@ class EncounterCastSpell:
         target_ids: list[str] | None = None,
         target_point: dict[str, Any] | None = None,
         cast_level: int | None = None,
+        spell_options: dict[str, Any] | None = None,
         reason: str | None = None,
         include_encounter_state: bool = False,
         apply_no_roll_immediate_effects: bool = True,
@@ -88,7 +112,12 @@ class EncounterCastSpell:
         if armor_profile["wearing_untrained_armor"]:
             raise ValueError("armor_training_required_for_spellcasting")
         spell_definition = self._get_spell_definition_or_raise(encounter, caster, spell_id)
-        resolved_target_ids = self._resolve_target_ids(encounter, target_ids or [])
+        normalized_target_ids = self._normalize_self_targets(
+            caster=caster,
+            spell_definition=spell_definition,
+            target_ids=target_ids or [],
+        )
+        resolved_target_ids = self._resolve_target_ids(encounter, normalized_target_ids)
         action_cost = self._resolve_action_cost(spell_definition)
 
         spell_level = self._resolve_spell_level(spell_definition)
@@ -97,15 +126,23 @@ class EncounterCastSpell:
             raise ValueError("cast_level cannot be lower than the spell's base level")
 
         free_find_steed_cast_used = False
+        free_hunters_mark_cast_used = False
         if self._is_find_steed_spell(spell_definition) and self._has_faithful_steed_free_cast(caster):
             slot_consumed = None
             paladin = ensure_paladin_runtime(caster)
             paladin["faithful_steed"]["free_cast_available"] = False
             free_find_steed_cast_used = True
+        elif self._is_hunters_mark_spell(spell_definition) and self._has_favored_enemy_free_cast(caster):
+            slot_consumed = None
+            ranger = ensure_ranger_runtime(caster)
+            favored_enemy = ranger.get("favored_enemy", {})
+            favored_enemy["free_cast_uses_remaining"] = max(0, int(favored_enemy.get("free_cast_uses_remaining", 0)) - 1)
+            free_hunters_mark_cast_used = True
         else:
             slot_consumed = self._consume_spell_slot_if_needed(caster, spell_level, resolved_cast_level)
         resolved_spell_id = spell_definition.get("spell_id") or spell_definition.get("id") or spell_id
         resolved_spell_name = spell_definition.get("name") or spell_id
+        normalized_spell_options = dict(spell_options) if isinstance(spell_options, dict) else {}
         if not skip_reaction_window:
             spell_action_id = f"spell_{uuid4().hex[:12]}"
             trigger_event = {
@@ -121,6 +158,7 @@ class EncounterCastSpell:
                     "cast_level": resolved_cast_level,
                     "target_ids": list(resolved_target_ids),
                     "target_point": target_point,
+                    "spell_options": normalized_spell_options,
                     "action_cost": action_cost,
                     "allow_out_of_turn_actor": allow_out_of_turn_actor,
                     "phase": "before_spell_resolves",
@@ -190,10 +228,18 @@ class EncounterCastSpell:
             linked_zone_ids.append(zone["zone_id"])
             zone_updates.append({"zone_id": zone["zone_id"], "target_point": normalized_target_point})
         if self._is_find_steed_spell(spell_definition):
-            normalized_target_point = self._normalize_target_point(target_point)
-            if normalized_target_point is None:
-                raise ValueError("find_steed_requires_target_point")
             self._replace_previous_find_steed_if_needed(encounter=encounter, caster=caster)
+            normalized_target_point = resolve_summon_target_point(
+                encounter=encounter,
+                caster=caster,
+                summon_size="large",
+                range_feet=30,
+                target_point=target_point,
+                default_mode="adjacent_open_space",
+                out_of_range_error_code="find_steed_target_point_out_of_range",
+                missing_target_point_error_code="find_steed_requires_target_point",
+            )
+            target_point = normalized_target_point
             spell_instance = build_spell_instance(
                 spell_definition=spell_definition,
                 caster=caster,
@@ -216,6 +262,44 @@ class EncounterCastSpell:
                 insert_after_entity_id=caster.entity_id,
             )
             spell_instance["special_runtime"]["summon_entity_ids"] = [summon_entity.entity_id]
+        if self._is_find_familiar_spell(spell_definition):
+            familiar_form = self._resolve_find_familiar_form_or_raise(normalized_spell_options)
+            self._replace_previous_find_familiar_if_needed(encounter=encounter, caster=caster)
+            normalized_target_point = resolve_summon_target_point(
+                encounter=encounter,
+                caster=caster,
+                summon_size="tiny",
+                range_feet=10,
+                target_point=target_point,
+                default_mode="adjacent_open_space",
+                out_of_range_error_code="find_familiar_target_point_out_of_range",
+                missing_target_point_error_code="find_familiar_requires_target_point",
+            )
+            target_point = normalized_target_point
+            spell_instance = build_spell_instance(
+                spell_definition=spell_definition,
+                caster=caster,
+                cast_level=resolved_cast_level,
+                targets=[],
+                started_round=encounter.round,
+            )
+            encounter.spell_instances.append(spell_instance)
+            summon_entity = build_find_familiar_entity(
+                caster=caster,
+                summon_position={"x": normalized_target_point["x"], "y": normalized_target_point["y"]},
+                familiar_form=familiar_form,
+                creature_type=self._resolve_find_familiar_creature_type(
+                    familiar_form=familiar_form,
+                    spell_options=normalized_spell_options,
+                ),
+                source_spell_instance_id=spell_instance["instance_id"],
+            )
+            summon_entity.initiative = randint(1, 20) + int(summon_entity.ability_mods.get("dex", 0) or 0)
+            create_summoned_entity_by_initiative(
+                encounter=encounter,
+                summon=summon_entity,
+            )
+            spell_instance["special_runtime"]["summon_entity_ids"] = [summon_entity.entity_id]
         payload = {
             "spell_id": resolved_spell_id,
             "spell_name": resolved_spell_name,
@@ -223,6 +307,7 @@ class EncounterCastSpell:
             "cast_level": resolved_cast_level,
             "target_ids": resolved_target_ids,
             "target_point": target_point,
+            "spell_options": normalized_spell_options,
             "requires_attack_roll": spell_definition.get("requires_attack_roll", False),
             "save_ability": spell_definition.get("save_ability"),
             "damage": spell_definition.get("damage", []),
@@ -251,6 +336,10 @@ class EncounterCastSpell:
             if free_find_steed_cast_used:
                 paladin = ensure_paladin_runtime(caster)
                 paladin["faithful_steed"]["free_cast_available"] = True
+            if free_hunters_mark_cast_used:
+                ranger = ensure_ranger_runtime(caster)
+                favored_enemy = ranger.get("favored_enemy", {})
+                favored_enemy["free_cast_uses_remaining"] = int(favored_enemy.get("free_cast_uses_remaining", 0)) + 1
             caster.action_economy = previous_action_economy
             self.encounter_repository.save(encounter)
             raise
@@ -280,12 +369,27 @@ class EncounterCastSpell:
         spell_id = str(spell_definition.get("spell_id") or spell_definition.get("id") or "").strip().lower()
         return spell_id == "find_steed"
 
+    def _is_find_familiar_spell(self, spell_definition: dict[str, Any]) -> bool:
+        spell_id = str(spell_definition.get("spell_id") or spell_definition.get("id") or "").strip().lower()
+        return spell_id == "find_familiar"
+
     def _has_faithful_steed_free_cast(self, caster: EncounterEntity) -> bool:
         paladin = ensure_paladin_runtime(caster)
         faithful_steed = paladin.get("faithful_steed")
         if not isinstance(faithful_steed, dict):
             return False
         return bool(faithful_steed.get("enabled")) and bool(faithful_steed.get("free_cast_available"))
+
+    def _is_hunters_mark_spell(self, spell_definition: dict[str, Any]) -> bool:
+        spell_id = str(spell_definition.get("spell_id") or spell_definition.get("id") or "").strip().lower()
+        return spell_id == "hunters_mark"
+
+    def _has_favored_enemy_free_cast(self, caster: EncounterEntity) -> bool:
+        ranger = ensure_ranger_runtime(caster)
+        favored_enemy = ranger.get("favored_enemy")
+        if not isinstance(favored_enemy, dict):
+            return False
+        return bool(favored_enemy.get("enabled")) and int(favored_enemy.get("free_cast_uses_remaining", 0) or 0) > 0
 
     def _replace_previous_find_steed_if_needed(
         self,
@@ -310,6 +414,49 @@ class EncounterCastSpell:
                 if encounter.current_entity_id == summon_id:
                     encounter.current_entity_id = caster.entity_id
             special_runtime["summon_entity_ids"] = []
+
+    def _replace_previous_find_familiar_if_needed(
+        self,
+        *,
+        encounter: Encounter,
+        caster: EncounterEntity,
+    ) -> None:
+        for instance in encounter.spell_instances:
+            if instance.get("spell_id") != "find_familiar":
+                continue
+            if instance.get("caster_entity_id") != caster.entity_id:
+                continue
+            special_runtime = instance.get("special_runtime")
+            if not isinstance(special_runtime, dict):
+                continue
+            summon_entity_ids = special_runtime.get("summon_entity_ids")
+            if not isinstance(summon_entity_ids, list) or not summon_entity_ids:
+                continue
+            for summon_id in list(summon_entity_ids):
+                encounter.entities.pop(summon_id, None)
+                encounter.turn_order = [entity_id for entity_id in encounter.turn_order if entity_id != summon_id]
+                if encounter.current_entity_id == summon_id:
+                    encounter.current_entity_id = caster.entity_id
+            special_runtime["summon_entity_ids"] = []
+
+    def _resolve_find_familiar_form_or_raise(self, spell_options: dict[str, Any]) -> str:
+        familiar_form = str(spell_options.get("familiar_form") or "").strip().lower()
+        if not familiar_form:
+            raise ValueError("find_familiar_requires_familiar_form")
+        if familiar_form not in self._FIND_FAMILIAR_CREATURE_TYPES and familiar_form not in self._FIND_FAMILIAR_GENERIC_FORMS:
+            raise ValueError("invalid_find_familiar_form")
+        return familiar_form
+
+    def _resolve_find_familiar_creature_type(
+        self,
+        *,
+        familiar_form: str,
+        spell_options: dict[str, Any],
+    ) -> str:
+        if familiar_form in self._FIND_FAMILIAR_CREATURE_TYPES:
+            return self._FIND_FAMILIAR_CREATURE_TYPES[familiar_form]
+        creature_type = str(spell_options.get("creature_type") or "").strip().lower()
+        return creature_type or "fey"
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)
@@ -371,6 +518,22 @@ class EncounterCastSpell:
             )
         return normalized_target_ids
 
+    def _normalize_self_targets(
+        self,
+        *,
+        caster: EncounterEntity,
+        spell_definition: dict[str, Any],
+        target_ids: list[str],
+    ) -> list[str]:
+        if target_ids:
+            return list(target_ids)
+        targeting = spell_definition.get("targeting")
+        if not isinstance(targeting, dict):
+            return []
+        if str(targeting.get("type") or "").strip().lower() != "self":
+            return []
+        return [caster.entity_id]
+
     def _resolve_spell_level(self, spell: dict[str, Any]) -> int:
         spell_level = spell.get("level", 0)
         if not isinstance(spell_level, int) or spell_level < 0:
@@ -387,26 +550,7 @@ class EncounterCastSpell:
         if spell_level == 0:
             return None
 
-        spell_slots = caster.resources.get("spell_slots")
-        if not isinstance(spell_slots, dict):
-            raise ValueError("caster.resources.spell_slots must be a dict")
-        slot_key = str(cast_level)
-        slot_info = spell_slots.get(slot_key)
-        if not isinstance(slot_info, dict):
-            raise ValueError(f"spell slot level '{slot_key}' is not available")
-        remaining = slot_info.get("remaining")
-        if not isinstance(remaining, int):
-            raise ValueError(f"spell slot level '{slot_key}' remaining must be an integer")
-        if remaining <= 0:
-            raise ValueError(f"spell slot level '{slot_key}' has no remaining uses")
-
-        before = remaining
-        slot_info["remaining"] = before - 1
-        return {
-            "slot_level": cast_level,
-            "remaining_before": before,
-            "remaining_after": slot_info["remaining"],
-        }
+        return consume_exact_spell_slot(caster, cast_level)
 
     def _rollback_spell_slot_if_needed(
         self,
@@ -416,16 +560,7 @@ class EncounterCastSpell:
         if slot_consumed is None:
             return
 
-        spell_slots = caster.resources.get("spell_slots")
-        if not isinstance(spell_slots, dict):
-            return
-        slot_key = str(slot_consumed.get("slot_level"))
-        slot_info = spell_slots.get(slot_key)
-        if not isinstance(slot_info, dict):
-            return
-        remaining_before = slot_consumed.get("remaining_before")
-        if isinstance(remaining_before, int):
-            slot_info["remaining"] = remaining_before
+        restore_consumed_spell_slot(caster, slot_consumed)
 
     def _resolve_action_cost(self, spell_definition: dict[str, Any]) -> str | None:
         resolution = spell_definition.get("resolution")
@@ -500,6 +635,11 @@ class EncounterCastSpell:
                     caster=caster,
                     save_dc=None,
                 )
+                self._maybe_apply_ranger_hunters_mark_overrides(
+                    caster=caster,
+                    spell_definition=spell_definition,
+                    turn_effect_instance=instance,
+                )
                 target.turn_effects.append(instance)
                 updates.append(
                     {
@@ -510,6 +650,30 @@ class EncounterCastSpell:
                     }
                 )
         return updates
+
+    def _maybe_apply_ranger_hunters_mark_overrides(
+        self,
+        *,
+        caster: EncounterEntity,
+        spell_definition: dict[str, Any],
+        turn_effect_instance: dict[str, Any],
+    ) -> None:
+        if not self._is_hunters_mark_spell(spell_definition):
+            return
+        ranger = ensure_ranger_runtime(caster)
+        foe_slayer = ranger.get("foe_slayer")
+        if not isinstance(foe_slayer, dict) or not foe_slayer.get("enabled"):
+            return
+        damage_die = foe_slayer.get("hunters_mark_damage_die")
+        if not isinstance(damage_die, str) or not damage_die.strip():
+            return
+        damage_parts = turn_effect_instance.get("attack_bonus_damage_parts")
+        if not isinstance(damage_parts, list) or not damage_parts:
+            return
+        first_part = damage_parts[0]
+        if not isinstance(first_part, dict):
+            return
+        first_part["formula"] = damage_die.strip()
 
     def _maybe_build_no_roll_spell_instance(
         self,

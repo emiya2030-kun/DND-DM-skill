@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -57,6 +58,16 @@ def build_caster() -> EncounterEntity:
                 "level": 2,
                 "base": {
                     "level": 2,
+                    "casting_time": "1 action",
+                    "concentration": False
+                },
+            },
+            {
+                "spell_id": "find_familiar",
+                "name": "Find Familiar",
+                "level": 1,
+                "base": {
+                    "level": 1,
                     "casting_time": "1 action",
                     "concentration": False
                 },
@@ -128,7 +139,7 @@ class EncounterCastSpellTests(unittest.TestCase):
             self.assertEqual(len(summon_ids), 1)
             summon_id = summon_ids[0]
             self.assertIn(summon_id, updated.entities)
-            self.assertIn(summon_id, updated.turn_order)
+            self.assertNotIn(summon_id, updated.turn_order)
             self.assertEqual(updated.entities[summon_id].position, {"x": 5, "y": 5})
             self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["2"]["remaining"], 0)
             encounter_repo.close()
@@ -203,6 +214,175 @@ class EncounterCastSpellTests(unittest.TestCase):
                     cast_level=2,
                     target_point={"x": 9, "y": 2, "anchor": "cell_center"},
                     reason="Summon steed",
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_creates_spell_instance_and_summon_entity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with patch("tools.services.spells.encounter_cast_spell.randint", return_value=12):
+                result = service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    target_point={"x": 3, "y": 2, "anchor": "cell_center"},
+                    spell_options={"familiar_form": "pseudodragon"},
+                    reason="Summon familiar",
+                )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            summon_ids = result["spell_instance"]["special_runtime"]["summon_entity_ids"]
+            self.assertEqual(len(summon_ids), 1)
+            summon_id = summon_ids[0]
+            self.assertIn(summon_id, updated.entities)
+            self.assertEqual(updated.entities[summon_id].position, {"x": 3, "y": 2})
+            self.assertEqual(updated.entities[summon_id].source_ref["familiar_form_id"], "pseudodragon")
+            self.assertEqual(updated.entities[summon_id].initiative, 14)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].resources["spell_slots"]["1"]["remaining"], 1)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_defaults_to_adjacent_open_space_when_target_point_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter.entities["ent_enemy_iron_duster_001"].position = {"x": 3, "y": 2}
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with patch("tools.services.spells.encounter_cast_spell.randint", return_value=10):
+                result = service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    spell_options={"familiar_form": "sprite"},
+                    reason="Summon familiar",
+                )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            summon_id = result["spell_instance"]["special_runtime"]["summon_entity_ids"][0]
+            self.assertEqual(updated.entities[summon_id].position, {"x": 1, "y": 2})
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_replaces_previous_familiar_from_same_caster(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with patch("tools.services.spells.encounter_cast_spell.randint", side_effect=[12, 11]):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    target_point={"x": 3, "y": 2, "anchor": "cell_center"},
+                    spell_options={"familiar_form": "pseudodragon"},
+                    reason="First familiar",
+                )
+                first_updated = encounter_repo.get("enc_cast_spell_test")
+                self.assertIsNotNone(first_updated)
+                first_summon_id = first_updated.spell_instances[0]["special_runtime"]["summon_entity_ids"][0]
+                first_updated.entities["ent_ally_eric_001"].action_economy["action_used"] = False
+                encounter_repo.save(first_updated)
+
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    target_point={"x": 4, "y": 3, "anchor": "cell_center"},
+                    spell_options={"familiar_form": "sprite"},
+                    reason="Second familiar",
+                )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            active_summon_ids = [entity_id for entity_id, entity in updated.entities.items() if entity.category == "summon"]
+            self.assertEqual(len(active_summon_ids), 1)
+            self.assertNotIn(first_summon_id, active_summon_ids)
+            self.assertEqual(updated.spell_instances[0]["special_runtime"]["summon_entity_ids"], [])
+            self.assertEqual(updated.spell_instances[1]["special_runtime"]["summon_entity_ids"], active_summon_ids)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_rejects_target_point_beyond_ten_feet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+
+            with self.assertRaisesRegex(ValueError, "find_familiar_target_point_out_of_range"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    target_point={"x": 5, "y": 2, "anchor": "cell_center"},
+                    spell_options={"familiar_form": "sprite"},
+                    reason="Summon familiar",
+                )
+
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_supports_normal_owl_form(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            with patch("tools.services.spells.encounter_cast_spell.randint", return_value=9):
+                result = service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    target_point={"x": 3, "y": 2, "anchor": "cell_center"},
+                    spell_options={"familiar_form": "owl", "creature_type": "celestial"},
+                    reason="Summon owl",
+                )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            self.assertIsNotNone(updated)
+            summon_id = result["spell_instance"]["special_runtime"]["summon_entity_ids"][0]
+            summon = updated.entities[summon_id]
+            self.assertEqual(summon.name, "Owl")
+            self.assertEqual(summon.source_ref["familiar_form_id"], "owl")
+            self.assertEqual(summon.source_ref["creature_type"], "celestial")
+            self.assertEqual(summon.initiative, 10)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_find_familiar_requires_familiar_form(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+
+            with self.assertRaisesRegex(ValueError, "find_familiar_requires_familiar_form"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="find_familiar",
+                    cast_level=1,
+                    reason="Summon familiar",
                 )
 
             encounter_repo.close()
@@ -595,6 +775,6 @@ class EncounterCastSpellTests(unittest.TestCase):
             self.assertIn("encounter_state", result)
             current = result["encounter_state"]["current_turn_entity"]
             self.assertEqual(current["id"], "ent_ally_eric_001")
-            self.assertEqual(current["resources"]["summary"], "Spell Slots: 1st 2/2, 2st 1/1, 3st 0/1")
+            self.assertEqual(current["resources"]["summary"], "法术位：1环 2/2, 2环 1/1, 3环 0/1")
             encounter_repo.close()
             event_repo.close()

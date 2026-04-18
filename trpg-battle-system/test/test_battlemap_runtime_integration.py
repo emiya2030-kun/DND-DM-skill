@@ -7,7 +7,9 @@ from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
 from scripts.run_battlemap_localhost import (
+    assert_runtime_command_compatibility,
     bootstrap_runtime_encounter,
+    fetch_runtime_health,
     main,
     post_runtime_command,
     render_localhost_battlemap_page,
@@ -15,6 +17,29 @@ from scripts.run_battlemap_localhost import (
 
 
 class BattlemapRuntimeIntegrationTests(unittest.TestCase):
+    def test_fetch_runtime_health_returns_json_payload(self) -> None:
+        with patch(
+            "scripts.run_battlemap_localhost.urlopen",
+            return_value=BytesIOResponse(b'{"status":"ok","commands":["cast_spell","move_entity"]}'),
+        ):
+            payload = fetch_runtime_health("http://127.0.0.1:8771")
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["commands"], ["cast_spell", "move_entity"])
+
+    def test_assert_runtime_command_compatibility_rejects_missing_commands(self) -> None:
+        with patch(
+            "scripts.run_battlemap_localhost.fetch_runtime_health",
+            return_value={"status": "ok", "commands": ["cast_spell"]},
+        ):
+            with self.assertRaises(RuntimeError) as error_context:
+                assert_runtime_command_compatibility(
+                    "http://127.0.0.1:8771",
+                    required_commands=["cast_spell", "move_entity"],
+                )
+
+        self.assertIn("move_entity", str(error_context.exception))
+
     def test_bootstrap_runtime_encounter_posts_start_random_command(self) -> None:
         with patch(
             "scripts.run_battlemap_localhost.post_runtime_command",
@@ -76,19 +101,64 @@ class BattlemapRuntimeIntegrationTests(unittest.TestCase):
                 host="127.0.0.1",
                 port=8765,
                 runtime_base_url="http://127.0.0.1:8771",
+                encounter_id="enc_preview_demo",
                 theme="forest_road",
                 dev_reload_path=None,
             ),
         ):
-            with patch("scripts.run_battlemap_localhost.bootstrap_runtime_encounter") as bootstrap:
-                with patch("scripts.run_battlemap_localhost.ThreadingHTTPServer", return_value=fake_server):
-                    with self.assertRaises(RuntimeError):
-                        main()
+            with patch(
+                "scripts.run_battlemap_localhost.assert_runtime_command_compatibility",
+            ) as assert_runtime_command_compatibility:
+                with patch("scripts.run_battlemap_localhost.bootstrap_runtime_encounter") as bootstrap:
+                    with patch("scripts.run_battlemap_localhost.ThreadingHTTPServer", return_value=fake_server):
+                        with self.assertRaises(RuntimeError):
+                            main()
+        assert_runtime_command_compatibility.assert_called_once_with("http://127.0.0.1:8771")
         bootstrap.assert_called_once_with(
             runtime_base_url="http://127.0.0.1:8771",
             encounter_id="enc_preview_demo",
             theme="forest_road",
         )
+
+    def test_main_skips_preview_bootstrap_for_custom_encounter_id(self) -> None:
+        fake_server = Mock()
+        fake_server.serve_forever.side_effect = RuntimeError("stop")
+        with patch(
+            "scripts.run_battlemap_localhost.argparse.ArgumentParser.parse_args",
+            return_value=Namespace(
+                host="127.0.0.1",
+                port=8765,
+                runtime_base_url="http://127.0.0.1:8771",
+                encounter_id="enc_warlock_lv5_test",
+                theme="forest_road",
+                dev_reload_path=None,
+            ),
+        ):
+            with patch(
+                "scripts.run_battlemap_localhost.assert_runtime_command_compatibility",
+            ) as assert_runtime_command_compatibility:
+                with patch("scripts.run_battlemap_localhost.bootstrap_runtime_encounter") as bootstrap:
+                    with patch("scripts.run_battlemap_localhost.ThreadingHTTPServer", return_value=fake_server):
+                        with self.assertRaises(RuntimeError):
+                            main()
+
+        assert_runtime_command_compatibility.assert_called_once_with("http://127.0.0.1:8771")
+        bootstrap.assert_not_called()
+
+
+class BytesIOResponse:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+        self.status = 200
+
+    def read(self) -> bytes:
+        return self._payload
+
+    def __enter__(self) -> "BytesIOResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
 
 
 if __name__ == "__main__":

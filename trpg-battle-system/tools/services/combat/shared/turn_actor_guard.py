@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
+from tools.services.shared_turns import is_entity_in_current_turn_group
 
 
 def get_current_turn_entity_or_raise(encounter: Encounter) -> EncounterEntity:
@@ -37,6 +38,6 @@ def resolve_current_turn_actor_or_raise(
         return current_entity
 
     actor = get_entity_or_raise(encounter, actor_id, entity_label=entity_label)
-    if not allow_out_of_turn_actor and actor.entity_id != current_entity.entity_id:
+    if not allow_out_of_turn_actor and not is_entity_in_current_turn_group(encounter, actor.entity_id):
         raise ValueError("actor_not_current_turn_entity")
     return actor

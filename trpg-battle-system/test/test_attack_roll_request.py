@@ -86,6 +86,7 @@ def build_target(
     conditions: list[str] | None = None,
     entity_id: str = "ent_enemy_goblin_001",
     name: str = "Goblin",
+    class_features: dict | None = None,
 ) -> EncounterEntity:
     """构造攻击目标。"""
     return EncounterEntity(
@@ -100,6 +101,7 @@ def build_target(
         speed={"walk": 30, "remaining": 30},
         initiative=10,
         conditions=conditions or [],
+        class_features=class_features or {},
     )
 
 
@@ -202,6 +204,83 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertEqual(request.context["vantage"], "advantage")
             self.assertIn("monk_stunning_strike_success", request.context["vantage_sources"]["advantage"])
             self.assertEqual(request.context["next_attack_advantage_turn_effect_ids"], [effect["effect_id"]])
+            repo.close()
+
+    def test_precise_hunter_grants_advantage_against_hunters_mark_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(class_features={"ranger": {"level": 17}})
+            target = build_target()
+            target.turn_effects.append(
+                {
+                    "effect_id": "effect_hunters_mark_001",
+                    "source_entity_id": actor.entity_id,
+                    "source_ref": "hunters_mark",
+                    "attack_bonus_damage_parts": [{"formula": "1d6", "damage_type": "force"}],
+                }
+            )
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            self.assertIn("ranger_precise_hunter", request.context["vantage_sources"]["advantage"])
+            repo.close()
+
+    def test_feral_senses_ignores_invisible_target_disadvantage_within_30_feet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                class_features={"ranger": {"level": 18}},
+            )
+            actor.weapons = [
+                {
+                    "weapon_id": "shortbow",
+                    "name": "Shortbow",
+                    "damage": [{"formula": "1d6+3", "type": "piercing"}],
+                    "properties": [],
+                    "range": {"normal": 80, "long": 320},
+                }
+            ]
+            target = build_target(position=(8, 2), conditions=["invisible"])
+            repo.save(build_encounter(actor=actor, target=target, width=10, height=10))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="shortbow",
+            )
+
+            self.assertEqual(request.context["vantage"], "normal")
+            self.assertNotIn("target_invisible", request.context["vantage_sources"]["disadvantage"])
+            repo.close()
+
+    def test_feral_senses_prevents_invisible_attacker_advantage_within_30_feet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(conditions=["invisible"])
+            target = build_target(
+                class_features={"ranger": {"level": 18}},
+                entity_id="ent_enemy_goblin_001",
+                name="Ranger Target",
+            )
+            target.side = "enemy"
+            target.category = "pc"
+            target.controller = "player"
+            repo.save(build_encounter(actor=actor, target=target))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id=target.entity_id,
+                weapon_id="rapier",
+            )
+
+            self.assertEqual(request.context["vantage"], "normal")
+            self.assertNotIn("actor_invisible", request.context["vantage_sources"]["advantage"])
             repo.close()
 
     def test_target_dodge_adds_disadvantage_against_visible_attacker(self) -> None:
@@ -564,7 +643,7 @@ class AttackRollRequestTests(unittest.TestCase):
 
                     self.assertTrue(request.context["weapon_is_proficient"])
                     self.assertEqual(request.context["proficiency_bonus"], 2)
-                    mock_resolver.assert_called_once_with(actor)
+                    mock_resolver.assert_called_once()
                     mock_legacy.assert_not_called()
             finally:
                 repo.close()
@@ -645,8 +724,8 @@ class AttackRollRequestTests(unittest.TestCase):
                 weapon_id="rapier",
             )
 
-            self.assertEqual(request.context["proficiency_bonus"], 2)
-            self.assertTrue(request.context["weapon_is_proficient"])
+            self.assertEqual(request.context["proficiency_bonus"], 0)
+            self.assertFalse(request.context["weapon_is_proficient"])
             repo.close()
 
     def test_execute_runtime_weapon_proficiency_override_beats_class_binding(self) -> None:

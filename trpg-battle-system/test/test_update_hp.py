@@ -1536,7 +1536,7 @@ class UpdateHpTests(unittest.TestCase):
 
             self.assertEqual(result["concentration_check_request"]["roll_type"], "concentration_check")
             self.assertEqual(result["concentration_check_request"]["context"]["save_dc"], 10)
-            self.assertEqual(result["concentration_check_request"]["context"]["vantage"], "normal")
+            self.assertEqual(result["concentration_check_request"]["context"]["vantage"], "advantage")
             event_repo.close()
             encounter_repo.close()
 

@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING, Any
 import math
 
 from tools.models import Encounter
-from tools.services.class_features.shared import get_class_runtime, get_fighter_runtime, get_monk_runtime, has_fighting_style
+from tools.services.class_features.shared import (
+    get_class_runtime,
+    get_fighter_runtime,
+    get_monk_runtime,
+    has_any_spell_slot,
+    has_fighting_style,
+)
 from tools.services.encounter.movement_rules import get_center_position
 
 if TYPE_CHECKING:
@@ -332,23 +338,7 @@ class CollectReactionCandidates:
         return False
 
     def _has_spell_slot(self, entity: Any, *, minimum_level: int) -> bool:
-        resources = entity.resources if isinstance(entity.resources, dict) else {}
-        spell_slots = resources.get("spell_slots")
-        if not isinstance(spell_slots, dict):
-            return False
-        for level_key, slot in spell_slots.items():
-            if not isinstance(slot, dict):
-                continue
-            remaining = slot.get("remaining")
-            if not isinstance(remaining, int) or remaining <= 0:
-                continue
-            try:
-                level = int(level_key)
-            except (TypeError, ValueError):
-                continue
-            if level >= minimum_level:
-                return True
-        return False
+        return has_any_spell_slot(entity, minimum_level=minimum_level)
 
     def _within_counterspell_range(self, entity: Any, caster: Any) -> bool:
         try:

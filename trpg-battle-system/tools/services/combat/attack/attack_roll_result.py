@@ -6,6 +6,7 @@ from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.events.append_event import AppendEvent
+from tools.services.shared_turns import is_entity_in_current_turn_group
 
 
 class AttackRollResult:
@@ -53,7 +54,7 @@ class AttackRollResult:
             raise ValueError("target_entity_id is required for attack rolls")
         if roll_result.target_entity_id not in encounter.entities:
             raise ValueError("target_entity_id not found in encounter")
-        if enforce_current_turn_actor and encounter.current_entity_id != roll_result.actor_entity_id:
+        if enforce_current_turn_actor and not is_entity_in_current_turn_group(encounter, roll_result.actor_entity_id):
             raise ValueError("attack roll actor must be the current entity")
         if hp_change is not None and self.update_hp is None:
             raise ValueError("update_hp service is required when hp_change is provided")

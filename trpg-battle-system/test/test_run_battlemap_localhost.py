@@ -140,6 +140,44 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
             self.assertNotIn("window.__BATTLEMAP_DEV__", html)
             repo.close()
 
+    def test_root_page_uses_runtime_initial_state_for_configured_encounter(self) -> None:
+        BattlemapLocalhostHandler.repository = None
+        BattlemapLocalhostHandler.runtime_base_url = "http://127.0.0.1:8771"
+        BattlemapLocalhostHandler.page_title = "Battlemap Localhost"
+        BattlemapLocalhostHandler.dev_reload_path = None
+        BattlemapLocalhostHandler.encounter_id = "enc_warlock_lv5_test"
+        server = ThreadingHTTPServer(("127.0.0.1", 0), BattlemapLocalhostHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        try:
+            with patch(
+                "scripts.run_battlemap_localhost.fetch_runtime_encounter_state",
+                return_value={
+                    "encounter_id": "enc_warlock_lv5_test",
+                    "encounter_name": "Warlock Lv5 Test Battle",
+                    "round": 1,
+                    "battlemap_details": {
+                        "name": "邪契荒原",
+                        "description": "Kael 与魔宠正在压制前线敌人。",
+                        "dimensions": "15 x 15 tiles",
+                        "grid_size": "Each tile represents 5 feet",
+                    },
+                    "battlemap_view": {"html": "<section>Kael 在这里</section>"},
+                },
+            ):
+                with urlopen(f"{base_url}/", timeout=5) as response:
+                    html = response.read().decode("utf-8")
+
+            self.assertIn("Warlock Lv5 Test Battle", html)
+            self.assertIn("Kael 在这里", html)
+            self.assertNotIn("月祷礼拜堂攻防战", html)
+            self.assertNotIn("米伦", html)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_render_localhost_page_can_inject_dev_reload_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

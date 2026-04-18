@@ -18,6 +18,7 @@ SIZE_TO_FOOTPRINT = {
 }
 DIFFICULT_TERRAIN_TYPE = "difficult_terrain"
 WALL_TERRAIN_TYPE = "wall"
+VALID_MOVEMENT_MODES = {"walk", "fly", "swim", "climb"}
 SHARED_DESTINATION_SIZES = {"tiny", "small"}
 ORTHOGONAL_DIRECTIONS = ((1, 0), (-1, 0), (0, 1), (0, -1))
 DIAGONAL_DIRECTIONS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
@@ -83,8 +84,10 @@ def validate_movement_path(
     *,
     count_movement: bool,
     use_dash: bool,
+    movement_mode: str = "walk",
 ) -> MovementValidationResult:
     mover = _get_entity_or_raise(encounter, entity_id)
+    normalized_movement_mode = _normalize_movement_mode(mover, movement_mode)
     if not isinstance(target_position, dict) or "x" not in target_position or "y" not in target_position:
         raise ValueError("invalid_target_position")
     if not isinstance(target_position["x"], int) or not isinstance(target_position["y"], int):
@@ -155,7 +158,12 @@ def validate_movement_path(
                 continue
 
             movement_kind = classify_step(current_anchor, next_anchor)
-            enters_difficult = _enters_difficult_terrain(encounter, current_cells, next_cells)
+            enters_difficult = _enters_difficult_terrain(
+                encounter,
+                current_cells,
+                next_cells,
+                movement_mode=normalized_movement_mode,
+            )
             step_cost, next_diagonal_toggle = calculate_step_cost(movement_kind, diagonal_toggle, enters_difficult)
             if is_prone:
                 step_cost *= 2
@@ -311,10 +319,28 @@ def _enters_difficult_terrain(
     encounter: Encounter,
     previous_cells: set[tuple[int, int]],
     next_cells: set[tuple[int, int]],
+    *,
+    movement_mode: str = "walk",
 ) -> bool:
+    if movement_mode == "fly":
+        return False
     difficult_cells = _terrain_cells(encounter, DIFFICULT_TERRAIN_TYPE) | _zone_cells_treated_as_difficult(encounter)
     entered_cells = next_cells - previous_cells
     return any(cell in difficult_cells for cell in entered_cells)
+
+
+def normalize_movement_mode(entity: EncounterEntity, movement_mode: str | None) -> str:
+    return _normalize_movement_mode(entity, movement_mode)
+
+
+def _normalize_movement_mode(entity: EncounterEntity, movement_mode: str | None) -> str:
+    normalized = str(movement_mode or "walk").strip().lower() or "walk"
+    if normalized not in VALID_MOVEMENT_MODES:
+        raise ValueError("invalid_movement_mode")
+    available_speed = entity.speed.get(normalized)
+    if not isinstance(available_speed, int) or available_speed <= 0:
+        raise ValueError("movement_mode_not_available")
+    return normalized
 
 
 def _zone_cells_treated_as_difficult(encounter: Encounter) -> set[tuple[int, int]]:

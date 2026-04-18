@@ -39,6 +39,7 @@ def move_and_attack(context: BattleRuntimeContext, args: dict[str, object]) -> d
         entity_id=actor_id,
         target_position=target_position,
         use_dash=bool(args.get("use_dash", False)),
+        movement_mode=str(args.get("movement_mode") or "walk"),
     )
 
     if movement_result["movement_status"] == "waiting_reaction":

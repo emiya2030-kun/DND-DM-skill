@@ -6,6 +6,7 @@ from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.models.roll_request import RollRequest
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared.warlock_invocations import has_selected_warlock_invocation
 
 
 class RequestConcentrationCheck:
@@ -33,6 +34,7 @@ class RequestConcentrationCheck:
         encounter = self._get_encounter_or_raise(encounter_id)
         target = self._get_entity_or_raise(encounter, target_id)
         normalized_vantage = self._normalize_vantage(vantage)
+        normalized_vantage = self._apply_eldritch_mind_vantage(target=target, current_vantage=normalized_vantage)
 
         if not bool(target.combat_flags.get("is_concentrating")):
             raise ValueError(f"entity '{target_id}' is not concentrating")
@@ -76,6 +78,15 @@ class RequestConcentrationCheck:
         if vantage not in {"normal", "advantage", "disadvantage"}:
             raise ValueError("vantage must be 'normal', 'advantage', or 'disadvantage'")
         return vantage
+
+    def _apply_eldritch_mind_vantage(self, *, target: EncounterEntity, current_vantage: str) -> str:
+        if not has_selected_warlock_invocation(target, "eldritch_mind"):
+            return current_vantage
+        if current_vantage == "disadvantage":
+            return "normal"
+        if current_vantage == "normal":
+            return "advantage"
+        return current_vantage
 
     def _generate_request_id(self) -> str:
         return f"req_concentration_{uuid4().hex[:12]}"

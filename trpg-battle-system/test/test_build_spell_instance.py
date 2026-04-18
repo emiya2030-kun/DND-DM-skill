@@ -114,3 +114,17 @@ class BuildSpellInstanceTests(unittest.TestCase):
         self.assertEqual(instance["special_runtime"]["summon_mode"], "persistent_entity")
         self.assertEqual(instance["special_runtime"]["summon_entity_ids"], [])
         self.assertTrue(instance["special_runtime"]["replace_previous_from_same_caster"])
+
+    def test_build_spell_instance_for_find_familiar_tracks_summon_runtime(self) -> None:
+        instance = build_spell_instance(
+            spell_definition={"id": "find_familiar", "name": "Find Familiar", "level": 1},
+            caster=build_caster(),
+            cast_level=1,
+            targets=[],
+            started_round=1,
+        )
+
+        self.assertEqual(instance["spell_id"], "find_familiar")
+        self.assertEqual(instance["special_runtime"]["summon_mode"], "persistent_entity")
+        self.assertEqual(instance["special_runtime"]["summon_entity_ids"], [])
+        self.assertTrue(instance["special_runtime"]["replace_previous_from_same_caster"])

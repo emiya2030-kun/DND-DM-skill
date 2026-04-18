@@ -7,6 +7,7 @@ from tinydb import Query
 from tools.core.config import ENCOUNTERS_DB_PATH
 from tools.core.db import get_db
 from tools.models.encounter import Encounter
+from tools.services.shared_turns import normalize_shared_turn_state
 
 
 class EncounterRepository:
@@ -27,7 +28,7 @@ class EncounterRepository:
         record = self._db.get(query.encounter_id == encounter_id)
         if record is None:
             return None
-        return Encounter.from_dict(record)
+        return normalize_shared_turn_state(Encounter.from_dict(record))
 
     def delete(self, encounter_id: str) -> int:
         query = Query()

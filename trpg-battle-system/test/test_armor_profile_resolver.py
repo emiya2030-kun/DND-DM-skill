@@ -34,6 +34,47 @@ def build_actor() -> EncounterEntity:
 
 
 class ArmorProfileResolverTests(unittest.TestCase):
+    def test_resolve_mage_armor_sets_base_ac_to_13_plus_dex_when_unarmored(self) -> None:
+        actor = build_actor()
+        actor.ac = 10
+        actor.ability_mods["dex"] = 3
+        actor.turn_effects.append({"effect_type": "mage_armor"})
+
+        profile = ArmorProfileResolver().resolve(actor)
+
+        self.assertEqual(profile["base_ac"], 16)
+        self.assertEqual(profile["current_ac"], 16)
+
+    def test_resolve_mage_armor_is_ignored_when_wearing_armor(self) -> None:
+        actor = build_actor()
+        actor.ability_mods["dex"] = 3
+        actor.turn_effects.append({"effect_type": "mage_armor"})
+        actor.equipped_armor = {"armor_id": "leather_armor"}
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            knowledge_path = Path(tmp_dir) / "armor_definitions.json"
+            knowledge_path.write_text(
+                json.dumps(
+                    {
+                        "armor_definitions": {
+                            "leather_armor": {
+                                "armor_id": "leather_armor",
+                                "name": "皮甲",
+                                "category": "light",
+                                "ac": {"base": 11, "add_dex_modifier": True},
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            profile = ArmorProfileResolver(ArmorDefinitionRepository(knowledge_path)).resolve(actor)
+
+        self.assertEqual(profile["base_ac"], 14)
+        self.assertEqual(profile["current_ac"], 14)
+
     def test_resolve_unarmored_defense_for_monk_without_armor_or_shield(self) -> None:
         actor = build_actor()
         actor.ac = 12

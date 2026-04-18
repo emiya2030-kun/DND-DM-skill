@@ -29,13 +29,15 @@ class ArmorProfileResolver:
         temporary_ac_bonus = self._active_temporary_ac_bonus(actor)
         fighting_style_bonus = self._resolve_fighting_style_ac_bonus(actor, armor)
         unarmored_defense_base_ac = self._resolve_unarmored_defense_base_ac(actor)
+        mage_armor_base_ac = self._resolve_mage_armor_base_ac(actor)
 
         if armor is None and shield is None:
-            base_ac = (
-                unarmored_defense_base_ac
-                if isinstance(unarmored_defense_base_ac, int)
-                else max(0, actor.ac - temporary_ac_bonus)
-            )
+            base_candidates = [max(0, actor.ac - temporary_ac_bonus)]
+            if isinstance(unarmored_defense_base_ac, int):
+                base_candidates.append(unarmored_defense_base_ac)
+            if isinstance(mage_armor_base_ac, int):
+                base_candidates.append(mage_armor_base_ac)
+            base_ac = max(base_candidates)
             current_ac = base_ac + temporary_ac_bonus
             return {
                 "armor": None,
@@ -64,10 +66,12 @@ class ArmorProfileResolver:
         stealth_disadvantage_sources: list[str] = []
 
         if armor is None:
+            base_candidates = [10 + dex_mod]
             if isinstance(unarmored_defense_base_ac, int):
-                base_armor_ac = unarmored_defense_base_ac
-            else:
-                base_armor_ac = 10 + dex_mod
+                base_candidates.append(unarmored_defense_base_ac)
+            if isinstance(mage_armor_base_ac, int):
+                base_candidates.append(mage_armor_base_ac)
+            base_armor_ac = max(base_candidates)
         else:
             ac_data = armor.get("ac") if isinstance(armor.get("ac"), dict) else {}
             armor_base = int(ac_data.get("base", 10))
@@ -114,7 +118,12 @@ class ArmorProfileResolver:
 
     def refresh_entity_armor_class(self, actor: EncounterEntity) -> dict[str, Any]:
         profile = self.resolve(actor)
-        if actor.equipped_armor is not None or actor.equipped_shield is not None or profile["ac_breakdown"]["shield_spell_bonus_active"]:
+        if (
+            actor.equipped_armor is not None
+            or actor.equipped_shield is not None
+            or profile["ac_breakdown"]["shield_spell_bonus_active"]
+            or self._has_active_mage_armor(actor)
+        ):
             actor.ac = profile["current_ac"]
         return profile
 
@@ -148,6 +157,22 @@ class ArmorProfileResolver:
         if actor.equipped_armor is not None or actor.equipped_shield is not None:
             return None
         return 10 + self._ability_mod(actor, "dex") + self._ability_mod(actor, "wis")
+
+    def _resolve_mage_armor_base_ac(self, actor: EncounterEntity) -> int | None:
+        if actor.equipped_armor is not None:
+            return None
+        if not self._has_active_mage_armor(actor):
+            return None
+        return 13 + self._ability_mod(actor, "dex")
+
+    def _has_active_mage_armor(self, actor: EncounterEntity) -> bool:
+        for effect in actor.turn_effects:
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("effect_type") or "").strip().lower() != "mage_armor":
+                continue
+            return True
+        return False
 
     def _is_equipment_trained(
         self,

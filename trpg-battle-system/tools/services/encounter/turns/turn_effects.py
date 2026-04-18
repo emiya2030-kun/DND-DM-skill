@@ -52,7 +52,7 @@ def resolve_turn_effects(
             "effect_removed": False,
         }
 
-        special_updates = _apply_special_turn_effect(
+        special_updates, special_remove = _apply_special_turn_effect(
             target=entity,
             effect=effect,
             trigger=trigger,
@@ -95,6 +95,8 @@ def resolve_turn_effects(
                 resolution["failure_damage_resolution"] = outcome_damage_resolution
 
         remove_effect = bool(effect.get("remove_after_trigger"))
+        if special_remove is True:
+            remove_effect = True
         if save_success and isinstance(save_config, dict) and bool(save_config.get("on_success_remove_effect")):
             remove_effect = True
 
@@ -141,26 +143,53 @@ def _apply_special_turn_effect(
     target: EncounterEntity,
     effect: dict[str, Any],
     trigger: str,
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], bool | None]:
     effect_type = effect.get("effect_type")
-    if effect_type != "shield_ac_bonus" or trigger != "start_of_turn":
-        return []
+    if effect_type == "shield_ac_bonus" and trigger == "start_of_turn":
+        ac_bonus = effect.get("ac_bonus", 0)
+        if not isinstance(ac_bonus, int):
+            raise ValueError("shield_ac_bonus.ac_bonus must be an integer")
+        if ac_bonus == 0:
+            return ([{"operation": "shield_ac_bonus_removed", "changed": False, "ac_bonus": 0}], None)
 
-    ac_bonus = effect.get("ac_bonus", 0)
-    if not isinstance(ac_bonus, int):
-        raise ValueError("shield_ac_bonus.ac_bonus must be an integer")
-    if ac_bonus == 0:
-        return [{"operation": "shield_ac_bonus_removed", "changed": False, "ac_bonus": 0}]
+        target.ac = max(0, target.ac - ac_bonus)
+        return (
+            [
+                {
+                    "operation": "shield_ac_bonus_removed",
+                    "changed": True,
+                    "ac_bonus": ac_bonus,
+                    "new_ac": target.ac,
+                }
+            ],
+            None,
+        )
 
-    target.ac = max(0, target.ac - ac_bonus)
-    return [
-        {
-            "operation": "shield_ac_bonus_removed",
-            "changed": True,
-            "ac_bonus": ac_bonus,
-            "new_ac": target.ac,
-        }
-    ]
+    if effect_type == "ranger_natures_veil" and trigger == "end_of_turn":
+        remaining_end_triggers = effect.get("remaining_end_triggers", 2)
+        if not isinstance(remaining_end_triggers, int):
+            remaining_end_triggers = 2
+        remaining_end_triggers -= 1
+        effect["remaining_end_triggers"] = remaining_end_triggers
+
+        if remaining_end_triggers > 0:
+            return (
+                [
+                    {
+                        "operation": "natures_veil_countdown",
+                        "changed": True,
+                        "remaining_end_triggers": remaining_end_triggers,
+                    }
+                ],
+                None,
+            )
+
+        if "invisible" in target.conditions:
+            target.conditions.remove("invisible")
+            return ([{"operation": "remove", "condition": "invisible", "changed": True}], True)
+        return ([{"operation": "remove", "condition": "invisible", "changed": False}], True)
+
+    return [], None
 
 
 def _apply_condition_changes(

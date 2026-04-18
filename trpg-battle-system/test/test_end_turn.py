@@ -17,6 +17,33 @@ from test.test_start_turn import build_encounter
 
 
 class EndTurnTests(unittest.TestCase):
+    def test_execute_expires_gaze_of_two_minds_when_remaining_source_turn_ends_reaches_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_eric_001"]
+            actor.class_features = {
+                "warlock": {
+                    "level": 5,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "gaze_of_two_minds"}]
+                    },
+                    "gaze_of_two_minds": {
+                        "linked_entity_id": "ent_ally_lia_001",
+                        "linked_entity_name": "Lia",
+                        "remaining_source_turn_ends": 1,
+                    },
+                }
+            }
+            repo.save(encounter)
+
+            updated = EndTurn(repo).execute("enc_start_turn_test")
+
+            gaze = updated.entities["ent_ally_eric_001"].class_features["warlock"]["gaze_of_two_minds"]
+            self.assertIsNone(gaze["linked_entity_id"])
+            self.assertEqual(gaze["remaining_source_turn_ends"], 0)
+            repo.close()
+
     def test_execute_keeps_rage_active_when_extended_by_attack_this_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -153,7 +180,7 @@ class EndTurnTests(unittest.TestCase):
 
             self.assertEqual(result["encounter_id"], "enc_start_turn_test")
             self.assertEqual(result["encounter_state"]["current_turn_entity"]["id"], "ent_ally_eric_001")
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "5 feet")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "5 尺")
             self.assertTrue(result["encounter_state"]["current_turn_entity"]["actions"]["action_used"])
             repo.close()
 

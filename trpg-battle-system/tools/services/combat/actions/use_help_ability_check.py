@@ -6,6 +6,7 @@ from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.encounter.get_encounter_state import GetEncounterState
+from tools.services.shared_turns import is_entity_in_current_turn_group
 
 
 class UseHelpAbilityCheck:
@@ -93,7 +94,7 @@ class UseHelpAbilityCheck:
         return ally
 
     def _ensure_actor_turn(self, encounter: Encounter, actor_id: str) -> None:
-        if encounter.current_entity_id != actor_id:
+        if not is_entity_in_current_turn_group(encounter, actor_id):
             raise ValueError("not_actor_turn")
 
     def _ensure_action_available(self, actor: EncounterEntity) -> None:

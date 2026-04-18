@@ -115,6 +115,7 @@ class ContinuePendingMovement:
                 movement.feet_cost,
                 bool(pending.get("use_dash")),
                 bool(pending.get("count_movement", True)),
+                str(pending.get("movement_mode") or "walk"),
             )
             encounter.pending_movement = None
             self.repository.save(encounter)
@@ -139,6 +140,7 @@ class ContinuePendingMovement:
             int(next_trigger["feet_spent_before_trigger"]),
             bool(pending.get("use_dash")),
             bool(pending.get("count_movement", True)),
+            str(pending.get("movement_mode") or "walk"),
         )
         next_request = next_trigger["request"]
         trigger_event = self.begin_move_helper._build_leave_reach_trigger_event(
@@ -150,6 +152,7 @@ class ContinuePendingMovement:
             remaining_path=next_trigger["remaining_path"],
             count_movement=bool(pending.get("count_movement", True)),
             use_dash=bool(pending.get("use_dash")),
+            movement_mode=str(pending.get("movement_mode") or "walk"),
             reactor_entity_id=str(next_request["actor_entity_id"]),
             request_payloads={str(next_request["actor_entity_id"]): dict(next_request.get("payload", {}))},
             request_overrides={str(next_request["actor_entity_id"]): dict(next_request)},
@@ -172,6 +175,7 @@ class ContinuePendingMovement:
                 movement.feet_cost,
                 bool(pending.get("use_dash")),
                 bool(pending.get("count_movement", True)),
+                str(pending.get("movement_mode") or "walk"),
             )
             encounter.pending_movement = None
             self.repository.save(encounter)
@@ -215,6 +219,7 @@ class ContinuePendingMovement:
         total_cost = 0
         diagonal_toggle = 0
         difficult_cells = self._difficult_terrain_cells(encounter)
+        movement_mode = str(pending.get("movement_mode") or "walk")
 
         previous_cells = get_occupied_cells(mover, {"x": current_anchor[0], "y": current_anchor[1]})
         for raw_anchor in remaining_path:
@@ -227,7 +232,7 @@ class ContinuePendingMovement:
             step_cost, diagonal_toggle = calculate_step_cost(
                 movement_kind,
                 diagonal_toggle,
-                enters_difficult=any(cell in difficult_cells for cell in entered_cells),
+                enters_difficult=movement_mode != "fly" and any(cell in difficult_cells for cell in entered_cells),
             )
             steps.append(
                 MovementStep(

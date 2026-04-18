@@ -22,6 +22,7 @@ from tools.services.class_features.shared import (
     consume_studied_attack_mark,
     ensure_paladin_runtime,
     ensure_rogue_runtime,
+    ensure_spell_slots_runtime,
     ensure_warlock_runtime,
     fighter_has_studied_attacks,
     get_class_runtime,
@@ -31,7 +32,7 @@ from tools.services.class_features.shared import (
     resolve_entity_save_proficiencies,
     resolve_extra_attack_count,
 )
-from tools.services.class_features.shared.warlock_invocations import can_apply_lifedrinker
+from tools.services.class_features.shared.warlock_invocations import can_apply_eldritch_smite, can_apply_lifedrinker
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.shared.update_hp import UpdateHp
@@ -325,6 +326,16 @@ class ExecuteAttack:
             )
             if lifedrinker_result is not None:
                 resolution["lifedrinker"] = lifedrinker_result
+            eldritch_smite_result = self._apply_warlock_eldritch_smite_updates(
+                encounter_id=encounter_id,
+                actor_entity_id=request.actor_entity_id,
+                target_entity_id=target_id,
+                weapon_id=weapon_id,
+                attack_context=request.context,
+                resolution=resolution,
+            )
+            if eldritch_smite_result is not None:
+                resolution["eldritch_smite"] = eldritch_smite_result
         elif resolution["hit"] and hp_change is not None:
             resolution["hp_update"] = self._apply_legacy_damage(
                 encounter_id=encounter_id,
@@ -681,6 +692,12 @@ class ExecuteAttack:
             attack_context=attack_context,
             damage_parts=damage_parts,
         )
+        self._maybe_append_warlock_eldritch_smite_damage_part(
+            actor=actor,
+            weapon_id=weapon_id,
+            attack_context=attack_context,
+            damage_parts=damage_parts,
+        )
         self._maybe_append_warlock_lifedrinker_damage_part(
             actor=actor,
             weapon_id=weapon_id,
@@ -713,6 +730,10 @@ class ExecuteAttack:
         expected_sources = [part["source"] for part in damage_parts]
         self._validate_damage_roll_sources(expected_sources=expected_sources, actual_sources=list(indexed_rolls.keys()))
         self._consume_paladin_divine_smite_spell_slot(
+            actor=actor,
+            attack_context=attack_context,
+        )
+        self._consume_warlock_eldritch_smite_pact_magic_slot(
             actor=actor,
             attack_context=attack_context,
         )
@@ -1148,12 +1169,53 @@ class ExecuteAttack:
         )
         return True
 
+    def _maybe_append_warlock_eldritch_smite_damage_part(
+        self,
+        *,
+        actor: Any,
+        weapon_id: str,
+        attack_context: dict[str, Any],
+        damage_parts: list[dict[str, Any]],
+    ) -> bool:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return False
+        eldritch_smite = class_feature_options.get("eldritch_smite")
+        if not isinstance(eldritch_smite, dict) or not bool(eldritch_smite.get("enabled")):
+            return False
+        if not can_apply_eldritch_smite(actor, weapon_id):
+            raise ValueError("eldritch_smite_not_available")
+
+        warlock = ensure_warlock_runtime(actor)
+        eldritch_smite_runtime = warlock.get("eldritch_smite")
+        if not isinstance(eldritch_smite_runtime, dict):
+            raise ValueError("eldritch_smite_not_available")
+        if bool(eldritch_smite_runtime.get("used_this_turn")):
+            raise ValueError("eldritch_smite_already_used_this_turn")
+
+        slot_level = eldritch_smite.get("slot_level")
+        if isinstance(slot_level, bool) or not isinstance(slot_level, int) or slot_level < 1:
+            raise ValueError("eldritch_smite_invalid_slot_level")
+        self._ensure_warlock_pact_magic_slot_available(actor=actor, slot_level=slot_level)
+
+        damage_parts.append(
+            {
+                "source": "warlock_eldritch_smite",
+                "formula": self._resolve_eldritch_smite_formula(slot_level=slot_level),
+                "damage_type": "force",
+            }
+        )
+        return True
+
     def _resolve_divine_smite_formula(self, *, target: Any, slot_level: int) -> str:
         dice_count = 2 + max(0, slot_level - 1)
         creature_type = self._resolve_target_creature_type(target)
         if creature_type in {"fiend", "undead"}:
             dice_count += 1
         return f"{dice_count}d8"
+
+    def _resolve_eldritch_smite_formula(self, *, slot_level: int) -> str:
+        return f"{slot_level + 1}d8"
 
     def _resolve_target_creature_type(self, target: Any) -> str | None:
         source_ref = getattr(target, "source_ref", {})
@@ -1170,6 +1232,16 @@ class ExecuteAttack:
     def _ensure_spell_slot_available(self, *, actor: Any, slot_level: int) -> None:
         if not has_exact_spell_slot(actor, slot_level):
             raise ValueError("divine_smite_slot_unavailable")
+
+    def _ensure_warlock_pact_magic_slot_available(self, *, actor: Any, slot_level: int) -> None:
+        slots_runtime = ensure_spell_slots_runtime(actor)
+        pact_magic_slots = slots_runtime.get("pact_magic_slots")
+        if not isinstance(pact_magic_slots, dict):
+            raise ValueError("eldritch_smite_slot_unavailable")
+        pact_slot_level = pact_magic_slots.get("slot_level")
+        remaining = pact_magic_slots.get("remaining")
+        if pact_slot_level != slot_level or not isinstance(remaining, int) or remaining <= 0:
+            raise ValueError("eldritch_smite_slot_unavailable")
 
     def _consume_paladin_divine_smite_spell_slot(
         self,
@@ -1192,6 +1264,41 @@ class ExecuteAttack:
             return consume_exact_spell_slot(actor, slot_level)
         except ValueError as exc:
             raise ValueError("divine_smite_slot_unavailable") from exc
+
+    def _consume_warlock_eldritch_smite_pact_magic_slot(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return None
+        eldritch_smite = class_feature_options.get("eldritch_smite")
+        if not isinstance(eldritch_smite, dict) or not bool(eldritch_smite.get("enabled")):
+            return None
+
+        slot_level = eldritch_smite.get("slot_level")
+        if isinstance(slot_level, bool) or not isinstance(slot_level, int) or slot_level < 1:
+            raise ValueError("eldritch_smite_invalid_slot_level")
+
+        self._ensure_warlock_pact_magic_slot_available(actor=actor, slot_level=slot_level)
+        resources = getattr(actor, "resources", None)
+        pact_magic_slots = resources.get("pact_magic_slots") if isinstance(resources, dict) else None
+        if not isinstance(pact_magic_slots, dict):
+            raise ValueError("eldritch_smite_slot_unavailable")
+
+        remaining = pact_magic_slots.get("remaining")
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining <= 0:
+            raise ValueError("eldritch_smite_slot_unavailable")
+
+        pact_magic_slots["remaining"] = remaining - 1
+        return {
+            "slot_level": slot_level,
+            "resource_pool": "pact_magic_slots",
+            "remaining_before": remaining,
+            "remaining_after": pact_magic_slots["remaining"],
+        }
 
     def _build_auto_damage_rolls_from_parts(
         self,
@@ -2619,6 +2726,66 @@ class ExecuteAttack:
                 source_entity_id=actor_entity_id,
             )
             return result
+        self.attack_roll_request.encounter_repository.save(encounter)
+        return result
+
+    def _apply_warlock_eldritch_smite_updates(
+        self,
+        *,
+        encounter_id: str,
+        actor_entity_id: str,
+        target_entity_id: str,
+        weapon_id: str,
+        attack_context: dict[str, Any],
+        resolution: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not bool(resolution.get("hit")):
+            return None
+        class_feature_options = attack_context.get("class_feature_options")
+        if not isinstance(class_feature_options, dict):
+            return None
+        eldritch_smite = class_feature_options.get("eldritch_smite")
+        if not isinstance(eldritch_smite, dict) or not bool(eldritch_smite.get("enabled")):
+            return None
+
+        encounter = self.attack_roll_request.encounter_repository.get(encounter_id)
+        if encounter is None:
+            raise ValueError(f"encounter '{encounter_id}' not found while applying eldritch smite")
+        actor = encounter.entities.get(actor_entity_id)
+        if actor is None:
+            raise ValueError(f"actor '{actor_entity_id}' not found in encounter while applying eldritch smite")
+        target = encounter.entities.get(target_entity_id)
+        if target is None:
+            raise ValueError(f"target '{target_entity_id}' not found in encounter while applying eldritch smite")
+        if not can_apply_eldritch_smite(actor, weapon_id):
+            raise ValueError("eldritch_smite_not_available")
+
+        warlock = ensure_warlock_runtime(actor)
+        eldritch_smite_runtime = warlock.get("eldritch_smite")
+        if not isinstance(eldritch_smite_runtime, dict):
+            raise ValueError("eldritch_smite_not_available")
+        if bool(eldritch_smite_runtime.get("used_this_turn")):
+            raise ValueError("eldritch_smite_already_used_this_turn")
+        eldritch_smite_runtime["used_this_turn"] = True
+
+        result: dict[str, Any] = {
+            "enabled": True,
+            "slot_level": int(eldritch_smite.get("slot_level", 0) or 0),
+            "damage_type": "force",
+            "knock_prone_requested": bool(eldritch_smite.get("knock_prone")),
+        }
+
+        if bool(eldritch_smite.get("knock_prone")):
+            target_size = str(getattr(target, "size", "") or "").strip().lower()
+            if target_size in {"tiny", "small", "medium", "large", "huge"}:
+                applied = False
+                if "prone" not in target.conditions:
+                    target.conditions.append("prone")
+                    applied = True
+                result["prone"] = {"status": "applied" if applied else "already_prone", "applied": applied}
+            else:
+                result["prone"] = {"status": "no_effect", "reason": "target_too_large", "applied": False}
+
         self.attack_roll_request.encounter_repository.save(encounter)
         return result
 

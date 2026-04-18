@@ -74,7 +74,7 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
             self.assertEqual(result["turn_order"], ["ent_a", "ent_b"])
             self.assertEqual(result["current_entity_id"], "ent_a")
             self.assertFalse(result["encounter_state"]["current_turn_entity"]["actions"]["action_used"])
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "30 feet")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["movement_remaining"], "30 尺")
             repo.close()
 
     def test_initiative_results_hide_internal_decimal_from_public_payload(self) -> None:

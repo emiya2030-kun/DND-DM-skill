@@ -98,6 +98,31 @@ class ConcentrationCheckTests(unittest.TestCase):
             self.assertEqual(request.context["vantage"], "normal")
             repo.close()
 
+    def test_request_concentration_check_grants_advantage_with_eldritch_mind(self) -> None:
+        """测试魔能意志会让专注检定具有优势。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_pc_eric_001"]
+            target.class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "eldritch_mind"}],
+                    },
+                },
+            }
+            repo.save(encounter)
+
+            request = RequestConcentrationCheck(repo).execute(
+                encounter_id="enc_concentration_test",
+                target_id="ent_pc_eric_001",
+                damage_taken=18,
+            )
+
+            self.assertEqual(request.context["vantage"], "advantage")
+            repo.close()
+
     def test_resolve_concentration_check_uses_advantage(self) -> None:
         """测试优势专注检定会取两次 d20 中更高的结果。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -236,7 +261,7 @@ class ConcentrationCheckTests(unittest.TestCase):
 
             self.assertIn("encounter_state", result)
             self.assertEqual(result["encounter_state"]["encounter_id"], "enc_concentration_test")
-            self.assertEqual(result["encounter_state"]["current_turn_entity"]["conditions"], "No active conditions.")
+            self.assertEqual(result["encounter_state"]["current_turn_entity"]["conditions"], "无状态")
             encounter_repo.close()
             event_repo.close()
 

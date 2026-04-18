@@ -10,6 +10,7 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.check_catalog import SKILL_TO_ABILITY
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
+    ensure_ranger_runtime,
     ensure_rogue_runtime,
     get_fighter_runtime,
     resolve_entity_skill_proficiencies,
@@ -237,8 +238,13 @@ class ResolveAbilityCheck:
         return max(chosen_roll, 10)
 
     def _has_expertise(self, *, actor: EncounterEntity, skill: str) -> bool:
-        rogue_runtime = ensure_rogue_runtime(actor)
-        expertise = rogue_runtime.get("expertise")
+        return self._has_expertise_in_runtime(ensure_rogue_runtime(actor), skill) or self._has_expertise_in_runtime(
+            ensure_ranger_runtime(actor),
+            skill,
+        )
+
+    def _has_expertise_in_runtime(self, runtime: dict[str, Any], skill: str) -> bool:
+        expertise = runtime.get("expertise")
         if not isinstance(expertise, dict):
             return False
         skills = expertise.get("skills")

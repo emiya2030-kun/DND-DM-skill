@@ -297,6 +297,54 @@ def ensure_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
         damage_type_override if isinstance(damage_type_override, str) and damage_type_override.strip() else None
     )
 
+    pact_of_the_chain = warlock.setdefault("pact_of_the_chain", {})
+    explicit_chain_enabled = pact_of_the_chain.get("enabled")
+    pact_of_the_chain["enabled"] = (
+        explicit_chain_enabled if isinstance(explicit_chain_enabled, bool) else "pact_of_the_chain" in selected_invocation_ids
+    )
+    familiar_entity_id = pact_of_the_chain.get("familiar_entity_id")
+    pact_of_the_chain["familiar_entity_id"] = familiar_entity_id if isinstance(familiar_entity_id, str) else None
+    familiar_name = pact_of_the_chain.get("familiar_name")
+    pact_of_the_chain["familiar_name"] = familiar_name if isinstance(familiar_name, str) else None
+    familiar_form_id = pact_of_the_chain.get("familiar_form_id")
+    pact_of_the_chain["familiar_form_id"] = familiar_form_id if isinstance(familiar_form_id, str) else None
+
+    armor_of_shadows = warlock.setdefault("armor_of_shadows", {})
+    explicit_armor_of_shadows_enabled = armor_of_shadows.get("enabled")
+    armor_of_shadows["enabled"] = (
+        explicit_armor_of_shadows_enabled
+        if isinstance(explicit_armor_of_shadows_enabled, bool)
+        else level >= 1 and "armor_of_shadows" in selected_invocation_ids
+    )
+
+    fiendish_vigor = warlock.setdefault("fiendish_vigor", {})
+    explicit_fiendish_vigor_enabled = fiendish_vigor.get("enabled")
+    fiendish_vigor["enabled"] = (
+        explicit_fiendish_vigor_enabled
+        if isinstance(explicit_fiendish_vigor_enabled, bool)
+        else level >= 2 and "fiendish_vigor" in selected_invocation_ids
+    )
+
+    eldritch_mind = warlock.setdefault("eldritch_mind", {})
+    explicit_eldritch_mind_enabled = eldritch_mind.get("enabled")
+    eldritch_mind["enabled"] = (
+        explicit_eldritch_mind_enabled
+        if isinstance(explicit_eldritch_mind_enabled, bool)
+        else level >= 2 and "eldritch_mind" in selected_invocation_ids
+    )
+
+    devils_sight = warlock.setdefault("devils_sight", {})
+    explicit_devils_sight_enabled = devils_sight.get("enabled")
+    devils_sight["enabled"] = (
+        explicit_devils_sight_enabled
+        if isinstance(explicit_devils_sight_enabled, bool)
+        else level >= 2 and "devils_sight" in selected_invocation_ids
+    )
+    if not isinstance(devils_sight.get("range_feet"), int):
+        devils_sight["range_feet"] = 120
+    if not isinstance(devils_sight.get("sees_magical_darkness"), bool):
+        devils_sight["sees_magical_darkness"] = True
+
     turn_counters = warlock.get("turn_counters")
     warlock["turn_counters"] = dict(turn_counters) if isinstance(turn_counters, dict) else {}
     attack_action_attacks_used = warlock["turn_counters"].get("attack_action_attacks_used")
@@ -313,6 +361,38 @@ def ensure_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     )
     used_this_turn = lifedrinker.get("used_this_turn")
     lifedrinker["used_this_turn"] = used_this_turn if isinstance(used_this_turn, bool) else False
+
+    eldritch_smite = warlock.setdefault("eldritch_smite", {})
+    explicit_eldritch_smite_enabled = eldritch_smite.get("enabled")
+    eldritch_smite["enabled"] = (
+        explicit_eldritch_smite_enabled
+        if isinstance(explicit_eldritch_smite_enabled, bool)
+        else level >= 5 and "eldritch_smite" in selected_invocation_ids
+    )
+    eldritch_smite_used_this_turn = eldritch_smite.get("used_this_turn")
+    eldritch_smite["used_this_turn"] = (
+        eldritch_smite_used_this_turn if isinstance(eldritch_smite_used_this_turn, bool) else False
+    )
+
+    gaze_of_two_minds = warlock.setdefault("gaze_of_two_minds", {})
+    explicit_gaze_enabled = gaze_of_two_minds.get("enabled")
+    gaze_of_two_minds["enabled"] = (
+        explicit_gaze_enabled
+        if isinstance(explicit_gaze_enabled, bool)
+        else level >= 5 and "gaze_of_two_minds" in selected_invocation_ids
+    )
+    linked_entity_id = gaze_of_two_minds.get("linked_entity_id")
+    gaze_of_two_minds["linked_entity_id"] = linked_entity_id if isinstance(linked_entity_id, str) else None
+    linked_entity_name = gaze_of_two_minds.get("linked_entity_name")
+    gaze_of_two_minds["linked_entity_name"] = linked_entity_name if isinstance(linked_entity_name, str) else None
+    remaining_source_turn_ends = gaze_of_two_minds.get("remaining_source_turn_ends")
+    gaze_of_two_minds["remaining_source_turn_ends"] = (
+        remaining_source_turn_ends
+        if isinstance(remaining_source_turn_ends, int) and remaining_source_turn_ends >= 0
+        else 0
+    )
+    special_senses = gaze_of_two_minds.get("special_senses")
+    gaze_of_two_minds["special_senses"] = dict(special_senses) if isinstance(special_senses, dict) else {}
 
     magical_cunning = warlock.setdefault("magical_cunning", {})
     explicit_magical_cunning_enabled = magical_cunning.get("enabled")

@@ -302,6 +302,34 @@ class ContinuePendingMovementTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_continues_flying_movement_without_difficult_terrain_penalty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_waiting_reaction_encounter()
+            mover = encounter.entities["ent_enemy_orc_001"]
+            mover.speed["walk"] = 20
+            mover.speed["fly"] = 40
+            mover.speed["remaining"] = 20
+            encounter.map.terrain = [
+                {"x": 6, "y": 4, "type": "difficult_terrain"},
+                {"x": 7, "y": 4, "type": "difficult_terrain"},
+            ]
+            encounter.pending_movement["movement_mode"] = "fly"
+            repo.save(encounter)
+
+            result = ContinuePendingMovement(repo, AppendEvent(event_repo)).execute_with_state(
+                encounter_id="enc_continue_move_test"
+            )
+
+            updated = repo.get("enc_continue_move_test")
+            assert updated is not None
+            self.assertEqual(updated.entities["ent_enemy_orc_001"].position, {"x": 8, "y": 4})
+            self.assertEqual(updated.entities["ent_enemy_orc_001"].speed["remaining"], 25)
+            self.assertEqual(result["movement_status"], "completed")
+            repo.close()
+            event_repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

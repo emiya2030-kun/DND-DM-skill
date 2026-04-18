@@ -4,6 +4,7 @@ from typing import Any
 
 from tools.models import Encounter
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import consume_lowest_available_spell_slot
 
 
 class TargetedDefenseRewrite:
@@ -75,34 +76,7 @@ class TargetedDefenseRewrite:
             actor.action_economy = {}
         actor.action_economy["reaction_used"] = True
 
-        resources = actor.resources if isinstance(actor.resources, dict) else {}
-        spell_slots = resources.get("spell_slots")
-        if not isinstance(spell_slots, dict):
-            raise ValueError("shield_requires_spell_slots")
-
-        available_levels: list[int] = []
-        for raw_level, slot_info in spell_slots.items():
-            if not isinstance(slot_info, dict):
-                continue
-            remaining = slot_info.get("remaining")
-            if not isinstance(remaining, int) or remaining <= 0:
-                continue
-            try:
-                level = int(raw_level)
-            except (TypeError, ValueError):
-                continue
-            if level >= 1:
-                available_levels.append(level)
-        if not available_levels:
+        try:
+            return consume_lowest_available_spell_slot(actor, minimum_level=1)
+        except ValueError as exc:
             raise ValueError("shield_requires_level_1_or_higher_slot")
-
-        slot_level = min(available_levels)
-        slot_key = str(slot_level)
-        slot_info = spell_slots[slot_key]
-        before = int(slot_info["remaining"])
-        slot_info["remaining"] = before - 1
-        return {
-            "slot_level": slot_level,
-            "remaining_before": before,
-            "remaining_after": slot_info["remaining"],
-        }

@@ -8,7 +8,10 @@ from uuid import uuid4
 
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
-from tools.services.class_features.shared.warlock_invocations import has_selected_warlock_invocation
+from tools.services.class_features.shared.warlock_invocations import (
+    has_selected_warlock_invocation,
+    resolve_gaze_of_two_minds_origin,
+)
 from tools.services.combat.attack.attack_roll_result import AttackRollResult
 from tools.services.combat.damage import ResolveDamageParts
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
@@ -129,6 +132,7 @@ class ExecuteSpell:
                 spell_definition=spell_definition,
                 target_ids=request_result.get("target_entity_ids"),
                 resolved_scaling=request_result.get("resolved_scaling"),
+                spell_origin_entity_id=request_result.get("spell_origin_entity_id"),
                 attack_rolls=kwargs.get("attack_rolls"),
                 damage_rolls=kwargs.get("damage_rolls"),
             )
@@ -620,6 +624,7 @@ class ExecuteSpell:
         spell_definition: dict[str, Any],
         target_ids: Any,
         resolved_scaling: Any,
+        spell_origin_entity_id: Any,
         attack_rolls: Any,
         damage_rolls: Any,
     ) -> dict[str, Any]:
@@ -629,6 +634,10 @@ class ExecuteSpell:
         actor = encounter.entities.get(actor_id)
         if actor is None:
             raise ValueError(f"actor '{actor_id}' not found in encounter")
+        spell_origin = resolve_gaze_of_two_minds_origin(encounter, actor)
+        origin_actor = encounter.entities.get(spell_origin_entity_id) if isinstance(spell_origin_entity_id, str) else None
+        if origin_actor is None:
+            origin_actor = spell_origin.get("origin_entity") or actor
 
         normalized_target_ids = [target_id for target_id in (target_ids or []) if isinstance(target_id, str) and target_id]
         beam_count = 1
@@ -660,7 +669,7 @@ class ExecuteSpell:
             try:
                 self._ensure_attack_spell_target_is_legal(
                     encounter=encounter,
-                    actor=actor,
+                    actor=origin_actor,
                     target=target,
                     spell_definition=spell_definition,
                 )

@@ -80,6 +80,9 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         lifedrinker = warlock.get("lifedrinker")
         if isinstance(lifedrinker, dict):
             lifedrinker["used_this_turn"] = False
+        eldritch_smite = warlock.get("eldritch_smite")
+        if isinstance(eldritch_smite, dict):
+            eldritch_smite["used_this_turn"] = False
 
 
 def _resolve_base_walk_speed(*, entity: EncounterEntity, combat_flags: dict[str, object]) -> int:
@@ -152,6 +155,7 @@ def end_turn(encounter: Encounter) -> Encounter:
     if encounter.current_entity_id not in encounter.entities:
         raise ValueError("current_entity_id must exist in entities")
     actor = encounter.entities[encounter.current_entity_id]
+    _resolve_warlock_gaze_of_two_minds_at_turn_end(actor)
     _resolve_barbarian_rage_at_turn_end(actor)
     return encounter
 
@@ -217,6 +221,28 @@ def _resolve_barbarian_rage_at_turn_end(entity: EncounterEntity) -> None:
         _end_rage(rage)
 
     _clear_barbarian_rage_extension_flags(entity)
+
+
+def _resolve_warlock_gaze_of_two_minds_at_turn_end(entity: EncounterEntity) -> None:
+    class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
+    if "warlock" not in class_features:
+        return
+
+    warlock = ensure_warlock_runtime(entity)
+    gaze = warlock.get("gaze_of_two_minds")
+    if not isinstance(gaze, dict) or not bool(gaze.get("enabled")):
+        return
+
+    remaining_source_turn_ends = gaze.get("remaining_source_turn_ends")
+    if isinstance(remaining_source_turn_ends, int) and remaining_source_turn_ends > 1:
+        gaze["remaining_source_turn_ends"] = remaining_source_turn_ends - 1
+        return
+
+    if remaining_source_turn_ends == 1:
+        gaze["linked_entity_id"] = None
+        gaze["linked_entity_name"] = None
+        gaze["special_senses"] = {}
+        gaze["remaining_source_turn_ends"] = 0
 
 
 def _is_wearing_heavy_armor(entity: EncounterEntity) -> bool:

@@ -7,6 +7,7 @@ from typing import Any
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
+from tools.services.class_features.shared.warlock_invocations import resolve_gaze_of_two_minds_origin
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
 
@@ -48,6 +49,8 @@ class SpellRequest:
             allow_out_of_turn_actor=allow_out_of_turn_actor,
             entity_label="actor",
         )
+        spell_origin = resolve_gaze_of_two_minds_origin(encounter, actor)
+        origin_actor = spell_origin.get("origin_entity") or actor
 
         known_spell = self._find_actor_spell_definition(actor=actor, spell_id=spell_id)
         if known_spell is None:
@@ -118,7 +121,7 @@ class SpellRequest:
         )
         target_point_error = self._validate_target_point(
             encounter=encounter,
-            actor=actor,
+            actor=origin_actor,
             spell_definition=spell_definition,
             target_point=target_point,
         )
@@ -141,7 +144,7 @@ class SpellRequest:
             return target_validation_error
         single_target_error = self._validate_single_target_rules(
             encounter=encounter,
-            actor=actor,
+            actor=origin_actor,
             spell_definition=spell_definition,
             target_entity_ids=normalized_target_ids,
         )
@@ -168,6 +171,8 @@ class SpellRequest:
             "resolved_scaling": resolved_scaling,
             "spell_definition": spell_definition,
             "area_template": spell_definition.get("area_template"),
+            "spell_origin_entity_id": spell_origin.get("origin_entity_id"),
+            "spell_origin_via_gaze_of_two_minds": bool(spell_origin.get("via_link")),
         }
 
     def _find_actor_spell_definition(self, *, actor: Any, spell_id: str) -> dict[str, Any] | None:

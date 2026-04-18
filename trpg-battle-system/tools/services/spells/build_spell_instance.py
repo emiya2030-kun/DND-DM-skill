@@ -78,7 +78,7 @@ def _build_special_runtime(
 ) -> dict[str, Any]:
     runtime: dict[str, Any] = {"linked_zone_ids": []}
     spell_id = str(spell_definition.get("id") or spell_definition.get("spell_id") or "")
-    if spell_id == "find_steed":
+    if spell_id in {"find_steed", "find_familiar"}:
         runtime.update(
             {
                 "summon_mode": "persistent_entity",

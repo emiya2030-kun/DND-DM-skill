@@ -6,6 +6,7 @@ from typing import Any
 
 from tools.repositories import ClassProficiencyDefinitionRepository
 from tools.services.class_features.rogue import ensure_rogue_runtime
+from tools.services.class_features.shared.runtime import ensure_ranger_runtime
 
 _WEAPON_ORDER = ["simple", "martial", "martial_light", "martial_finesse_or_light"]
 _ARMOR_ORDER = ["light", "medium", "heavy", "shield"]
@@ -56,6 +57,10 @@ def resolve_entity_skill_proficiencies(entity: Any) -> list[str]:
     source_ref = _extract_source_ref(entity)
     proficiencies: set[str] = set()
     _merge_string_list(proficiencies, source_ref.get("skill_proficiencies"))
+    ranger_runtime = ensure_ranger_runtime(entity)
+    expertise = ranger_runtime.get("expertise")
+    if isinstance(expertise, dict):
+        _merge_string_list(proficiencies, expertise.get("skills"))
     return sorted(proficiencies)
 
 

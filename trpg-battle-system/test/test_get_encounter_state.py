@@ -1021,7 +1021,7 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(forced["moved_feet"], 10)
             self.assertEqual(forced["target_name"], "Goblin")
             self.assertEqual(forced["final_position"], {"x": 5, "y": 2})
-            self.assertEqual(forced["summary"], "Goblin被 Push 推离 10 尺，移动到 (5,2)。")
+            self.assertEqual(forced["summary"], "Goblin被推离 10 尺，移动到 (5,2)。")
             repo.close()
             event_repo.close()
 
@@ -1078,7 +1078,7 @@ class GetEncounterStateTests(unittest.TestCase):
 
             self.assertEqual(forced["final_position"], {"x": 6, "y": 2})
             self.assertEqual(forced["moved_feet"], 15)
-            self.assertEqual(forced["summary"], "Goblin被 Push 推离 15 尺，移动到 (6,2)。")
+            self.assertEqual(forced["summary"], "Goblin被推离 15 尺，移动到 (6,2)。")
             repo.close()
             event_repo.close()
 
@@ -1137,7 +1137,7 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(state["round"], 2)
             self.assertEqual(current["id"], "ent_ally_eric_001")
             self.assertEqual(current["hp"], "18 / 20 HP")
-            self.assertEqual(current["movement_remaining"], "20 feet")
+            self.assertEqual(current["movement_remaining"], "20 尺")
             self.assertEqual(current["spell_save_dc"], 14)
             repo.close()
 
@@ -1166,7 +1166,10 @@ class GetEncounterStateTests(unittest.TestCase):
             state = GetEncounterState(repo).execute("enc_view_test")
             actions = state["current_turn_entity"]["available_actions"]
 
-            self.assertEqual(actions["weapons"][0]["name"], "Rapier")
+            self.assertEqual(actions["weapons"][0]["name"], "刺剑")
+            self.assertEqual(actions["weapons"][0]["damage"], "1d8+3 穿刺")
+            self.assertEqual(actions["weapons"][0]["bonus"], "+5 命中")
+            self.assertEqual(actions["spells"]["cantrips"][0]["name"], "魔能爆")
             self.assertIn("cantrips", actions["spells"])
             self.assertEqual(actions["spell_slots_available"]["1"], 1)
             repo.close()
@@ -1190,7 +1193,7 @@ class GetEncounterStateTests(unittest.TestCase):
                 current["resources"]["pact_magic_slots"],
                 {"slot_level": 3, "max": 2, "remaining": 2},
             )
-            self.assertIn("Pact Magic", current["resources"]["summary"])
+            self.assertIn("契约魔法", current["resources"]["summary"])
             repo.close()
 
     def test_execute_projects_warlock_runtime_summary_from_level(self) -> None:
@@ -1199,7 +1202,15 @@ class GetEncounterStateTests(unittest.TestCase):
             encounter = build_encounter()
             player = encounter.entities["ent_ally_eric_001"]
             player.class_features = {
-                "warlock": {"level": 17},
+                "warlock": {
+                    "level": 17,
+                    "eldritch_invocations": {
+                        "selected": [
+                            {"invocation_id": "pact_of_the_blade"},
+                            {"invocation_id": "eldritch_smite"},
+                        ]
+                    },
+                },
             }
             repo.save(encounter)
 
@@ -1212,8 +1223,99 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(warlock["prepared_spells_count"], 14)
             self.assertTrue(warlock["magical_cunning"]["enabled"])
             self.assertTrue(warlock["contact_patron"]["enabled"])
+            self.assertTrue(warlock["eldritch_smite"]["enabled"])
             self.assertIn("contact_patron", warlock["available_features"])
+            self.assertIn("eldritch_smite", warlock["available_features"])
             self.assertIn("mystic_arcanum", warlock["available_features"])
+            repo.close()
+
+    def test_execute_projects_armor_of_shadows_in_warlock_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "armor_of_shadows"}],
+                    },
+                },
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            warlock = state["current_turn_entity"]["resources"]["class_features"]["warlock"]
+
+            self.assertTrue(warlock["armor_of_shadows"]["enabled"])
+            self.assertIn("armor_of_shadows", warlock["available_features"])
+            repo.close()
+
+    def test_execute_projects_fiendish_vigor_in_warlock_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "fiendish_vigor"}],
+                    },
+                },
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            warlock = state["current_turn_entity"]["resources"]["class_features"]["warlock"]
+
+            self.assertTrue(warlock["fiendish_vigor"]["enabled"])
+            self.assertIn("fiendish_vigor", warlock["available_features"])
+            repo.close()
+
+    def test_execute_projects_eldritch_mind_in_warlock_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "eldritch_mind"}],
+                    },
+                },
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            warlock = state["current_turn_entity"]["resources"]["class_features"]["warlock"]
+
+            self.assertTrue(warlock["eldritch_mind"]["enabled"])
+            self.assertIn("eldritch_mind", warlock["available_features"])
+            repo.close()
+
+    def test_execute_projects_devils_sight_in_warlock_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "warlock": {
+                    "level": 2,
+                    "eldritch_invocations": {
+                        "selected": [{"invocation_id": "devils_sight"}],
+                    },
+                },
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            warlock = state["current_turn_entity"]["resources"]["class_features"]["warlock"]
+
+            self.assertTrue(warlock["devils_sight"]["enabled"])
+            self.assertEqual(warlock["devils_sight"]["range_feet"], 120)
+            self.assertIn("devils_sight", warlock["available_features"])
             repo.close()
 
     def test_execute_projects_ranger_runtime_summary_from_level(self) -> None:
@@ -1358,9 +1460,10 @@ class GetEncounterStateTests(unittest.TestCase):
             state = GetEncounterState(repo).execute("enc_view_test")
             weapon_ranges = state["current_turn_entity"]["weapon_ranges"]
 
-            self.assertEqual(weapon_ranges["max_melee_range"], "5 ft")
-            self.assertEqual(weapon_ranges["max_ranged_range"], "120 ft")
+            self.assertEqual(weapon_ranges["max_melee_range"], "5 尺")
+            self.assertEqual(weapon_ranges["max_ranged_range"], "120 尺")
             self.assertEqual(weapon_ranges["targets_within_melee_range"][0]["name"], "Goblin")
+            self.assertEqual(weapon_ranges["targets_within_melee_range"][0]["distance"], "5 尺")
             self.assertEqual(len(weapon_ranges["targets_within_ranged_range"]), 2)
             repo.close()
 
@@ -1372,9 +1475,9 @@ class GetEncounterStateTests(unittest.TestCase):
 
             state = GetEncounterState(repo).execute("enc_view_test")
 
-            self.assertEqual(state["turn_order"][1]["distance_from_current_turn_entity"], "5 ft")
-            self.assertEqual(state["battlemap_details"]["dimensions"], "10 x 10 tiles")
-            self.assertEqual(state["battlemap_details"]["grid_size"], "Each tile represents 5 feet")
+            self.assertEqual(state["turn_order"][1]["distance_from_current_turn_entity"], "5 尺")
+            self.assertEqual(state["battlemap_details"]["dimensions"], "10 x 10 格")
+            self.assertEqual(state["battlemap_details"]["grid_size"], "每格代表 5 尺")
             repo.close()
 
     def test_execute_handles_empty_actions_and_conditions(self) -> None:
@@ -1392,7 +1495,7 @@ class GetEncounterStateTests(unittest.TestCase):
 
             self.assertEqual(current["available_actions"]["weapons"], [])
             self.assertEqual(current["available_actions"]["spells"]["cantrips"], [])
-            self.assertEqual(current["conditions"], "blinded")
+            self.assertEqual(current["conditions"], "目盲")
             repo.close()
 
     def test_execute_includes_battlemap_view_and_map_notes(self) -> None:
@@ -1483,13 +1586,13 @@ class GetEncounterStateTests(unittest.TestCase):
             state = GetEncounterState(repo).execute("enc_view_test")
 
             self.assertNotIn("spell_instances", state)
-            self.assertIn("Hold Person", state["active_spell_summaries"][0])
+            self.assertIn("定身类人", state["active_spell_summaries"][0])
             goblin = state["turn_order"][1]
             self.assertIn("ongoing_effects", goblin)
-            self.assertIn("来自Eric的Hold Person", goblin["ongoing_effects"])
+            self.assertIn("来自Eric的定身类人", goblin["ongoing_effects"])
             self.assertEqual(
                 goblin["conditions"],
-                ["paralyzed", "来自Eric的Hold Person"],
+                ["麻痹", "来自Eric的定身类人"],
             )
             repo.close()
 
@@ -1509,8 +1612,8 @@ class GetEncounterStateTests(unittest.TestCase):
 
             state = GetEncounterState(repo).execute("enc_view_test")
 
-            self.assertIn("Disengage", state["current_turn_entity"]["ongoing_effects"])
-            self.assertIn("Dodge", state["turn_order"][1]["ongoing_effects"])
+            self.assertIn("脱离", state["current_turn_entity"]["ongoing_effects"])
+            self.assertIn("闪避", state["turn_order"][1]["ongoing_effects"])
             repo.close()
 
     def test_execute_projects_help_effect_labels_into_ongoing_effects(self) -> None:
@@ -1542,8 +1645,8 @@ class GetEncounterStateTests(unittest.TestCase):
 
             state = GetEncounterState(repo).execute("enc_view_test")
 
-            self.assertIn("受到Eric的 Help（攻击）", state["turn_order"][1]["ongoing_effects"])
-            self.assertIn("受到Eric的 Help（investigation）", state["turn_order"][2]["ongoing_effects"])
+            self.assertIn("受到Eric的协助（攻击）", state["turn_order"][1]["ongoing_effects"])
+            self.assertIn("受到Eric的协助（调查）", state["turn_order"][2]["ongoing_effects"])
             repo.close()
 
     def test_execute_projects_grapple_status_for_target_and_grappler(self) -> None:
@@ -1566,9 +1669,9 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertIn("正在擒抱 Goblin", state["current_turn_entity"]["ongoing_effects"])
             conditions = state["turn_order"][1]["conditions"]
             if isinstance(conditions, str):
-                self.assertIn(f"grappled:{player.entity_id}", conditions)
+                self.assertIn("被Eric擒抱", conditions)
             else:
-                self.assertIn(f"grappled:{player.entity_id}", conditions)
+                self.assertIn("被Eric擒抱", conditions)
             repo.close()
             event_repo.close()
 

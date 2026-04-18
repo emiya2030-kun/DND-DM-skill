@@ -119,10 +119,15 @@ class EncounterEntity:
         if self.hp["current"] > self.hp["max"]:
             raise ValueError("hp.current cannot be greater than hp.max")
 
-        for key in ("walk", "remaining"):
-            self.speed[key] = _require_int(self.speed[key], f"speed.{key}", minimum=0)
-        if self.speed["remaining"] > self.speed["walk"]:
-            raise ValueError("speed.remaining cannot be greater than speed.walk")
+        for key, value in list(self.speed.items()):
+            self.speed[key] = _require_int(value, f"speed.{key}", minimum=0)
+        max_speed_value = max(
+            int(value)
+            for key, value in self.speed.items()
+            if key != "remaining" and isinstance(value, int)
+        )
+        if self.speed["remaining"] > max_speed_value:
+            raise ValueError("speed.remaining cannot be greater than the entity's maximum speed")
 
         self.ac = _require_int(self.ac, "ac", minimum=0)
         self.initiative = _require_int(self.initiative, "initiative")

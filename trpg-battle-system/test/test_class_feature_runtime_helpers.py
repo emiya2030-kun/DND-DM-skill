@@ -272,6 +272,72 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         self.assertTrue(ranger["relentless_hunter"]["enabled"])
         self.assertFalse(ranger["precise_hunter"]["enabled"])
 
+    def test_ensure_warlock_runtime_enables_armor_of_shadows_when_selected(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "warlock": {
+                "level": 2,
+                "eldritch_invocations": {
+                    "selected": [{"invocation_id": "armor_of_shadows"}],
+                },
+            }
+        }
+
+        warlock = helpers.ensure_warlock_runtime(entity)
+
+        self.assertTrue(warlock["armor_of_shadows"]["enabled"])
+
+    def test_ensure_warlock_runtime_enables_fiendish_vigor_when_selected(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "warlock": {
+                "level": 2,
+                "eldritch_invocations": {
+                    "selected": [{"invocation_id": "fiendish_vigor"}],
+                },
+            }
+        }
+
+        warlock = helpers.ensure_warlock_runtime(entity)
+
+        self.assertTrue(warlock["fiendish_vigor"]["enabled"])
+
+    def test_ensure_warlock_runtime_enables_eldritch_mind_when_selected(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "warlock": {
+                "level": 2,
+                "eldritch_invocations": {
+                    "selected": [{"invocation_id": "eldritch_mind"}],
+                },
+            }
+        }
+
+        warlock = helpers.ensure_warlock_runtime(entity)
+
+        self.assertTrue(warlock["eldritch_mind"]["enabled"])
+
+    def test_ensure_warlock_runtime_enables_devils_sight_when_selected(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {
+            "warlock": {
+                "level": 2,
+                "eldritch_invocations": {
+                    "selected": [{"invocation_id": "devils_sight"}],
+                },
+            }
+        }
+
+        warlock = helpers.ensure_warlock_runtime(entity)
+
+        self.assertTrue(warlock["devils_sight"]["enabled"])
+        self.assertEqual(warlock["devils_sight"]["range_feet"], 120)
+        self.assertTrue(warlock["devils_sight"]["sees_magical_darkness"])
+
     def test_get_ranger_runtime_preserves_existing_remaining_uses(self) -> None:
         helpers = _import_helpers()
         entity = build_entity()
