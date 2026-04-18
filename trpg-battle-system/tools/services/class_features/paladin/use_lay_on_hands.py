@@ -10,6 +10,15 @@ from tools.services.events.append_event import AppendEvent
 
 
 class UseLayOnHands:
+    _SUPPORTED_RESTORING_TOUCH_CONDITIONS = {
+        "blinded",
+        "charmed",
+        "deafened",
+        "frightened",
+        "paralyzed",
+        "stunned",
+    }
+
     def __init__(self, encounter_repository: EncounterRepository, append_event: AppendEvent):
         self.encounter_repository = encounter_repository
         self.append_event = append_event
@@ -24,6 +33,7 @@ class UseLayOnHands:
         target_id: str,
         heal_amount: int = 0,
         cure_poison: bool = False,
+        remove_conditions: list[str] | None = None,
         allow_out_of_turn_actor: bool = False,
     ) -> dict[str, object]:
         encounter = self._get_encounter_or_raise(encounter_id)
@@ -34,7 +44,12 @@ class UseLayOnHands:
             self._ensure_actor_turn(encounter, actor_id)
         self._ensure_bonus_action_available(actor)
         self._ensure_touch_range(actor, target)
-        self._validate_inputs(heal_amount=heal_amount, cure_poison=cure_poison)
+        requested_conditions = self._normalize_requested_conditions(remove_conditions)
+        self._validate_inputs(
+            heal_amount=heal_amount,
+            cure_poison=cure_poison,
+            requested_conditions=requested_conditions,
+        )
 
         paladin = ensure_paladin_runtime(actor)
         lay_on_hands = paladin.get("lay_on_hands")
@@ -46,7 +61,25 @@ class UseLayOnHands:
             raise ValueError("lay_on_hands_pool_invalid")
 
         poison_removed = False
-        pool_spent = heal_amount + (5 if cure_poison else 0)
+        invalid_requested_conditions = [
+            condition
+            for condition in requested_conditions
+            if condition not in self._SUPPORTED_RESTORING_TOUCH_CONDITIONS
+        ]
+        valid_requested_conditions = [
+            condition
+            for condition in requested_conditions
+            if condition in self._SUPPORTED_RESTORING_TOUCH_CONDITIONS
+        ]
+        conditions_removed = [condition for condition in valid_requested_conditions if condition in target.conditions]
+        conditions_not_present = [
+            condition
+            for condition in valid_requested_conditions
+            if condition not in conditions_removed
+        ]
+        poison_cost = 5 if cure_poison and "poisoned" in target.conditions else 0
+        condition_removal_cost = 5 * len(conditions_removed)
+        pool_spent = heal_amount + poison_cost + condition_removal_cost
         if pool_spent > pool_remaining:
             raise ValueError("lay_on_hands_pool_insufficient")
 
@@ -71,6 +104,8 @@ class UseLayOnHands:
         if cure_poison and "poisoned" in target.conditions:
             target.conditions = [condition for condition in target.conditions if condition != "poisoned"]
             poison_removed = True
+        if conditions_removed:
+            target.conditions = [condition for condition in target.conditions if condition not in conditions_removed]
 
         actor.action_economy["bonus_action_used"] = True
         lay_on_hands["pool_remaining"] = pool_remaining - pool_spent
@@ -88,6 +123,10 @@ class UseLayOnHands:
                 "pool_remaining": lay_on_hands["pool_remaining"],
                 "hp_restored": hp_restored,
                 "poison_removed": poison_removed,
+                "conditions_removed": conditions_removed,
+                "conditions_not_present": conditions_not_present,
+                "invalid_requested_conditions": invalid_requested_conditions,
+                "pool_spent_on_condition_removal": condition_removal_cost,
             },
         )
 
@@ -99,6 +138,11 @@ class UseLayOnHands:
             "pool_remaining": lay_on_hands["pool_remaining"],
             "hp_restored": hp_restored,
             "poison_removed": poison_removed,
+            "conditions_requested": requested_conditions,
+            "conditions_removed": conditions_removed,
+            "conditions_not_present": conditions_not_present,
+            "invalid_requested_conditions": invalid_requested_conditions,
+            "pool_spent_on_condition_removal": condition_removal_cost,
             "encounter_state": self.get_encounter_state.execute(encounter_id),
         }
 
@@ -131,10 +175,34 @@ class UseLayOnHands:
         dy = abs(actor.position["y"] - target.position["y"])
         return max(dx, dy) * 5
 
-    def _validate_inputs(self, *, heal_amount: int, cure_poison: bool) -> None:
+    def _validate_inputs(
+        self,
+        *,
+        heal_amount: int,
+        cure_poison: bool,
+        requested_conditions: list[str],
+    ) -> None:
         if not isinstance(heal_amount, int) or heal_amount < 0:
             raise ValueError("heal_amount_invalid")
         if not isinstance(cure_poison, bool):
             raise ValueError("cure_poison_invalid")
-        if heal_amount == 0 and not cure_poison:
+        if heal_amount == 0 and not cure_poison and not requested_conditions:
             raise ValueError("lay_on_hands_no_effect")
+
+    def _normalize_requested_conditions(self, remove_conditions: list[str] | None) -> list[str]:
+        if remove_conditions is None:
+            return []
+        if not isinstance(remove_conditions, list):
+            raise ValueError("remove_conditions_invalid")
+
+        normalized: list[str] = []
+        for condition in remove_conditions:
+            if not isinstance(condition, str):
+                raise ValueError("remove_conditions_invalid")
+            normalized_condition = condition.strip().lower()
+            if not normalized_condition:
+                continue
+            if normalized_condition in normalized:
+                continue
+            normalized.append(normalized_condition)
+        return normalized
