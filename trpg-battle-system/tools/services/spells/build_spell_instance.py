@@ -13,6 +13,7 @@ def build_spell_instance(
     cast_level: int,
     targets: list[dict[str, Any]],
     started_round: int,
+    metamagic: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(spell_definition, dict):
         raise ValueError("spell_definition must be a dict")
@@ -50,6 +51,11 @@ def build_spell_instance(
         )
 
     special_runtime = _build_special_runtime(spell_definition=spell_definition, targets=normalized_targets)
+    normalized_metamagic = dict(metamagic) if isinstance(metamagic, dict) else {"selected": []}
+    extended_spell = bool(normalized_metamagic.get("extended_spell"))
+    duration = {"mode": "normal"}
+    if extended_spell:
+        duration = {"mode": "until_long_rest"}
 
     return {
         "instance_id": f"spell_{uuid4().hex[:12]}",
@@ -61,7 +67,10 @@ def build_spell_instance(
         "concentration": {
             "required": concentration_required,
             "active": concentration_required,
+            "check_vantage": "advantage" if extended_spell and concentration_required else "normal",
         },
+        "duration": duration,
+        "metamagic": normalized_metamagic,
         "targets": normalized_targets,
         "lifecycle": {
             "status": "active",

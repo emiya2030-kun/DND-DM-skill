@@ -128,3 +128,27 @@ class BuildSpellInstanceTests(unittest.TestCase):
         self.assertEqual(instance["special_runtime"]["summon_mode"], "persistent_entity")
         self.assertEqual(instance["special_runtime"]["summon_entity_ids"], [])
         self.assertTrue(instance["special_runtime"]["replace_previous_from_same_caster"])
+
+    def test_build_spell_instance_for_extended_spell_marks_long_rest_duration_and_concentration_advantage(self) -> None:
+        repo = SpellDefinitionRepository(Path(PROJECT_ROOT / "data/knowledge/spell_definitions.json"))
+        spell_definition = repo.get("hold_person")
+        self.assertIsNotNone(spell_definition)
+
+        instance = build_spell_instance(
+            spell_definition=spell_definition,
+            caster=build_caster(),
+            cast_level=2,
+            targets=[
+                {
+                    "entity_id": "ent_enemy_iron_duster_001",
+                    "applied_conditions": ["paralyzed"],
+                    "turn_effect_ids": ["effect_hold_person_001"],
+                }
+            ],
+            started_round=1,
+            metamagic={"selected": ["extended_spell"], "extended_spell": True},
+        )
+
+        self.assertTrue(instance["metamagic"]["extended_spell"])
+        self.assertEqual(instance["duration"]["mode"], "until_long_rest")
+        self.assertEqual(instance["concentration"]["check_vantage"], "advantage")

@@ -1591,5 +1591,55 @@ class UpdateHpTests(unittest.TestCase):
             event_repo.close()
             encounter_repo.close()
 
+    def test_execute_extended_spell_grants_concentration_advantage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_goblin_001"]
+            target.combat_flags = {
+                "is_active": True,
+                "is_defeated": False,
+                "is_concentrating": True,
+            }
+            target.ability_mods = {"con": 2}
+            target.save_proficiencies = ["con"]
+            target.proficiency_bonus = 2
+            encounter.spell_instances = [
+                {
+                    "instance_id": "spell_hold_person_001",
+                    "spell_id": "hold_person",
+                    "spell_name": "Hold Person",
+                    "caster_entity_id": target.entity_id,
+                    "caster_name": target.name,
+                    "cast_level": 2,
+                    "concentration": {"required": True, "active": True, "check_vantage": "advantage"},
+                    "duration": {"mode": "until_long_rest"},
+                    "metamagic": {"selected": ["extended_spell"], "extended_spell": True},
+                    "lifecycle": {"status": "active"},
+                    "targets": [],
+                }
+            ]
+            encounter_repo.save(encounter)
+
+            service = UpdateHp(
+                encounter_repo,
+                AppendEvent(event_repo),
+                RequestConcentrationCheck(encounter_repo),
+            )
+            result = service.execute(
+                encounter_id="enc_hp_test",
+                target_id="ent_enemy_goblin_001",
+                hp_change=8,
+                reason="Force damage",
+                damage_type="force",
+                source_entity_id="ent_enemy_goblin_001",
+                concentration_vantage="normal",
+            )
+
+            self.assertEqual(result["concentration_check_request"]["context"]["vantage"], "advantage")
+            event_repo.close()
+            encounter_repo.close()
+
 if __name__ == "__main__":
     unittest.main()

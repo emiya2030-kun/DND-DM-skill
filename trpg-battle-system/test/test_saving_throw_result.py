@@ -6,6 +6,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -877,3 +878,86 @@ class SavingThrowResultTests(unittest.TestCase):
             self.assertEqual(result["damage_resolution"]["total_damage"], 0)
             self.assertEqual(result["damage_resolution"]["metamagic_adjustment"]["metamagic_id"], "careful_spell")
             self.assertEqual(updated.entities["ent_enemy_iron_duster_001"].hp["current"], 18)
+
+    def test_execute_transmuted_spell_rewrites_damage_type_before_resolution(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_iron_duster_001"]
+            target.immunities = ["cold"]
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+                metamagic={
+                    "selected": ["transmuted_spell"],
+                    "transmuted_spell": True,
+                    "transmuted_damage_type": "cold",
+                },
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            result = service.execute(
+                encounter_id="enc_save_result_test",
+                roll_request=request,
+                roll_result=ResolveSavingThrow(encounter_repo).execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    base_roll=6,
+                ),
+                spell_definition=build_spell_definitions()["burning_hands"],
+                damage_rolls=[
+                    {"source": "spell:burning_hands:failed:part_0", "rolls": [6, 5, 4]},
+                ],
+            )
+
+            self.assertEqual(result["damage_resolution"]["parts"][0]["damage_type"], "cold")
+            self.assertEqual(result["damage_resolution"]["parts"][0]["adjustment_rule"], "immunity")
+            self.assertEqual(result["damage_resolution"]["total_damage"], 0)
+
+    def test_execute_empowered_spell_rerolls_low_damage_dice(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.ability_mods["cha"] = 3
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            request = SavingThrowRequest(encounter_repo).execute(
+                encounter_id="enc_save_result_test",
+                target_id="ent_enemy_iron_duster_001",
+                spell_id="burning_hands",
+                metamagic={
+                    "selected": ["empowered_spell"],
+                    "empowered_spell": True,
+                },
+            )
+            service = SavingThrowResult(
+                encounter_repo,
+                append_event,
+                update_hp=UpdateHp(encounter_repo, append_event),
+            )
+
+            with patch("tools.services.spells.metamagic_support.random.randint", side_effect=[5, 4]):
+                result = service.execute(
+                    encounter_id="enc_save_result_test",
+                    roll_request=request,
+                    roll_result=ResolveSavingThrow(encounter_repo).execute(
+                        encounter_id="enc_save_result_test",
+                        roll_request=request,
+                        base_roll=6,
+                    ),
+                    spell_definition=build_spell_definitions()["burning_hands"],
+                    damage_rolls=[
+                        {"source": "spell:burning_hands:failed:part_0", "rolls": [1, 2, 6]},
+                    ],
+                )
+
+            self.assertEqual(result["damage_resolution"]["total_damage"], 15)
+            self.assertEqual(result["damage_resolution"]["metamagic_adjustment"]["metamagic_id"], "empowered_spell")

@@ -24,6 +24,12 @@ from tools.services.shared.rule_validation_error import RuleValidationError
 from tools.services.spells.area_geometry import build_spell_zone_instance
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
+from tools.services.spells.metamagic_support import (
+    normalize_transmuted_damage_type,
+    spell_supports_extended_spell,
+    spell_supports_transmuted_spell,
+    spell_supports_twinned_spell,
+)
 from tools.services.spells.summons.create_summoned_entity import (
     create_summoned_entity,
     create_summoned_entity_by_initiative,
@@ -228,6 +234,7 @@ class EncounterCastSpell:
                 cast_level=resolved_cast_level,
                 target_ids=resolved_target_ids,
                 turn_effect_updates=turn_effect_updates,
+                metamagic=metamagic,
             )
         zone_updates: list[dict[str, Any]] = []
         if self._is_sustained_area_spell(spell_definition):
@@ -241,6 +248,7 @@ class EncounterCastSpell:
                     cast_level=resolved_cast_level,
                     targets=[],
                     started_round=encounter.round,
+                    metamagic=metamagic,
                 )
                 encounter.spell_instances.append(spell_instance)
             zone = self._build_sustained_spell_zone(
@@ -280,6 +288,7 @@ class EncounterCastSpell:
                 cast_level=resolved_cast_level,
                 targets=[],
                 started_round=encounter.round,
+                metamagic=metamagic,
             )
             encounter.spell_instances.append(spell_instance)
             summon_entity = build_find_steed_entity(
@@ -316,6 +325,7 @@ class EncounterCastSpell:
                 cast_level=resolved_cast_level,
                 targets=[],
                 started_round=encounter.round,
+                metamagic=metamagic,
             )
             encounter.spell_instances.append(spell_instance)
             summon_entity = build_find_familiar_entity(
@@ -641,6 +651,11 @@ class EncounterCastSpell:
             "distant_spell": 1,
             "heightened_spell": 2,
             "careful_spell": 1,
+            "empowered_spell": 1,
+            "extended_spell": 1,
+            "seeking_spell": 1,
+            "transmuted_spell": 1,
+            "twinned_spell": 1,
         }
         cost = supported_costs.get(selected_metamagic)
         if cost is None:
@@ -693,6 +708,36 @@ class EncounterCastSpell:
             metamagic["careful_target_ids"] = normalized_careful_target_ids
             return metamagic
 
+        if selected_metamagic == "empowered_spell":
+            if not self._spell_has_damage_resolution(spell_definition=spell_definition):
+                raise ValueError("empowered_spell_requires_damage_spell")
+            return metamagic
+
+        if selected_metamagic == "extended_spell":
+            if not spell_supports_extended_spell(spell_definition):
+                raise ValueError("extended_spell_requires_duration_spell")
+            return metamagic
+
+        if selected_metamagic == "seeking_spell":
+            if not bool(spell_definition.get("requires_attack_roll")):
+                raise ValueError("seeking_spell_requires_attack_roll_spell")
+            return metamagic
+
+        if selected_metamagic == "transmuted_spell":
+            if not spell_supports_transmuted_spell(spell_definition):
+                raise ValueError("transmuted_spell_requires_eligible_damage_type")
+            transmuted_damage_type = normalize_transmuted_damage_type(metamagic_options.get("transmuted_damage_type"))
+            if transmuted_damage_type is None:
+                raise ValueError("invalid_transmuted_damage_type")
+            metamagic["transmuted_damage_type"] = transmuted_damage_type
+            return metamagic
+
+        if selected_metamagic == "twinned_spell":
+            if not spell_supports_twinned_spell(spell_definition):
+                raise ValueError("twinned_spell_requires_scaling_target_spell")
+            metamagic["effective_target_scaling_bonus_levels"] = 1
+            return metamagic
+
         return metamagic
 
     def _build_default_metamagic(self) -> dict[str, Any]:
@@ -703,10 +748,17 @@ class EncounterCastSpell:
             "distant_spell": False,
             "heightened_spell": False,
             "careful_spell": False,
+            "empowered_spell": False,
+            "extended_spell": False,
+            "seeking_spell": False,
+            "transmuted_spell": False,
+            "twinned_spell": False,
             "sorcery_point_cost": 0,
             "heightened_target_id": None,
             "careful_target_ids": [],
             "effective_range_override_feet": None,
+            "transmuted_damage_type": None,
+            "effective_target_scaling_bonus_levels": 0,
         }
 
     def _spell_can_use_distant_spell(self, *, spell_definition: dict[str, Any]) -> bool:
@@ -1010,6 +1062,7 @@ class EncounterCastSpell:
         cast_level: int,
         target_ids: list[str],
         turn_effect_updates: list[dict[str, Any]],
+        metamagic: dict[str, Any],
     ) -> dict[str, Any] | None:
         resolution = spell_definition.get("resolution")
         if not isinstance(resolution, dict) or resolution.get("mode") != "no_roll":
@@ -1041,9 +1094,23 @@ class EncounterCastSpell:
             cast_level=cast_level,
             targets=targets,
             started_round=encounter.round,
+            metamagic=metamagic,
         )
         encounter.spell_instances.append(instance)
         return instance
+
+    def _spell_has_damage_resolution(self, *, spell_definition: dict[str, Any]) -> bool:
+        on_cast = spell_definition.get("on_cast")
+        if not isinstance(on_cast, dict):
+            return False
+        for key in ("on_hit", "on_failed_save", "on_successful_save"):
+            outcome = on_cast.get(key)
+            if not isinstance(outcome, dict):
+                continue
+            damage_parts = outcome.get("damage_parts")
+            if isinstance(damage_parts, list) and damage_parts:
+                return True
+        return False
 
     def _is_sustained_area_spell(self, spell_definition: dict[str, Any]) -> bool:
         area_template = spell_definition.get("area_template")

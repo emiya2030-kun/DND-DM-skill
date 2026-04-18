@@ -13,6 +13,10 @@ from tools.services.combat.shared.update_conditions import UpdateConditions
 from tools.services.combat.shared.update_encounter_notes import UpdateEncounterNotes
 from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.events.append_event import AppendEvent
+from tools.services.spells.metamagic_support import (
+    apply_empowered_spell_to_damage_rolls,
+    apply_transmuted_damage_parts,
+)
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
 
@@ -199,6 +203,7 @@ class SavingThrowResult:
                 target_id=target_id,
                 applied_conditions=outcome_conditions,
                 turn_effect_updates=result["turn_effect_updates"],
+                metamagic=roll_request.context.get("metamagic"),
             )
 
             outcome_note = outcome.get("note")
@@ -351,6 +356,17 @@ class SavingThrowResult:
         indexed_rolls = self._index_damage_rolls(damage_rolls)
         expected_sources = [part["source"] for part in damage_parts]
         self._validate_damage_roll_sources(expected_sources=expected_sources, actual_sources=list(indexed_rolls.keys()))
+        metamagic = roll_request.context.get("metamagic")
+        damage_parts, transmuted_adjustment = self._maybe_apply_transmuted_spell(
+            damage_parts=damage_parts,
+            metamagic=metamagic,
+        )
+        indexed_rolls, empowered_adjustment = self._maybe_apply_empowered_spell(
+            roll_request=roll_request,
+            damage_parts=damage_parts,
+            indexed_rolls=indexed_rolls,
+            encounter=self.encounter_repository.get(roll_request.encounter_id),
+        )
 
         resolved = self.resolve_damage_parts.execute(
             damage_parts=damage_parts,
@@ -360,6 +376,9 @@ class SavingThrowResult:
             immunities=getattr(target, "immunities", []),
             vulnerabilities=getattr(target, "vulnerabilities", []),
         )
+        adjustments = [item for item in (transmuted_adjustment, empowered_adjustment) if item is not None]
+        if adjustments:
+            resolved["metamagic_adjustment"] = adjustments[0] if len(adjustments) == 1 else adjustments
         return self._apply_damage_multiplier(resolved=resolved, damage_multiplier=outcome.get("damage_multiplier"))
 
     def _build_outcome_damage_parts(
@@ -719,6 +738,7 @@ class SavingThrowResult:
         target_id: str,
         applied_conditions: list[str],
         turn_effect_updates: list[dict[str, Any]],
+        metamagic: Any,
     ) -> dict[str, Any] | None:
         if not isinstance(caster_entity_id, str):
             return None
@@ -753,10 +773,48 @@ class SavingThrowResult:
                 }
             ],
             started_round=current_encounter.round,
+            metamagic=metamagic if isinstance(metamagic, dict) else None,
         )
         current_encounter.spell_instances.append(instance)
         self.encounter_repository.save(current_encounter)
         return instance
+
+    def _maybe_apply_transmuted_spell(
+        self,
+        *,
+        damage_parts: list[dict[str, Any]],
+        metamagic: Any,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        if not isinstance(metamagic, dict) or not bool(metamagic.get("transmuted_spell")):
+            return [dict(part) for part in damage_parts], None
+        return apply_transmuted_damage_parts(
+            damage_parts=damage_parts,
+            replacement_damage_type=metamagic.get("transmuted_damage_type"),
+        )
+
+    def _maybe_apply_empowered_spell(
+        self,
+        *,
+        roll_request: RollRequest,
+        damage_parts: list[dict[str, Any]],
+        indexed_rolls: dict[str, list[int]],
+        encounter: Any,
+    ) -> tuple[dict[str, list[int]], dict[str, Any] | None]:
+        metamagic = roll_request.context.get("metamagic")
+        if not isinstance(metamagic, dict) or not bool(metamagic.get("empowered_spell")):
+            return ({source: list(rolls) for source, rolls in indexed_rolls.items()}, None)
+        caster_entity_id = roll_request.context.get("caster_entity_id")
+        if not isinstance(caster_entity_id, str) or encounter is None:
+            return ({source: list(rolls) for source, rolls in indexed_rolls.items()}, None)
+        caster = encounter.entities.get(caster_entity_id)
+        if caster is None:
+            return ({source: list(rolls) for source, rolls in indexed_rolls.items()}, None)
+        charisma_modifier = int(getattr(caster, "ability_mods", {}).get("cha", 0) or 0)
+        return apply_empowered_spell_to_damage_rolls(
+            damage_parts=damage_parts,
+            indexed_rolls=indexed_rolls,
+            charisma_modifier=charisma_modifier,
+        )
 
     def _index_damage_rolls(self, damage_rolls: list[dict[str, Any]] | None) -> dict[str, list[int]]:
         indexed: dict[str, list[int]] = {}

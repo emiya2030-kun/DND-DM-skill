@@ -646,6 +646,11 @@ class UpdateHp:
             target=target,
             concentration_vantage=concentration_vantage,
         )
+        concentration_vantage = self._apply_extended_spell_to_concentration_vantage(
+            encounter_id=encounter_id,
+            target=target,
+            concentration_vantage=concentration_vantage,
+        )
 
         return self.request_concentration_check.execute(
             encounter_id=encounter_id,
@@ -691,6 +696,34 @@ class UpdateHp:
         if concentration_vantage == "disadvantage":
             return "normal"
         return "advantage"
+
+    def _apply_extended_spell_to_concentration_vantage(
+        self,
+        *,
+        encounter_id: str,
+        target: EncounterEntity,
+        concentration_vantage: str,
+    ) -> str:
+        encounter = self._get_encounter_or_raise(encounter_id)
+        for instance in encounter.spell_instances:
+            if not isinstance(instance, dict):
+                continue
+            if instance.get("caster_entity_id") != target.entity_id:
+                continue
+            concentration = instance.get("concentration")
+            if not isinstance(concentration, dict):
+                continue
+            if not concentration.get("required") or not concentration.get("active"):
+                continue
+            check_vantage = concentration.get("check_vantage")
+            metamagic = instance.get("metamagic")
+            has_extended = isinstance(metamagic, dict) and bool(metamagic.get("extended_spell"))
+            if not has_extended and check_vantage != "advantage":
+                continue
+            if concentration_vantage == "disadvantage":
+                return "normal"
+            return "advantage"
+        return concentration_vantage
 
     def _end_concentration_if_needed(
         self,

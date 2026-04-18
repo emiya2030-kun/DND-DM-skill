@@ -532,6 +532,47 @@ def write_ray_of_dread_attack_spell_definition(spell_repo_path: Path) -> None:
     )
 
 
+def write_chromatic_orb_attack_spell_definition(spell_repo_path: Path) -> None:
+    spell_repo_path.write_text(
+        json.dumps(
+            {
+                "spell_definitions": {
+                    "chromatic_orb": {
+                        "id": "chromatic_orb",
+                        "name": "Chromatic Orb",
+                        "level": 1,
+                        "base": {
+                            "level": 1,
+                            "casting_time": "1 action",
+                            "concentration": False,
+                        },
+                        "requires_attack_roll": True,
+                        "resolution": {"mode": "attack_roll", "activation": "action"},
+                        "targeting": {
+                            "type": "single_target",
+                            "range_feet": 90,
+                            "allowed_target_types": ["creature"],
+                        },
+                        "on_cast": {
+                            "on_hit": {
+                                "damage_parts": [
+                                    {
+                                        "source": "spell:chromatic_orb:on_hit:part_0",
+                                        "formula": "3d8",
+                                        "damage_type": "fire",
+                                    }
+                                ]
+                            },
+                            "on_miss": {"damage_parts": []},
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 class ExecuteSpellTests(unittest.TestCase):
     def test_execute_rejects_second_slot_spending_spell_in_same_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -683,6 +724,61 @@ class ExecuteSpellTests(unittest.TestCase):
                 "target_is_dead",
             )
             self.assertEqual(updated.entities["ent_target_001"].hp["current"], 0)
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_seeking_spell_rerolls_missed_spell_attack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            encounter_repo = EncounterRepository(tmp_path / "encounters.json")
+            event_repo = EventRepository(tmp_path / "events.json")
+            spell_repo_path = tmp_path / "spell_definitions.json"
+            write_chromatic_orb_attack_spell_definition(spell_repo_path)
+            encounter = build_encounter()
+            caster = encounter.entities["ent_caster_001"]
+            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
+            caster.spells.append(
+                {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
+            )
+            encounter_repo.save(encounter)
+
+            service = ExecuteSpell(
+                encounter_repository=encounter_repo,
+                append_event=AppendEvent(event_repo),
+                spell_request=SpellRequest(encounter_repo, SpellDefinitionRepository(spell_repo_path)),
+            )
+            with patch("tools.services.spells.execute_spell.random.randint", return_value=17):
+                result = service.execute(
+                    encounter_id="enc_execute_spell_test",
+                    actor_id="ent_caster_001",
+                    spell_id="chromatic_orb",
+                    cast_level=1,
+                    target_entity_ids=["ent_target_001"],
+                    declared_action_cost="action",
+                    metamagic_options={"selected": ["seeking_spell"]},
+                    attack_rolls=[
+                        {
+                            "final_total": 8,
+                            "dice_rolls": {
+                                "base_rolls": [5],
+                                "chosen_roll": 5,
+                                "modifier": 3,
+                            },
+                        }
+                    ],
+                    damage_rolls=[
+                        [{"source": "spell:chromatic_orb:on_hit:part_0", "rolls": [8, 7, 6]}]
+                    ],
+                )
+
+            updated = encounter_repo.get("enc_execute_spell_test")
+            assert updated is not None
+            self.assertTrue(result["spell_resolution"]["targets"][0]["attack"]["hit"])
+            self.assertEqual(
+                updated.entities["ent_caster_001"].class_features["sorcerer"]["sorcery_points"]["current"],
+                4,
+            )
             encounter_repo.close()
             event_repo.close()
 

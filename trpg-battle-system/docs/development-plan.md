@@ -229,6 +229,123 @@ LLM 使用规则：
 }
 ```
 
+### 2026-04-19 补充：Metamagic Batch 2 / 超魔法第二批
+
+已完成：
+
+- `SpellRequest.execute(...)` / `EncounterCastSpell.execute(...)` 现已支持：
+  - `empowered_spell`
+  - `extended_spell`
+  - `seeking_spell`
+  - `transmuted_spell`
+  - `twinned_spell`
+- `ExecuteSpell` 攻击法术链路已支持：
+  - `seeking_spell`
+  - `empowered_spell`
+  - `transmuted_spell`
+- `SavingThrowResult` 豁免伤害链路已支持：
+  - `empowered_spell`
+  - `transmuted_spell`
+- `build_spell_instance(...)` 现在会记录本次施法的 `metamagic`
+- `extended_spell` 会把法术实例写为默认“持续到长休”，并让该法术的专注检定获得优势
+- `UpdateHp` 现在会读取正在维持的延效法术实例，并自动给对应专注检定优势
+
+当前规则：
+
+- 当前一次施法仍只支持声明一种超魔法
+- `empowered_spell = 1`
+- `extended_spell = 1`
+- `seeking_spell = 1`
+- `transmuted_spell = 1`
+- `twinned_spell = 1`
+- `empowered_spell`
+  - 只能用于造成伤害的法术
+  - 仍然必须在施法声明时提前传 `metamagic_options`
+  - 后端会自动按期望收益最高策略重骰低于均值的伤害骰
+  - 最多重骰魅力调整值个伤害骰，至少可重骰 1 个
+- `extended_spell`
+  - 只能用于持续时间至少 1 分钟，或需要专注的法术
+  - 当前项目尚无完整长休自动清算，因此运行态表现为“默认持续到长休”
+  - 若该法术需要专注，则该法术对应的专注检定具有优势
+- `seeking_spell`
+  - 只能用于需要攻击检定的法术
+  - 若这次法术攻击未命中，后端会自动重骰 1 次 d20
+  - 必须使用新结果，不取高
+- `transmuted_spell`
+  - 只能用于带可转化元素伤害的法术
+  - 目前只支持这 6 种类型之间互转：
+    - `acid`
+    - `cold`
+    - `fire`
+    - `lightning`
+    - `poison`
+    - `thunder`
+  - 伤害类型会在抗性 / 免疫 / 易伤结算前改写
+- `twinned_spell`
+  - 只能用于“升环时可额外增加一个目标”的单体法术
+  - 后端会把这次施法视为“仅用于目标扩展的等效 +1 环”
+  - 不会修改真实 `cast_level`
+  - 不会额外消耗更高环位
+
+LLM 使用规则：
+
+- 这 5 个超魔都仍然只需要通过 `metamagic_options` 声明
+- LLM 不需要手动指定重骰哪几个伤害骰
+- LLM 不需要手动在攻击失手后再追加调用“追踪法术”
+- LLM 不需要手动改写伤害类型结算
+- LLM 不需要手动把 `twinned_spell` 的 `cast_level` 加 1
+
+- `Empowered Spell / 强效法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["empowered_spell"]
+  }
+}
+```
+
+- `Extended Spell / 延效法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["extended_spell"]
+  }
+}
+```
+
+- `Seeking Spell / 追踪法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["seeking_spell"]
+  }
+}
+```
+
+- `Transmuted Spell / 转化法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["transmuted_spell"],
+    "transmuted_damage_type": "cold"
+  }
+}
+```
+
+- `Twinned Spell / 孪生法术`
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["twinned_spell"]
+  }
+}
+```
+
 ### 2026-04-18 补充：玩家召唤物共享宿主回合
 
 已完成：

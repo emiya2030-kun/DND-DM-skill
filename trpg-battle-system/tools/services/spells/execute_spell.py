@@ -30,6 +30,11 @@ from tools.services.spells.area_geometry import (
 )
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.encounter_cast_spell import EncounterCastSpell
+from tools.services.spells.metamagic_support import (
+    apply_empowered_spell_to_damage_rolls,
+    apply_transmuted_damage_parts,
+    reroll_missed_spell_attack,
+)
 from tools.services.spells.spell_request import SpellRequest
 
 
@@ -85,6 +90,7 @@ class ExecuteSpell:
             target_point=kwargs.get("target_point"),
             declared_action_cost=kwargs.get("declared_action_cost"),
             context=kwargs.get("context"),
+            metamagic_options=kwargs.get("metamagic_options"),
             allow_out_of_turn_actor=bool(kwargs.get("allow_out_of_turn_actor", False)),
         )
         if not request_result.get("ok"):
@@ -149,6 +155,7 @@ class ExecuteSpell:
             target_ids=request_result.get("target_entity_ids") or [],
             target_point=request_result.get("target_point"),
             cast_level=request_result["cast_level"],
+            metamagic_options=kwargs.get("metamagic_options"),
             include_encounter_state=False,
             apply_no_roll_immediate_effects=self._is_no_roll_spell(spell_definition),
             allow_out_of_turn_actor=bool(kwargs.get("allow_out_of_turn_actor", False)),
@@ -177,6 +184,7 @@ class ExecuteSpell:
                     vantage=vantage if isinstance(vantage, str) else "normal",
                     description=f"{cast_result.get('spell_name', request_result['spell_id'])} area save",
                     save_dc_bonus=int(prepared_save_damage.get("spell_save_dc_bonus", 0) or 0),
+                    metamagic=request_result.get("metamagic"),
                 )
                 if not isinstance(roll_input, dict):
                     roll_input = self._build_auto_save_roll_input(vantage=roll_request.context.get("vantage", "normal"))
@@ -247,6 +255,7 @@ class ExecuteSpell:
                     vantage=vantage if isinstance(vantage, str) else "normal",
                     description=f"{cast_result.get('spell_name', request_result['spell_id'])} save",
                     save_dc_bonus=int(prepared_save_condition.get("spell_save_dc_bonus", 0) or 0),
+                    metamagic=request_result.get("metamagic"),
                 )
                 if not isinstance(roll_input, dict):
                     roll_input = self._build_auto_save_roll_input(vantage=roll_request.context.get("vantage", "normal"))
@@ -314,6 +323,7 @@ class ExecuteSpell:
                 cast_level=cast_result["cast_level"],
                 failed_targets=failed_targets,
                 temporary_instance_ids=temporary_instance_ids,
+                metamagic=request_result.get("metamagic"),
             )
             spell_resolution: dict[str, Any] = {
                 "mode": "save_condition",
@@ -370,6 +380,13 @@ class ExecuteSpell:
                         actor=prepared_attack_spell["actor"],
                         advantage=bool(beam.get("spell_attack_advantage")),
                     )
+                seeking_adjustment = None
+                if (
+                    bool(request_result["metamagic"].get("seeking_spell"))
+                    and isinstance(attack_roll.get("final_total"), int)
+                    and attack_roll["final_total"] < beam["target"].ac
+                ):
+                    attack_roll, seeking_adjustment = reroll_missed_spell_attack(attack_roll=attack_roll)
                 roll_result = RollResult(
                     request_id=f"spell_attack_{uuid4().hex}",
                     encounter_id=encounter_id,
@@ -396,6 +413,8 @@ class ExecuteSpell:
                         "target_ac": attack_resolution["target_ac"],
                     },
                 }
+                if seeking_adjustment is not None:
+                    beam_result["attack"]["metamagic_adjustment"] = seeking_adjustment
                 if attack_resolution["hit"]:
                     damage_parts = self._build_attack_spell_damage_parts(
                         spell_definition=spell_definition,
@@ -403,6 +422,12 @@ class ExecuteSpell:
                         actor_id=request_result["actor_id"],
                         actor=prepared_attack_spell["actor"],
                         target=beam["target"],
+                    )
+                    damage_parts, transmuted_adjustment = apply_transmuted_damage_parts(
+                        damage_parts=damage_parts,
+                        replacement_damage_type=request_result["metamagic"].get("transmuted_damage_type")
+                        if bool(request_result["metamagic"].get("transmuted_spell"))
+                        else None,
                     )
                     expected_sources = [part["source"] for part in damage_parts]
                     damage_rolls = beam["damage_rolls"]
@@ -415,6 +440,14 @@ class ExecuteSpell:
                         expected_sources=expected_sources,
                         damage_rolls=damage_rolls,
                     )
+                    empowered_adjustment = None
+                    if bool(request_result["metamagic"].get("empowered_spell")):
+                        charisma_modifier = int(prepared_attack_spell["actor"].ability_mods.get("cha", 0) or 0)
+                        indexed_rolls, empowered_adjustment = apply_empowered_spell_to_damage_rolls(
+                            damage_parts=damage_parts,
+                            indexed_rolls=indexed_rolls,
+                            charisma_modifier=charisma_modifier,
+                        )
                     damage_resolution = self.resolve_damage_parts.execute(
                         damage_parts=damage_parts,
                         is_critical_hit=attack_resolution["is_critical_hit"],
@@ -423,6 +456,9 @@ class ExecuteSpell:
                         immunities=beam["target"].immunities,
                         vulnerabilities=beam["target"].vulnerabilities,
                     )
+                    adjustments = [item for item in (transmuted_adjustment, empowered_adjustment) if item is not None]
+                    if adjustments:
+                        damage_resolution["metamagic_adjustment"] = adjustments[0] if len(adjustments) == 1 else adjustments
                     hp_update = self.update_hp.execute(
                         encounter_id=encounter_id,
                         target_id=beam["target_id"],
@@ -748,6 +784,7 @@ class ExecuteSpell:
         cast_level: int,
         failed_targets: list[dict[str, Any]],
         temporary_instance_ids: list[str],
+        metamagic: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
         if not isinstance(spell_definition, dict):
             return None
@@ -810,6 +847,7 @@ class ExecuteSpell:
             cast_level=cast_level,
             targets=instance_targets,
             started_round=encounter.round,
+            metamagic=metamagic,
         )
         encounter.spell_instances.append(instance)
         self.encounter_repository.save(encounter)

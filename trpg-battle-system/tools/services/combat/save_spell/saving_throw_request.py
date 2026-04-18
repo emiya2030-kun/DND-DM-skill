@@ -141,6 +141,12 @@ class SavingThrowRequest:
                 "heightened_target_id": None,
                 "careful_spell": False,
                 "careful_target_ids": [],
+                "empowered_spell": False,
+                "extended_spell": False,
+                "seeking_spell": False,
+                "transmuted_spell": False,
+                "twinned_spell": False,
+                "transmuted_damage_type": None,
             }
         careful_target_ids = metamagic.get("careful_target_ids")
         return {
@@ -149,6 +155,12 @@ class SavingThrowRequest:
             "heightened_target_id": metamagic.get("heightened_target_id"),
             "careful_spell": bool(metamagic.get("careful_spell")),
             "careful_target_ids": list(careful_target_ids) if isinstance(careful_target_ids, list) else [],
+            "empowered_spell": bool(metamagic.get("empowered_spell")),
+            "extended_spell": bool(metamagic.get("extended_spell")),
+            "seeking_spell": bool(metamagic.get("seeking_spell")),
+            "transmuted_spell": bool(metamagic.get("transmuted_spell")),
+            "twinned_spell": bool(metamagic.get("twinned_spell")),
+            "transmuted_damage_type": metamagic.get("transmuted_damage_type"),
         }
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:

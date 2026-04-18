@@ -292,6 +292,92 @@ window.applyEncounterState(nextState)
     - 这条限制不区分动作 / 附赠动作 / 反应，也不区分法术环阶
     - 戏法、免费施法、物品施法等不消耗法术位的施法，不计入这条限制
 
+- `Metamagic Batch 2 / 超魔法第二批`
+  - 目前仍然不单独拆 service，继续通过 `SpellRequest` / `EncounterCastSpell` / `ExecuteSpell` / `ExecuteSaveSpell` 透传 `metamagic_options`
+  - 当前支持：
+    - `empowered_spell`
+    - `extended_spell`
+    - `seeking_spell`
+    - `transmuted_spell`
+    - `twinned_spell`
+  - 术法点消耗：
+    - `empowered_spell = 1`
+    - `extended_spell = 1`
+    - `seeking_spell = 1`
+    - `transmuted_spell = 1`
+    - `twinned_spell = 1`
+  - 通用原则：
+    - 这些超魔都必须在施法声明时提前传
+    - LLM 不需要在伤害结算后再补发重骰请求
+    - LLM 不需要自己手算等效升环或伤害类型替换
+  - 后端当前会自动处理：
+    - `empowered_spell`
+      - 自动重骰期望收益最高的低伤害骰
+      - 最多重骰魅力调整值个
+    - `extended_spell`
+      - 把法术实例写成默认持续到长休
+      - 若该法术需要专注，则该法术的专注检定获得优势
+    - `seeking_spell`
+      - 法术攻击未命中时自动重骰 1 次 d20，并直接使用新结果
+    - `transmuted_spell`
+      - 在伤害结算前改写可转化元素伤害类型
+    - `twinned_spell`
+      - 仅对“升环时额外增加目标”的单体法术生效
+      - 不改真实 `cast_level`
+      - 不额外耗更高法术位
+      - 只把目标扩展视为等效 `+1` 环
+  - 额外参数：
+    - `transmuted_spell` 需要 `transmuted_damage_type`
+  - `transmuted_damage_type` 只允许：
+    - `acid`
+    - `cold`
+    - `fire`
+    - `lightning`
+    - `poison`
+    - `thunder`
+  - 示例：
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["empowered_spell"]
+  }
+}
+```
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["extended_spell"]
+  }
+}
+```
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["seeking_spell"]
+  }
+}
+```
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["transmuted_spell"],
+    "transmuted_damage_type": "cold"
+  }
+}
+```
+
+```json
+{
+  "metamagic_options": {
+    "selected": ["twinned_spell"]
+  }
+}
+```
+
 - 当前注意事项
   - 现在还没有统一长休系统
   - 因此“长休时清空术法点临时造出的法术位”目前只记录在运行态与开发日志里，尚未自动结算
