@@ -20,6 +20,7 @@ from tools.services.class_features.shared import (
     ensure_ranger_runtime,
     ensure_rogue_runtime,
     ensure_spell_slots_runtime,
+    ensure_sorcerer_runtime,
     ensure_warlock_runtime,
     has_fighting_style,
 )
@@ -104,6 +105,20 @@ MARTIAL_CLASS_SUMMARIES = {
             "eldritch_master",
         ],
         "available_features": ["eldritch_invocations", "pact_magic"],
+    },
+    "sorcerer": {
+        "fields": [
+            "level",
+            "cantrips_known",
+            "prepared_spells_count",
+            "sorcery_points",
+            "innate_sorcery",
+            "font_of_magic",
+            "sorcerous_restoration",
+            "sorcery_incarnate",
+            "created_spell_slots",
+        ],
+        "available_features": ["spellcasting", "innate_sorcery"],
     },
 }
 
@@ -1036,6 +1051,8 @@ class GetEncounterState:
                 bucket = ensure_barbarian_runtime(entity)
             elif class_id == "ranger":
                 bucket = ensure_ranger_runtime(entity)
+            elif class_id == "sorcerer":
+                bucket = ensure_sorcerer_runtime(entity)
             elif class_id == "warlock":
                 bucket = ensure_warlock_runtime(entity)
             projected[class_id] = {
@@ -1129,6 +1146,14 @@ class GetEncounterState:
                     available_features.append("mystic_arcanum")
                 if level >= 20:
                     available_features.append("eldritch_master")
+            if class_id == "sorcerer":
+                level = int(bucket.get("level", 0) or 0)
+                if level >= 2:
+                    available_features.append("font_of_magic")
+                if level >= 5:
+                    available_features.append("sorcerous_restoration")
+                if level >= 7:
+                    available_features.append("sorcery_incarnate")
             projected[class_id]["available_features"] = available_features
 
         fighter = class_features.get("fighter")

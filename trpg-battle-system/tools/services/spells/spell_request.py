@@ -7,6 +7,7 @@ from typing import Any
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.spell_definition_repository import SpellDefinitionRepository
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
+from tools.services.class_features.shared import ensure_sorcerer_runtime
 from tools.services.class_features.shared.warlock_invocations import resolve_gaze_of_two_minds_origin
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
@@ -153,6 +154,7 @@ class SpellRequest:
 
         upcast_delta = 0 if is_cantrip else max(cast_level - base_level, 0)
         requires_concentration = bool(spell_definition.get("base", {}).get("concentration", False))
+        sorcerer_modifiers = self._resolve_sorcerer_spell_modifiers(actor=actor, known_spell=known_spell)
 
         return {
             "ok": True,
@@ -173,6 +175,8 @@ class SpellRequest:
             "area_template": spell_definition.get("area_template"),
             "spell_origin_entity_id": spell_origin.get("origin_entity_id"),
             "spell_origin_via_gaze_of_two_minds": bool(spell_origin.get("via_link")),
+            "spell_attack_advantage": bool(sorcerer_modifiers["spell_attack_advantage"]),
+            "spell_save_dc_bonus": int(sorcerer_modifiers["spell_save_dc_bonus"]),
         }
 
     def _find_actor_spell_definition(self, *, actor: Any, spell_id: str) -> dict[str, Any] | None:
@@ -254,6 +258,26 @@ class SpellRequest:
         if normalized in {"bonus action", "bonus_action"}:
             return "bonus_action"
         return normalized.replace(" ", "_")
+
+    def _resolve_spellcasting_class(self, *, known_spell: dict[str, Any]) -> str | None:
+        casting_class = known_spell.get("casting_class")
+        if isinstance(casting_class, str) and casting_class.strip():
+            return casting_class.strip().lower()
+        classes = known_spell.get("classes")
+        if isinstance(classes, list) and len(classes) == 1:
+            current_class = classes[0]
+            if isinstance(current_class, str) and current_class.strip():
+                return current_class.strip().lower()
+        return None
+
+    def _resolve_sorcerer_spell_modifiers(self, *, actor: Any, known_spell: dict[str, Any]) -> dict[str, Any]:
+        if self._resolve_spellcasting_class(known_spell=known_spell) != "sorcerer":
+            return {"spell_attack_advantage": False, "spell_save_dc_bonus": 0}
+        sorcerer = ensure_sorcerer_runtime(actor)
+        innate_sorcery = sorcerer.get("innate_sorcery")
+        if not isinstance(innate_sorcery, dict) or not bool(innate_sorcery.get("active")):
+            return {"spell_attack_advantage": False, "spell_save_dc_bonus": 0}
+        return {"spell_attack_advantage": True, "spell_save_dc_bonus": 1}
 
     def _resolve_action_cost(self, *, spell_definition: dict[str, Any]) -> str | None:
         resolution = spell_definition.get("resolution")

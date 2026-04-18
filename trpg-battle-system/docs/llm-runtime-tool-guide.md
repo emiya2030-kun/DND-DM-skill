@@ -216,6 +216,39 @@ window.applyEncounterState(nextState)
   - `Indomitable Might`
   - 狂暴期间禁施法
 
+## 术士职业特性运行时
+
+- `UseInnateSorcery`
+  - 调用：`use_innate_sorcery(encounter_id, actor_id)`
+  - `actor_id` 始终传术士实体 ID
+  - 消耗附赠动作
+  - 若还有正常次数，后端会扣 1 次并激活 `Innate Sorcery / 先天术法`
+  - 若正常次数耗尽且术士等级至少 7，后端会自动尝试改扣 2 点术法点
+  - 激活后，不需要额外传参
+  - 后端会自动让术士法术攻击检定获得优势，并让术士法术豁免 DC `+1`
+
+- `ConvertSpellSlotToSorceryPoints`
+  - 调用：`convert_spell_slot_to_sorcery_points(encounter_id, actor_id, slot_level)`
+  - 不消耗动作
+  - 消耗指定环位的 1 个法术位，按同环阶数量转为术法点
+  - 如果会超过术法点上限，后端会直接报错，不做部分转化
+
+- `CreateSpellSlotFromSorceryPoints`
+  - 调用：`create_spell_slot_from_sorcery_points(encounter_id, actor_id, slot_level)`
+  - 消耗附赠动作
+  - 目前只支持创建 `1-5` 环法术位
+  - 后端会自动校验最小术士等级与术法点是否足够
+  - 这些法术位会被记录为“术法点临时造出”的法术位
+
+- `UseSorcerousRestoration`
+  - 调用：`use_sorcerous_restoration(encounter_id, actor_id)`
+  - 每个长休周期只能用一次
+  - 恢复不大于术士等级一半（向下取整）的已消耗术法点
+
+- 当前注意事项
+  - 现在还没有统一长休系统
+  - 因此“长休时清空术法点临时造出的法术位”目前只记录在运行态与开发日志里，尚未自动结算
+
 ### `GetEncounterState`
 
 用途：

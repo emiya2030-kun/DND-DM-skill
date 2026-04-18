@@ -103,6 +103,7 @@ class ExecuteSpell:
                 spell_id=request_result["spell_id"],
                 spell_definition=spell_definition,
                 target_point=request_result.get("target_point"),
+                spell_save_dc_bonus=int(request_result.get("spell_save_dc_bonus", 0) or 0),
                 save_rolls=kwargs.get("save_rolls"),
                 damage_rolls=kwargs.get("damage_rolls"),
             )
@@ -111,6 +112,7 @@ class ExecuteSpell:
         elif self._is_save_condition_spell(spell_definition):
             prepared_save_condition = self._prepare_save_condition_resolution(
                 target_ids=request_result.get("target_entity_ids"),
+                spell_save_dc_bonus=int(request_result.get("spell_save_dc_bonus", 0) or 0),
                 save_rolls=kwargs.get("save_rolls"),
             )
             if not prepared_save_condition.get("ok"):
@@ -133,6 +135,7 @@ class ExecuteSpell:
                 target_ids=request_result.get("target_entity_ids"),
                 resolved_scaling=request_result.get("resolved_scaling"),
                 spell_origin_entity_id=request_result.get("spell_origin_entity_id"),
+                spell_attack_advantage=bool(request_result.get("spell_attack_advantage")),
                 attack_rolls=kwargs.get("attack_rolls"),
                 damage_rolls=kwargs.get("damage_rolls"),
             )
@@ -173,6 +176,7 @@ class ExecuteSpell:
                     spell_id=request_result["spell_id"],
                     vantage=vantage if isinstance(vantage, str) else "normal",
                     description=f"{cast_result.get('spell_name', request_result['spell_id'])} area save",
+                    save_dc_bonus=int(prepared_save_damage.get("spell_save_dc_bonus", 0) or 0),
                 )
                 if not isinstance(roll_input, dict):
                     roll_input = self._build_auto_save_roll_input(vantage=roll_request.context.get("vantage", "normal"))
@@ -242,6 +246,7 @@ class ExecuteSpell:
                     spell_id=request_result["spell_id"],
                     vantage=vantage if isinstance(vantage, str) else "normal",
                     description=f"{cast_result.get('spell_name', request_result['spell_id'])} save",
+                    save_dc_bonus=int(prepared_save_condition.get("spell_save_dc_bonus", 0) or 0),
                 )
                 if not isinstance(roll_input, dict):
                     roll_input = self._build_auto_save_roll_input(vantage=roll_request.context.get("vantage", "normal"))
@@ -361,7 +366,10 @@ class ExecuteSpell:
             for beam in prepared_attack_spell["beams"]:
                 attack_roll = beam["attack_roll"]
                 if not isinstance(attack_roll, dict):
-                    attack_roll = self._build_auto_attack_roll_entry(actor=prepared_attack_spell["actor"])
+                    attack_roll = self._build_auto_attack_roll_entry(
+                        actor=prepared_attack_spell["actor"],
+                        advantage=bool(beam.get("spell_attack_advantage")),
+                    )
                 roll_result = RollResult(
                     request_id=f"spell_attack_{uuid4().hex}",
                     encounter_id=encounter_id,
@@ -590,6 +598,7 @@ class ExecuteSpell:
         self,
         *,
         target_ids: Any,
+        spell_save_dc_bonus: int,
         save_rolls: Any,
     ) -> dict[str, Any]:
         normalized_target_ids: list[str] = []
@@ -614,6 +623,7 @@ class ExecuteSpell:
             "ok": True,
             "target_ids": normalized_target_ids,
             "save_roll_index": save_roll_index,
+            "spell_save_dc_bonus": spell_save_dc_bonus,
         }
 
     def _prepare_attack_spell_resolution(
@@ -625,6 +635,7 @@ class ExecuteSpell:
         target_ids: Any,
         resolved_scaling: Any,
         spell_origin_entity_id: Any,
+        spell_attack_advantage: bool,
         attack_rolls: Any,
         damage_rolls: Any,
     ) -> dict[str, Any]:
@@ -695,6 +706,7 @@ class ExecuteSpell:
                     "target": target,
                     "attack_roll": attack_roll_entries[index],
                     "damage_rolls": damage_roll_entries[index],
+                    "spell_attack_advantage": spell_attack_advantage,
                 }
             )
             if (
@@ -811,6 +823,7 @@ class ExecuteSpell:
         spell_id: str,
         spell_definition: dict[str, Any],
         target_point: Any,
+        spell_save_dc_bonus: int,
         save_rolls: Any,
         damage_rolls: Any,
     ) -> dict[str, Any]:
@@ -860,6 +873,7 @@ class ExecuteSpell:
             "save_roll_index": save_roll_index,
             "damage_rolls": normalized_damage_rolls,
             "spell_id": spell_id,
+            "spell_save_dc_bonus": spell_save_dc_bonus,
         }
 
     def _normalize_attack_roll_entries(
@@ -1445,13 +1459,20 @@ class ExecuteSpell:
             "vantage": "normal",
         }
 
-    def _build_auto_attack_roll_entry(self, *, actor: Any) -> dict[str, Any]:
+    def _build_auto_attack_roll_entry(self, *, actor: Any, advantage: bool = False) -> dict[str, Any]:
         modifier = self._resolve_spell_attack_modifier(actor=actor)
-        base_roll = random.randint(1, 20)
+        if advantage:
+            roll_a = random.randint(1, 20)
+            roll_b = random.randint(1, 20)
+            base_roll = max(roll_a, roll_b)
+            base_rolls = [roll_a, roll_b]
+        else:
+            base_roll = random.randint(1, 20)
+            base_rolls = [base_roll]
         return {
             "final_total": base_roll + modifier,
             "dice_rolls": {
-                "base_rolls": [base_roll],
+                "base_rolls": base_rolls,
                 "chosen_roll": base_roll,
                 "modifier": modifier,
             },

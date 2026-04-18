@@ -36,6 +36,7 @@ class SavingThrowRequest:
         vantage: str = "normal",
         description: str | None = None,
         force_save_ability: str | None = None,
+        save_dc_bonus: int = 0,
     ) -> RollRequest:
         """为目标生成一次豁免请求。
 
@@ -57,7 +58,7 @@ class SavingThrowRequest:
         if not isinstance(save_ability, str) or not save_ability.strip():
             raise ValueError(f"spell '{spell_id}' does not define save_ability")
 
-        save_dc = self._resolve_save_dc(caster, spell_definition)
+        save_dc = self._resolve_save_dc(caster, spell_definition, save_dc_bonus=save_dc_bonus)
         distance_to_target_feet = self._distance_feet(caster, target)
         normalized_vantage = self._normalize_vantage(vantage)
         armor_profile = self.armor_profile_resolver.resolve(target)
@@ -171,9 +172,9 @@ class SavingThrowRequest:
                 return spell
         raise ValueError(f"spell '{spell_id}' not found on caster '{caster.entity_id}'")
 
-    def _resolve_save_dc(self, caster: EncounterEntity, spell: dict) -> int:
+    def _resolve_save_dc(self, caster: EncounterEntity, spell: dict, *, save_dc_bonus: int = 0) -> int:
         if isinstance(spell.get("save_dc"), int):
-            return spell["save_dc"]
+            return spell["save_dc"] + save_dc_bonus
 
         spellcasting_ability = caster.source_ref.get("spellcasting_ability")
         if spellcasting_ability is None:
@@ -183,7 +184,7 @@ class SavingThrowRequest:
         if not isinstance(ability_mod, int):
             raise ValueError(f"ability_mods['{spellcasting_ability}'] is required to calculate save DC")
 
-        return 8 + caster.proficiency_bonus + ability_mod
+        return 8 + caster.proficiency_bonus + ability_mod + save_dc_bonus
 
     def _distance_feet(self, source: EncounterEntity, target: EncounterEntity) -> int:
         source_x = source.position.get("x")

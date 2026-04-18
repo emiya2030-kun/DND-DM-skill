@@ -526,6 +526,54 @@ class SpellRequestTests(unittest.TestCase):
         self.assertEqual(result["ok"], False)
         self.assertEqual(result["error_code"], "target_point_out_of_range")
 
+    def test_execute_reports_innate_sorcery_attack_advantage_and_save_dc_bonus(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "chromatic_orb": {
+                        "id": "chromatic_orb",
+                        "name": "Chromatic Orb",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "attack_roll"},
+                        "targeting": {"allowed_target_types": ["creature"]},
+                        "requires_attack_roll": True,
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "sorcerer": {
+                "level": 3,
+                "innate_sorcery": {"enabled": True, "active": True, "uses_max": 2, "uses_current": 1},
+            }
+        }
+        caster.spells.append(
+            {
+                "spell_id": "chromatic_orb",
+                "name": "Chromatic Orb",
+                "level": 1,
+                "casting_class": "sorcerer",
+            }
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="chromatic_orb",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["spell_attack_advantage"])
+        self.assertEqual(result["spell_save_dc_bonus"], 1)
+
     def test_execute_allows_two_beams_for_eldritch_blast_at_level_7_and_rejects_three(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(
             {

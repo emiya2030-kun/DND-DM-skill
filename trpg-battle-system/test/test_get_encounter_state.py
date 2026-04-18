@@ -1251,6 +1251,32 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertIn("armor_of_shadows", warlock["available_features"])
             repo.close()
 
+    def test_execute_projects_sorcerer_runtime_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            player = encounter.entities["ent_ally_eric_001"]
+            player.class_features = {
+                "sorcerer": {
+                    "level": 7,
+                    "sorcery_points": {"current": 5, "max": 7},
+                    "innate_sorcery": {"enabled": True, "uses_max": 2, "uses_current": 1, "active": False},
+                    "created_spell_slots": {"1": 1, "2": 0, "3": 0, "4": 0, "5": 0},
+                }
+            }
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+            sorcerer = state["current_turn_entity"]["resources"]["class_features"]["sorcerer"]
+
+            self.assertEqual(sorcerer["level"], 7)
+            self.assertEqual(sorcerer["sorcery_points"], {"current": 5, "max": 7})
+            self.assertEqual(sorcerer["created_spell_slots"]["1"], 1)
+            self.assertIn("font_of_magic", sorcerer["available_features"])
+            self.assertIn("sorcerous_restoration", sorcerer["available_features"])
+            self.assertIn("sorcery_incarnate", sorcerer["available_features"])
+            repo.close()
+
     def test_execute_projects_fiendish_vigor_in_warlock_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
