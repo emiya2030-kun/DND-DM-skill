@@ -54,8 +54,10 @@ class ResolveSavingThrow:
         requested_vantage = self._normalize_vantage(roll_request.context.get("vantage", "normal"))
         if not isinstance(save_ability, str) or not save_ability.strip():
             raise ValueError("roll_request.context.save_ability must be a non-empty string")
-        if not isinstance(save_dc, int):
+        if save_dc is not None and not isinstance(save_dc, int):
             raise ValueError("roll_request.context.save_dc must be an integer")
+        if auto_success and not isinstance(save_dc, int):
+            raise ValueError("roll_request.context.save_dc must be an integer when auto_success is enabled")
         if not isinstance(additional_bonus, int):
             raise ValueError("additional_bonus must be an integer")
 
