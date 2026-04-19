@@ -4,7 +4,7 @@
       "id": "fire_burn_area",
       "name": "火焰灼域",
       "type": "hazard_area",
-      "note": "炽焰翻涌，踏入或停留都会被灼伤。",
+      "note": "炽焰翻涌,踏入或停留都会被灼伤.",
       "runtime": {
         "movement_modifier": {
           "treat_as_difficult_terrain": true
@@ -63,7 +63,7 @@
       "localization": {
         "zh_cn": {
           "name": "火焰灼域",
-          "note": "炽焰翻涌，踏入或停留都会被灼伤。"
+          "note": "炽焰翻涌,踏入或停留都会被灼伤."
         },
         "en_us": {
           "name": "Burning Fire Zone",
@@ -75,7 +75,7 @@
       "id": "poison_mist_area",
       "name": "毒雾区",
       "type": "hazard_area",
-      "note": "毒雾会侵入肺部，让停留者中毒。",
+      "note": "毒雾会侵入肺部,让停留者中毒.",
       "runtime": {
         "triggers": [
           {
@@ -105,7 +105,7 @@
       "localization": {
         "zh_cn": {
           "name": "毒雾区",
-          "note": "毒雾会侵入肺部，让停留者中毒。"
+          "note": "毒雾会侵入肺部,让停留者中毒."
         },
         "en_us": {
           "name": "Poison Mist Area",
@@ -117,7 +117,7 @@
       "id": "frost_slow_area",
       "name": "冰霜缓滞区",
       "type": "hazard_area",
-      "note": "结霜地面会拖慢脚步，站不稳的人还会滑倒。",
+      "note": "结霜地面会拖慢脚步,站不稳的人还会滑倒.",
       "runtime": {
         "movement_modifier": {
           "treat_as_difficult_terrain": true
@@ -150,7 +150,7 @@
       "localization": {
         "zh_cn": {
           "name": "冰霜缓滞区",
-          "note": "结霜地面会拖慢脚步，站不稳的人还会滑倒。"
+          "note": "结霜地面会拖慢脚步,站不稳的人还会滑倒."
         },
         "en_us": {
           "name": "Frost Slow Area",
