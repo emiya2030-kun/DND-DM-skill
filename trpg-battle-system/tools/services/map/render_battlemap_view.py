@@ -166,7 +166,7 @@ class RenderBattlemapView:
             ".header-initiative__body::-webkit-scrollbar-track{border-radius:999px;background:rgba(255,255,255,.04);}"
             ".header-initiative__body::-webkit-scrollbar-thumb{border-radius:999px;background:linear-gradient(180deg,rgba(143,174,220,.62),rgba(86,114,158,.72));border:2px solid rgba(9,16,26,.88);}"
             ".header-initiative__body::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,rgba(173,203,247,.72),rgba(104,133,182,.82));}"
-            ".battlemap-layout{display:grid;grid-template-columns:minmax(0,1fr) 368px;gap:18px;align-items:start;position:relative;z-index:1;}"
+            ".battlemap-layout{display:grid;grid-template-columns:minmax(0,1fr) 368px;gap:18px;align-items:stretch;position:relative;z-index:1;}"
             ".battlemap-frame{padding:0;background:none;}"
             ".battlemap-stage{min-width:0;}"
             ".tactical-surface{position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(180deg,rgba(10,18,28,.94),rgba(7,13,21,.96));"
@@ -229,11 +229,12 @@ class RenderBattlemapView:
             ".tile__remains{position:relative;z-index:1;display:grid;place-items:center;width:72%;height:72%;border-radius:16px;font-size:clamp(12px,1.25vw,18px);"
             "color:#f5f1e6;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.1),rgba(148,136,117,.18) 52%,rgba(34,30,27,.42) 100%);"
             "border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 24px rgba(0,0,0,.28);}"
-            ".battlemap-sidebar{display:grid;gap:14px;}"
+            ".battlemap-sidebar{display:grid;gap:14px;height:100%;grid-template-rows:auto minmax(0,1fr) auto auto;}"
             ".sidebar-card,.sidebar-block{position:relative;overflow:hidden;padding:16px;border-radius:22px;background:linear-gradient(180deg,rgba(13,22,34,.92),rgba(9,16,26,.88));"
             "border:1px solid rgba(164,187,220,.12);box-shadow:0 16px 42px rgba(3,8,16,.28),inset 0 1px 0 rgba(255,255,255,.03);}"
             ".sidebar-card::before,.sidebar-block::before{content:'';position:absolute;inset:auto -20% 68% auto;width:180px;height:180px;background:radial-gradient(circle,rgba(91,136,217,.12),transparent 66%);pointer-events:none;}"
             ".hud-panel{position:relative;}"
+            ".sidebar-card--activity{display:flex;flex-direction:column;min-height:100%;}"
             ".sidebar-label{margin:0 0 12px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#90a4c1;}"
             ".current-banner{display:grid;gap:12px;padding:14px;border-radius:18px;background:linear-gradient(180deg,rgba(26,38,57,.95),rgba(15,24,37,.95));"
             "border:1px solid rgba(164,187,220,.1);}"
@@ -262,6 +263,7 @@ class RenderBattlemapView:
             ".character-card__bar{height:8px;margin-top:10px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;}"
             ".character-card__bar > span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#70c1ff,#d8b36a);}"
             ".activity-feed{display:grid;gap:10px;max-height:320px;padding-right:6px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(143,174,220,.45) rgba(255,255,255,.04);}"
+            ".sidebar-card--activity .activity-feed{flex:1;min-height:0;max-height:none;align-content:start;}"
             ".activity-feed::-webkit-scrollbar{width:10px;}"
             ".activity-feed::-webkit-scrollbar-track{border-radius:999px;background:rgba(255,255,255,.04);}"
             ".activity-feed::-webkit-scrollbar-thumb{border-radius:999px;background:linear-gradient(180deg,rgba(143,174,220,.62),rgba(86,114,158,.72));border:2px solid rgba(9,16,26,.88);}"
@@ -401,7 +403,7 @@ class RenderBattlemapView:
             f'<div class="current-stat"><small>护甲</small><b>{current_ac}</b></div>'
             f'<div class="current-stat"><small>位置</small><b>{current_pos}</b></div>'
             "</div></div></section>"
-            '<section class="sidebar-card sidebar-block hud-panel"><h3 class="sidebar-label">战况记录</h3><div class="activity-feed">'
+            '<section class="sidebar-card sidebar-block hud-panel sidebar-card--activity"><h3 class="sidebar-label">战况记录</h3><div class="activity-feed">'
             f"{self._render_recent_activity(encounter, recent_forced_movement, recent_turn_effects, recent_activity)}"
             "</div></section>"
             '<section class="sidebar-card sidebar-block hud-panel"><h3 class="sidebar-label">角色卡</h3><div class="character-cards">'
@@ -409,11 +411,10 @@ class RenderBattlemapView:
             "</div></section>"
             '<section class="sidebar-card sidebar-block hud-panel"><h3 class="sidebar-label">地图图例</h3><ul class="legend-list">'
             "<li>🛡 / 📜 / 🏹：友方职业单位</li>"
-            "<li>E：敌方单位</li>"
+            "<li>字母：敌方单位</li>"
             '<li class="legend-list__terrain"><span class="terrain-swatch terrain-swatch--wall"></span><span>墙壁：不可穿越并阻挡视线。</span></li>'
             '<li class="legend-list__terrain"><span class="terrain-swatch terrain-swatch--difficult"></span><span>困难地形：进入时需要额外移动。</span></li>'
             '<li class="legend-list__terrain"><span class="terrain-swatch terrain-swatch--high-ground"></span><span>高台：提供抬升站位与视野优势。</span></li>'
-            "<li>亮色轨迹：最近一次强制位移</li>"
             "<li>区域：法术或持续效果范围</li>"
             f"{self._render_zone_legend(encounter)}"
             "</ul></section>"

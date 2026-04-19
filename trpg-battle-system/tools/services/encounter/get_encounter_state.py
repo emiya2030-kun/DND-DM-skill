@@ -7,6 +7,8 @@ from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.armor_definition_repository import ArmorDefinitionRepository
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.event_repository import EventRepository
+from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
+from tools.services.combat.attack.weapon_profile_resolver import WeaponProfileResolver
 from tools.services.combat.attack.weapon_mastery_effects import (
     build_weapon_mastery_effect_labels,
     get_weapon_mastery_speed_penalty,
@@ -23,6 +25,7 @@ from tools.services.class_features.shared import (
     ensure_sorcerer_runtime,
     ensure_warlock_runtime,
     has_fighting_style,
+    resolve_entity_save_proficiencies,
 )
 from tools.services.class_features.shared.warlock_invocations import resolve_gaze_of_two_minds_origin
 from tools.services.shared_turns import list_current_turn_group_members
@@ -148,6 +151,16 @@ DAMAGE_TYPE_MAP = {
     "thunder": "雷鸣",
 }
 
+WEAPON_PROPERTY_MAP = {
+    "finesse": "灵巧",
+    "light": "轻型",
+    "thrown": "投掷",
+    "ammunition": "弹药",
+    "two_handed": "双手",
+    "reach": "触及",
+    "heavy": "重型",
+}
+
 CONDITION_NAME_MAP = {
     "blinded": "目盲",
     "charmed": "魅惑",
@@ -206,15 +219,15 @@ PLAYER_SHEET_SKILL_LABELS = {
     "investigation": "调查",
     "nature": "自然",
     "religion": "宗教",
-    "animal_handling": "驯服动物",
+    "animal_handling": "驯兽",
     "insight": "洞悉",
-    "medicine": "医疗",
+    "medicine": "医药",
     "perception": "察觉",
     "survival": "求生",
     "deception": "欺瞒",
     "intimidation": "威吓",
     "performance": "表演",
-    "persuasion": "说服",
+    "persuasion": "游说",
 }
 
 PLAYER_SHEET_SKILL_ABILITIES = {
@@ -276,7 +289,10 @@ class GetEncounterState:
         self.event_repository = event_repository
         self.battlemap_view_service = battlemap_view_service or RenderBattlemapView()
         self.map_notes_service = map_notes_service or BuildMapNotes()
-        self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
+        self.armor_definition_repository = armor_definition_repository or ArmorDefinitionRepository()
+        self.weapon_definition_repository = WeaponDefinitionRepository()
+        self.armor_profile_resolver = ArmorProfileResolver(self.armor_definition_repository)
+        self.weapon_profile_resolver = WeaponProfileResolver(self.weapon_definition_repository)
 
     def execute(self, encounter_id: str) -> dict[str, Any]:
         """读取指定 encounter，并返回视图层对象。"""
@@ -334,10 +350,7 @@ class GetEncounterState:
         if entity is None:
             return None
         armor_profile = self.armor_profile_resolver.refresh_entity_armor_class(entity)
-        effective_speed = max(
-            0,
-            entity.speed["walk"] - get_weapon_mastery_speed_penalty(entity) - armor_profile["speed_penalty_feet"],
-        )
+        effective_speed = self._resolve_effective_speed(entity, armor_profile=armor_profile)
 
         return {
             "id": entity.entity_id,
@@ -426,6 +439,7 @@ class GetEncounterState:
         entity = self._select_player_sheet_entity(encounter)
         if entity is None:
             return None
+        self._ensure_player_sheet_runtime(entity)
         return {
             "summary": {
                 "name": entity.name,
@@ -435,6 +449,7 @@ class GetEncounterState:
                 "hp_current": int(entity.hp.get("current", 0) or 0),
                 "hp_max": int(entity.hp.get("max", 0) or 0),
                 "ac": entity.ac,
+                "speed": self._resolve_effective_speed(entity),
                 "spell_save_dc": self._calculate_spell_save_dc(entity),
                 "spell_attack_bonus": self._calculate_spell_attack_bonus(entity),
                 "portrait_url": entity.source_ref.get("portrait_url"),
@@ -449,6 +464,48 @@ class GetEncounterState:
                 },
             },
         }
+
+    def _resolve_effective_speed(
+        self,
+        entity: EncounterEntity,
+        *,
+        armor_profile: dict[str, Any] | None = None,
+    ) -> int:
+        resolved_armor_profile = armor_profile or self.armor_profile_resolver.refresh_entity_armor_class(entity)
+        return max(
+            0,
+            entity.speed["walk"]
+            - get_weapon_mastery_speed_penalty(entity)
+            - int(resolved_armor_profile.get("speed_penalty_feet", 0) or 0),
+        )
+
+    def _ensure_player_sheet_runtime(self, entity: EncounterEntity) -> None:
+        source_ref = entity.source_ref if isinstance(entity.source_ref, dict) else {}
+        class_name = source_ref.get("class_name")
+        if not isinstance(class_name, str) or not class_name.strip():
+            return
+        normalized = class_name.strip().lower()
+        level = self._extract_level(entity)
+        if level is None:
+            level = 0
+        bucket = entity.class_features.setdefault(normalized, {})
+        if isinstance(bucket, dict) and not isinstance(bucket.get("level"), int) and level > 0:
+            bucket["level"] = level
+
+        if normalized == "monk":
+            ensure_monk_runtime(entity)
+        elif normalized == "rogue":
+            ensure_rogue_runtime(entity)
+        elif normalized == "paladin":
+            ensure_paladin_runtime(entity)
+        elif normalized == "barbarian":
+            ensure_barbarian_runtime(entity)
+        elif normalized == "ranger":
+            ensure_ranger_runtime(entity)
+        elif normalized == "sorcerer":
+            ensure_sorcerer_runtime(entity)
+        elif normalized == "warlock":
+            ensure_warlock_runtime(entity)
 
     def _select_player_sheet_entity(self, encounter: Encounter) -> EncounterEntity | None:
         for entity_id in encounter.turn_order:
@@ -484,27 +541,221 @@ class GetEncounterState:
             modifier = entity.skill_modifiers.get(key)
             if not isinstance(modifier, int):
                 modifier = int(entity.ability_mods.get(ability_key, 0) or 0)
+            training_state = self._resolve_player_sheet_skill_training(entity, key, modifier, ability_key)
             items.append({"key": key, "label": label, "modifier": modifier})
+            items[-1]["ability_label"] = PLAYER_SHEET_ABILITY_LABELS[ability_key]
+            items[-1]["training_state"] = training_state
+            items[-1]["training_indicator"] = self._player_sheet_training_indicator(training_state)
         return items
 
-    def _build_player_sheet_equipment(self, entity: EncounterEntity) -> list[dict[str, Any]]:
+    def _resolve_player_sheet_skill_training(
+        self,
+        entity: EncounterEntity,
+        skill_key: str,
+        modifier: int,
+        ability_key: str,
+    ) -> str:
+        skill_training = getattr(entity, "skill_training", None)
+        if not isinstance(skill_training, dict):
+            return "none"
+        value = skill_training.get(skill_key)
+        if isinstance(value, str) and value in {"none", "proficient", "expertise"}:
+            return value
+        return "none"
+
+    def _player_sheet_training_indicator(self, training_state: str) -> str:
+        if training_state == "expertise":
+            return "🅞"
+        if training_state == "proficient":
+            return "O"
+        return "X"
+
+    def _build_player_sheet_equipment(self, entity: EncounterEntity) -> dict[str, Any]:
+        return {
+            "weapons": self._build_player_sheet_weapon_items(entity),
+            "armor": self._build_player_sheet_armor_items(entity),
+            "backpacks": self._build_player_sheet_backpacks(entity),
+        }
+
+    def _build_player_sheet_weapon_items(self, entity: EncounterEntity) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for weapon in entity.weapons:
-            damage_parts = weapon.get("damage", [])
-            damage = " + ".join(
+            if not isinstance(weapon, dict):
+                continue
+            weapon_id = str(weapon.get("weapon_id") or "").strip()
+            resolved_weapon = dict(weapon)
+            if weapon_id:
+                try:
+                    resolved_weapon = self.weapon_profile_resolver.resolve(entity, weapon_id)
+                except Exception:
+                    resolved_weapon = dict(weapon)
+            attack_bonus = self._resolve_player_sheet_weapon_attack_bonus(entity, resolved_weapon)
+            attack_display = f"D20{self._format_signed_value(attack_bonus)}"
+            damage_parts = resolved_weapon.get("damage", [])
+            damage_formulas = [
                 str(part.get("formula") or "").strip()
                 for part in damage_parts
                 if isinstance(part, dict) and str(part.get("formula") or "").strip()
-            )
+            ]
+            damage_types = [
+                self._localize_damage_type(part.get("type"))
+                for part in damage_parts
+                if isinstance(part, dict) and part.get("type")
+            ]
+            properties_text = self._build_player_sheet_weapon_properties(resolved_weapon)
+            is_proficient = bool(resolved_weapon.get("is_proficient", False))
+            proficient_label = "O" if is_proficient else "X"
             items.append(
                 {
-                    "name": self._localize_display_name(weapon.get("name") or weapon.get("weapon_id") or "武器"),
-                    "attack_bonus": weapon.get("attack_bonus"),
-                    "damage": damage or "--",
-                    "mastery": weapon.get("mastery") or "--",
+                    "name": self._localize_display_name(resolved_weapon.get("name") or weapon.get("name") or weapon.get("weapon_id") or "武器"),
+                    "properties": properties_text,
+                    "proficient": proficient_label,
+                    "attack_display": attack_display,
+                    "damage_display": " + ".join(damage_formulas) or "--",
+                    "damage_type": " / ".join(damage_types) or "--",
+                    "mastery": self._localize_display_name(resolved_weapon.get("mastery") or weapon.get("mastery") or "--"),
                 }
             )
         return items
+
+    def _resolve_player_sheet_weapon_attack_bonus(self, entity: EncounterEntity, weapon: dict[str, Any]) -> int:
+        attack_bonus_override = weapon.get("attack_bonus_override")
+        explicit_attack_bonus = weapon.get("attack_bonus")
+        if isinstance(attack_bonus_override, int):
+            return attack_bonus_override
+        if isinstance(explicit_attack_bonus, int):
+            return explicit_attack_bonus
+        modifier_name = self._resolve_player_sheet_weapon_modifier_name(entity, weapon)
+        modifier_value = int(entity.ability_mods.get(modifier_name, 0) or 0)
+        proficiency_bonus = entity.proficiency_bonus if bool(weapon.get("is_proficient", False)) else 0
+        return modifier_value + proficiency_bonus
+
+    def _resolve_player_sheet_weapon_modifier_name(self, entity: EncounterEntity, weapon: dict[str, Any]) -> str:
+        if self.weapon_profile_resolver.is_monk_weapon(entity, weapon):
+            return self.weapon_profile_resolver.resolve_monk_weapon_modifier_name(entity)
+        properties = {
+            str(entry).strip().lower()
+            for entry in weapon.get("properties", [])
+            if isinstance(entry, str) and entry.strip()
+        }
+        kind = str(weapon.get("kind") or "").strip().lower()
+        normal_range = int(weapon.get("range", {}).get("normal", 0) or 0)
+        if "finesse" in properties:
+            str_mod = int(entity.ability_mods.get("str", 0) or 0)
+            dex_mod = int(entity.ability_mods.get("dex", 0) or 0)
+            return "dex" if dex_mod >= str_mod else "str"
+        if kind == "ranged" or normal_range > 10:
+            return "dex"
+        return "str"
+
+    def _build_player_sheet_weapon_properties(self, weapon: dict[str, Any]) -> str:
+        properties: list[str] = []
+        raw_properties = weapon.get("properties", [])
+        if isinstance(raw_properties, list):
+            for value in raw_properties:
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                normalized = value.strip().lower()
+                if normalized == "thrown":
+                    thrown_range = weapon.get("thrown_range", {})
+                    normal = thrown_range.get("normal")
+                    long = thrown_range.get("long")
+                    if isinstance(normal, int) and isinstance(long, int):
+                        properties.append(f"投掷（射程 {normal}/{long}）")
+                    else:
+                        properties.append("投掷")
+                    continue
+                properties.append(WEAPON_PROPERTY_MAP.get(normalized, self._localize_display_name(value)))
+        return "，".join(properties) or "无"
+
+    def _build_player_sheet_armor_items(self, entity: EncounterEntity) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        armor = self._resolve_player_sheet_armor(entity.equipped_armor)
+        if armor is not None:
+            armor_ac = armor.get("ac") if isinstance(armor.get("ac"), dict) else {}
+            items.append(
+                {
+                    "name": self._localize_display_name(armor.get("name") or armor.get("armor_id") or "护甲"),
+                    "category": self._localize_armor_category(armor.get("category")),
+                    "ac": str(armor_ac.get("base", "--")),
+                    "dex": self._build_armor_dex_display(entity, armor_ac),
+                }
+            )
+        shield = self._resolve_player_sheet_armor(entity.equipped_shield)
+        if shield is not None:
+            shield_ac = shield.get("ac") if isinstance(shield.get("ac"), dict) else {}
+            items.append(
+                {
+                    "name": self._localize_display_name(shield.get("name") or shield.get("armor_id") or "盾牌"),
+                    "category": "無",
+                    "ac": str(shield_ac.get("bonus", 0) or 0),
+                    "dex": "0",
+                }
+            )
+        return {"title": "穿戴护甲", "items": items}
+
+    def _build_player_sheet_backpacks(self, entity: EncounterEntity) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for item in entity.inventory:
+            if not isinstance(item, dict):
+                continue
+            quantity = item.get("quantity")
+            quantity_label = f"×{quantity}" if isinstance(quantity, int) else str(item.get("quantity_label") or "×1")
+            items.append(
+                {
+                    "name": self._localize_display_name(item.get("name") or item.get("item_id") or "未命名物品"),
+                    "quantity": quantity_label,
+                }
+            )
+        gold = entity.currency.get("gp", 0) if isinstance(entity.currency, dict) else 0
+        return [{"name": "背包1", "gold": int(gold or 0), "items": items}]
+
+    def _resolve_player_sheet_armor(self, runtime_item: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(runtime_item, dict):
+            return None
+        armor_id = runtime_item.get("armor_id")
+        if not isinstance(armor_id, str) or not armor_id.strip():
+            return None
+        definition = self.armor_definition_repository.get(armor_id)
+        if definition is None:
+            return dict(runtime_item)
+        resolved = dict(definition)
+        resolved.update(runtime_item)
+        return resolved
+
+    def _build_armor_dex_display(self, entity: EncounterEntity, armor_ac: dict[str, Any]) -> str:
+        if not isinstance(armor_ac, dict):
+            return "0"
+        if not bool(armor_ac.get("add_dex_modifier", False)):
+            return "0"
+        dex_mod = entity.ability_mods.get("dex", 0)
+        if not isinstance(dex_mod, int):
+            dex_mod = 0
+        dex_cap = armor_ac.get("dex_cap")
+        if isinstance(dex_cap, int):
+            dex_mod = min(dex_mod, dex_cap)
+        if dex_mod > 0:
+            return f"+{dex_mod}"
+        if dex_mod < 0:
+            return str(dex_mod)
+        return "0"
+
+    def _localize_armor_category(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return "未知"
+        return {
+            "light": "輕甲",
+            "medium": "中甲",
+            "heavy": "重甲",
+            "shield": "盾牌",
+        }.get(value.lower(), value)
+
+    def _format_signed_value(self, value: int) -> str:
+        if value > 0:
+            return f"+{value}"
+        if value < 0:
+            return str(value)
+        return "+0"
 
     def _resolve_player_sheet_level(self, entity: EncounterEntity) -> int | None:
         level = self._extract_level(entity)
@@ -523,7 +774,7 @@ class GetEncounterState:
 
     def _calculate_save_bonus(self, entity: EncounterEntity, ability_key: str) -> int:
         base_modifier = int(entity.ability_mods.get(ability_key, 0) or 0)
-        if ability_key in entity.save_proficiencies:
+        if ability_key in resolve_entity_save_proficiencies(entity):
             return base_modifier + entity.proficiency_bonus
         return base_modifier
 

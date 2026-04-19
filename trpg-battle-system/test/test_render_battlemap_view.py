@@ -156,7 +156,6 @@ class RenderBattlemapViewTests(unittest.TestCase):
         self.assertIn("tile--forced-origin", payload["html"])
         self.assertIn("tile--forced-path", payload["html"])
         self.assertIn("tile--forced-destination", payload["html"])
-        self.assertIn("亮色轨迹：最近一次强制位移", payload["html"])
         self.assertIn("--forced-highlight:", payload["html"])
         self.assertIn(
             ".tile--forced-origin,.tile--forced-path{box-shadow:inset 0 0 0 2px var(--forced-highlight),0 0 18px var(--forced-highlight-soft);}",
@@ -187,6 +186,10 @@ class RenderBattlemapViewTests(unittest.TestCase):
         self.assertIn("强制位移", payload["html"])
         self.assertIn("Aster的定身术持续效果", payload["html"])
         self.assertIn("Goblin被 Push 推离 5 尺", payload["html"])
+        self.assertIn(".battlemap-layout{display:grid;grid-template-columns:minmax(0,1fr) 368px;gap:18px;align-items:stretch;", payload["html"])
+        self.assertIn(".battlemap-sidebar{display:grid;gap:14px;height:100%;grid-template-rows:auto minmax(0,1fr) auto auto;}", payload["html"])
+        self.assertIn(".sidebar-card--activity{display:flex;flex-direction:column;min-height:100%;}", payload["html"])
+        self.assertIn(".sidebar-card--activity .activity-feed{flex:1;min-height:0;max-height:none;", payload["html"])
         self.assertIn(".activity-feed{display:grid;gap:10px;max-height:", payload["html"])
         self.assertIn("overflow-y:auto;", payload["html"])
 
@@ -262,6 +265,7 @@ class RenderBattlemapViewTests(unittest.TestCase):
         self.assertIn("墙壁：不可穿越并阻挡视线。", payload["html"])
         self.assertIn("困难地形：进入时需要额外移动。", payload["html"])
         self.assertIn("高台：提供抬升站位与视野优势。", payload["html"])
+        self.assertIn("字母：敌方单位", payload["html"])
         self.assertIn("Lingering radiant field.", payload["html"])
         self.assertIn("区域效果：Lingering radiant field.", payload["html"])
         self.assertIn("Necrotic mist slows movement.", payload["html"])

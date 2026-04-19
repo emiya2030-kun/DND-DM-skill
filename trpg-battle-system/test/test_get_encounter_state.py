@@ -16,7 +16,7 @@ from tools.services import GetEncounterState
 
 def build_player() -> EncounterEntity:
     """构造带武器、法术和资源的当前行动者。"""
-    return EncounterEntity(
+    entity = EncounterEntity(
         entity_id="ent_ally_eric_001",
         entity_def_id="pc_eric_lv5",
         source_ref={
@@ -81,6 +81,15 @@ def build_player() -> EncounterEntity:
             }
         ],
     )
+    entity.equipped_armor = {"armor_id": "leather_armor"}
+    entity.equipped_shield = {"armor_id": "shield"}
+    entity.inventory = [
+        {"name": "链条", "quantity": 1},
+        {"name": "火绒盒", "quantity": 1},
+        {"name": "口粮", "quantity": 5},
+    ]
+    entity.currency = {"gp": 127}
+    return entity
 
 
 def build_enemy() -> EncounterEntity:
@@ -1747,12 +1756,120 @@ class GetEncounterStateTests(unittest.TestCase):
             self.assertEqual(summary["hp_current"], 18)
             self.assertEqual(summary["hp_max"], 20)
             self.assertEqual(summary["ac"], 15)
+            self.assertEqual(summary["speed"], 30)
             self.assertEqual(summary["spell_save_dc"], 14)
             self.assertEqual(summary["spell_attack_bonus"], 6)
             self.assertEqual(player_sheet["abilities"][0]["label"], "力量")
+            self.assertEqual(player_sheet["abilities"][0]["save_bonus"], 0)
+            self.assertEqual(player_sheet["abilities"][4]["label"], "感知")
+            self.assertEqual(player_sheet["abilities"][4]["save_bonus"], 3)
+            self.assertEqual(player_sheet["abilities"][5]["label"], "魅力")
+            self.assertEqual(player_sheet["abilities"][5]["save_bonus"], 6)
             self.assertEqual(player_sheet["tabs"]["skills"][0]["label"], "运动")
             self.assertEqual(player_sheet["tabs"]["skills"][0]["modifier"], 0)
-            self.assertEqual(player_sheet["tabs"]["equipment"][0]["name"], "刺剑")
+            self.assertEqual(player_sheet["tabs"]["skills"][0]["ability_label"], "力量")
+            self.assertEqual(player_sheet["tabs"]["skills"][0]["training_indicator"], "X")
+            self.assertEqual(player_sheet["tabs"]["skills"][9]["label"], "驯兽")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["weapons"][0]["name"], "刺剑")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["weapons"][0]["attack_display"], "D20+5")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["weapons"][0]["damage_display"], "1d8+3")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["armor"]["items"][0]["name"], "皮甲")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["armor"]["items"][0]["dex"], "+2")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["armor"]["items"][1]["name"], "盾牌")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["backpacks"][0]["items"][0]["name"], "链条")
+            self.assertEqual(player_sheet["tabs"]["equipment"]["backpacks"][0]["gold"], 127)
+            repo.close()
+
+    def test_execute_projects_monk_weapon_damage_from_source_ref_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            monk = EncounterEntity(
+                entity_id="ent_ally_mylin_001",
+                name="米伦",
+                side="ally",
+                category="pc",
+                controller="player",
+                position={"x": 2, "y": 2},
+                hp={"current": 22, "max": 27, "temp": 0},
+                ac=16,
+                speed={"walk": 40, "remaining": 40},
+                initiative=15,
+                source_ref={
+                    "class_name": "monk",
+                    "level": 5,
+                },
+                ability_scores={"str": 8, "dex": 17, "con": 14, "int": 8, "wis": 16, "cha": 10},
+                ability_mods={"str": -1, "dex": 3, "con": 2, "int": -1, "wis": 3, "cha": 0},
+                proficiency_bonus=3,
+                skill_training={
+                    "sleight_of_hand": "expertise",
+                    "stealth": "proficient",
+                    "investigation": "expertise",
+                    "arcana": "proficient",
+                    "perception": "expertise",
+                    "insight": "expertise",
+                    "persuasion": "expertise",
+                },
+                skill_modifiers={
+                    "athletics": -1,
+                    "acrobatics": 3,
+                    "sleight_of_hand": 5,
+                    "stealth": 5,
+                    "investigation": 1,
+                    "arcana": 1,
+                    "history": -1,
+                    "nature": -1,
+                    "religion": -1,
+                    "perception": 5,
+                    "insight": 5,
+                    "animal_handling": 3,
+                    "medicine": 3,
+                    "survival": 3,
+                    "persuasion": 2,
+                    "deception": 0,
+                    "intimidation": 0,
+                    "performance": 0,
+                },
+                weapons=[
+                    {
+                        "weapon_id": "dagger",
+                        "name": "匕首",
+                        "category": "simple",
+                        "kind": "melee",
+                        "damage": [{"formula": "1d4", "type": "piercing"}],
+                        "properties": ["finesse", "light", "thrown"],
+                        "range": {"normal": 5, "long": 5},
+                        "thrown_range": {"normal": 20, "long": 60},
+                        "mastery": "迅击",
+                    }
+                ],
+            )
+            encounter = Encounter(
+                encounter_id="enc_view_monk_test",
+                name="View Monk Encounter",
+                status="active",
+                round=1,
+                current_entity_id=monk.entity_id,
+                turn_order=[monk.entity_id],
+                entities={monk.entity_id: monk},
+                map=EncounterMap(
+                    map_id="map_view_monk_test",
+                    name="Monk Test Map",
+                    description="A practice hall.",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_monk_test")
+
+            self.assertEqual(state["player_sheet_source"]["summary"]["speed"], 40)
+            weapon = state["player_sheet_source"]["tabs"]["equipment"]["weapons"][0]
+            self.assertEqual(weapon["name"], "匕首")
+            self.assertEqual(weapon["proficient"], "O")
+            self.assertEqual(weapon["attack_display"], "D20+6")
+            self.assertEqual(weapon["damage_display"], "1d8+3")
             repo.close()
 
 
