@@ -188,6 +188,15 @@ def build_static_player_sheet() -> dict[str, object]:
     }
 
 
+def build_player_sheet_from_state(initial_state: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(initial_state, dict):
+        return build_static_player_sheet()
+    player_sheet = initial_state.get("player_sheet_source")
+    if isinstance(player_sheet, dict):
+        return player_sheet
+    return build_static_player_sheet()
+
+
 def render_player_sheet_shell(player_sheet: dict[str, object]) -> str:
     summary = player_sheet.get("summary", {}) if isinstance(player_sheet, dict) else {}
     health_line = (
@@ -263,8 +272,15 @@ def build_player_sheet_styles() -> str:
 def build_player_sheet_runtime_script(player_sheet: dict[str, object]) -> str:
     player_sheet_json = json.dumps(player_sheet, ensure_ascii=False)
     return (
-        f"window.__PLAYER_SHEET__ = {player_sheet_json};"
+        f"window.__PLAYER_SHEET_STATIC__ = {player_sheet_json};"
         "window.__PLAYER_SHEET_ACTIVE_TAB__ = 'skills';"
+        "window.buildPlayerSheet = function(nextState){"
+        "if(nextState&&typeof nextState==='object'&&nextState.player_sheet_source&&typeof nextState.player_sheet_source==='object'){"
+        "return nextState.player_sheet_source;"
+        "}"
+        "return window.__PLAYER_SHEET_STATIC__;"
+        "};"
+        "window.__PLAYER_SHEET__ = window.buildPlayerSheet(window.__BATTLEMAP_STATE__);"
         "window.formatSignedModifier = function(value){"
         "if(typeof value!=='number'){return '--';}"
         "if(value>0){return '+' + value;}"
@@ -456,7 +472,7 @@ def render_localhost_battlemap_page(
     initial_state: dict[str, object] | None = None,
 ) -> str:
     if initial_state is not None:
-        player_sheet = build_static_player_sheet()
+        player_sheet = build_player_sheet_from_state(initial_state)
         battlemap_details = initial_state.get("battlemap_details")
         if not isinstance(battlemap_details, dict):
             battlemap_details = {}
@@ -547,6 +563,7 @@ def render_localhost_battlemap_page(
             "window.applyEncounterState = function(nextState){"
             "if(!nextState||typeof nextState !== 'object'){throw new Error('encounter state must be an object');}"
             "window.__BATTLEMAP_STATE__ = nextState;"
+            "window.__PLAYER_SHEET__=window.buildPlayerSheet(nextState);"
             "if(typeof nextState.encounter_name === 'string'){document.title = nextState.encounter_name + ' 战斗地图预览';"
             "var titleNode=document.querySelector('[data-role=\"encounter-title\"]');if(titleNode){titleNode.textContent=nextState.encounter_name;}}"
             "if(typeof nextState.round === 'number'){"
@@ -560,6 +577,7 @@ def render_localhost_battlemap_page(
             "var gridSize=document.querySelector('[data-role=\"grid-size-value\"]');if(gridSize&&typeof details.grid_size==='string'){gridSize.textContent=details.grid_size.replace('Each tile represents ', '每格 ').replace(' feet', ' 尺');}}"
             "if(nextState.battlemap_view&&typeof nextState.battlemap_view.html==='string'){"
             "var root=document.querySelector('[data-role=\"battlemap-view-root\"]');if(root){root.innerHTML=nextState.battlemap_view.html;}}"
+            "window.renderPlayerSheet(window.__PLAYER_SHEET__);"
             "document.dispatchEvent(new CustomEvent('battlemap:state-applied',{detail:{encounterState:nextState}}));"
             "return nextState;"
             "};"

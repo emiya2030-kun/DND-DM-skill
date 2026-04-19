@@ -1733,6 +1733,28 @@ class GetEncounterStateTests(unittest.TestCase):
             repo.close()
             event_repo.close()
 
+    def test_execute_projects_fixed_player_sheet_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+
+            player_sheet = state["player_sheet_source"]
+            summary = player_sheet["summary"]
+            self.assertEqual(summary["name"], "Eric")
+            self.assertEqual(summary["hp_current"], 18)
+            self.assertEqual(summary["hp_max"], 20)
+            self.assertEqual(summary["ac"], 15)
+            self.assertEqual(summary["spell_save_dc"], 14)
+            self.assertEqual(summary["spell_attack_bonus"], 6)
+            self.assertEqual(player_sheet["abilities"][0]["label"], "力量")
+            self.assertEqual(player_sheet["tabs"]["skills"][0]["label"], "运动")
+            self.assertEqual(player_sheet["tabs"]["skills"][0]["modifier"], 0)
+            self.assertEqual(player_sheet["tabs"]["equipment"][0]["name"], "刺剑")
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -187,6 +187,72 @@ CHECK_KEY_MAP = {
     "survival": "求生",
 }
 
+PLAYER_SHEET_ABILITY_LABELS = {
+    "str": "力量",
+    "dex": "敏捷",
+    "con": "体魄",
+    "int": "智力",
+    "wis": "感知",
+    "cha": "魅力",
+}
+
+PLAYER_SHEET_SKILL_LABELS = {
+    "athletics": "运动",
+    "acrobatics": "特技",
+    "sleight_of_hand": "巧手",
+    "stealth": "隐匿",
+    "arcana": "奥秘",
+    "history": "历史",
+    "investigation": "调查",
+    "nature": "自然",
+    "religion": "宗教",
+    "animal_handling": "驯服动物",
+    "insight": "洞悉",
+    "medicine": "医疗",
+    "perception": "察觉",
+    "survival": "求生",
+    "deception": "欺瞒",
+    "intimidation": "威吓",
+    "performance": "表演",
+    "persuasion": "说服",
+}
+
+PLAYER_SHEET_SKILL_ABILITIES = {
+    "athletics": "str",
+    "acrobatics": "dex",
+    "sleight_of_hand": "dex",
+    "stealth": "dex",
+    "arcana": "int",
+    "history": "int",
+    "investigation": "int",
+    "nature": "int",
+    "religion": "int",
+    "animal_handling": "wis",
+    "insight": "wis",
+    "medicine": "wis",
+    "perception": "wis",
+    "survival": "wis",
+    "deception": "cha",
+    "intimidation": "cha",
+    "performance": "cha",
+    "persuasion": "cha",
+}
+
+CLASS_NAME_MAP = {
+    "barbarian": "野蛮人",
+    "bard": "吟游诗人",
+    "cleric": "牧师",
+    "druid": "德鲁伊",
+    "fighter": "战士",
+    "monk": "武僧",
+    "paladin": "圣武士",
+    "ranger": "游侠",
+    "rogue": "游荡者",
+    "sorcerer": "术士",
+    "warlock": "邪术师",
+    "wizard": "法师",
+}
+
 HP_STATUS_MAP = {
     "DOWN": "倒地",
     "HEALTHY": "健康",
@@ -227,6 +293,7 @@ class GetEncounterState:
             "encounter_id": encounter.encounter_id,
             "encounter_name": encounter.name,
             "round": encounter.round,
+            "player_sheet_source": self._build_player_sheet_source(encounter),
             "current_turn_entity": self._build_current_turn_entity(encounter, current_entity),
             "current_turn_group": self._build_current_turn_group(encounter),
             "turn_order": self._build_turn_order(encounter, current_entity),
@@ -354,6 +421,140 @@ class GetEncounterState:
             "owner_name": owner.name,
             "controlled_members": controlled_members,
         }
+
+    def _build_player_sheet_source(self, encounter: Encounter) -> dict[str, Any] | None:
+        entity = self._select_player_sheet_entity(encounter)
+        if entity is None:
+            return None
+        return {
+            "summary": {
+                "name": entity.name,
+                "class_name": self._localize_class_name(entity),
+                "subclass_name": self._extract_subclass_name(entity),
+                "level": self._resolve_player_sheet_level(entity),
+                "hp_current": int(entity.hp.get("current", 0) or 0),
+                "hp_max": int(entity.hp.get("max", 0) or 0),
+                "ac": entity.ac,
+                "spell_save_dc": self._calculate_spell_save_dc(entity),
+                "spell_attack_bonus": self._calculate_spell_attack_bonus(entity),
+                "portrait_url": entity.source_ref.get("portrait_url"),
+            },
+            "abilities": self._build_player_sheet_abilities(entity),
+            "tabs": {
+                "skills": self._build_player_sheet_skills(entity),
+                "equipment": self._build_player_sheet_equipment(entity),
+                "extras": {
+                    "placeholder_title": "后续追加",
+                    "placeholder_body": "后续会加入特性、状态、资源与法术相关信息。",
+                },
+            },
+        }
+
+    def _select_player_sheet_entity(self, encounter: Encounter) -> EncounterEntity | None:
+        for entity_id in encounter.turn_order:
+            entity = encounter.entities.get(entity_id)
+            if entity is not None and entity.controller == "player" and entity.category == "pc":
+                return entity
+        for entity in encounter.entities.values():
+            if entity.controller == "player" and entity.category == "pc":
+                return entity
+        for entity_id in encounter.turn_order:
+            entity = encounter.entities.get(entity_id)
+            if entity is not None and entity.side == "ally":
+                return entity
+        return self._get_current_entity(encounter)
+
+    def _build_player_sheet_abilities(self, entity: EncounterEntity) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for key in ("str", "dex", "con", "int", "wis", "cha"):
+            items.append(
+                {
+                    "key": key,
+                    "label": PLAYER_SHEET_ABILITY_LABELS[key],
+                    "score": entity.ability_scores.get(key, 10),
+                    "save_bonus": self._calculate_save_bonus(entity, key),
+                }
+            )
+        return items
+
+    def _build_player_sheet_skills(self, entity: EncounterEntity) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for key, label in PLAYER_SHEET_SKILL_LABELS.items():
+            ability_key = PLAYER_SHEET_SKILL_ABILITIES[key]
+            modifier = entity.skill_modifiers.get(key)
+            if not isinstance(modifier, int):
+                modifier = int(entity.ability_mods.get(ability_key, 0) or 0)
+            items.append({"key": key, "label": label, "modifier": modifier})
+        return items
+
+    def _build_player_sheet_equipment(self, entity: EncounterEntity) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for weapon in entity.weapons:
+            damage_parts = weapon.get("damage", [])
+            damage = " + ".join(
+                str(part.get("formula") or "").strip()
+                for part in damage_parts
+                if isinstance(part, dict) and str(part.get("formula") or "").strip()
+            )
+            items.append(
+                {
+                    "name": self._localize_display_name(weapon.get("name") or weapon.get("weapon_id") or "武器"),
+                    "attack_bonus": weapon.get("attack_bonus"),
+                    "damage": damage or "--",
+                    "mastery": weapon.get("mastery") or "--",
+                }
+            )
+        return items
+
+    def _resolve_player_sheet_level(self, entity: EncounterEntity) -> int | None:
+        level = self._extract_level(entity)
+        if level is not None:
+            return level
+        for value in entity.class_features.values():
+            if isinstance(value, dict):
+                candidate = value.get("level")
+                if isinstance(candidate, int):
+                    return candidate
+                for key in ("fighter_level", "paladin_level", "ranger_level", "rogue_level", "warlock_level", "sorcerer_level"):
+                    nested = value.get(key)
+                    if isinstance(nested, int):
+                        return nested
+        return None
+
+    def _calculate_save_bonus(self, entity: EncounterEntity, ability_key: str) -> int:
+        base_modifier = int(entity.ability_mods.get(ability_key, 0) or 0)
+        if ability_key in entity.save_proficiencies:
+            return base_modifier + entity.proficiency_bonus
+        return base_modifier
+
+    def _calculate_spell_attack_bonus(self, entity: EncounterEntity) -> int | None:
+        spellcasting_ability = entity.source_ref.get("spellcasting_ability")
+        if spellcasting_ability is None:
+            return None
+        ability_mod = entity.ability_mods.get(spellcasting_ability)
+        if ability_mod is None:
+            return None
+        return entity.proficiency_bonus + ability_mod
+
+    def _localize_class_name(self, entity: EncounterEntity) -> str | None:
+        class_name = entity.source_ref.get("class_name")
+        if not isinstance(class_name, str):
+            return None
+        return CLASS_NAME_MAP.get(class_name.lower(), class_name)
+
+    def _extract_subclass_name(self, entity: EncounterEntity) -> str | None:
+        for key in ("subclass_name", "subclass", "archetype"):
+            value = entity.source_ref.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        for value in entity.class_features.values():
+            if not isinstance(value, dict):
+                continue
+            for key in ("subclass_name", "subclass", "archetype"):
+                nested_value = value.get(key)
+                if isinstance(nested_value, str) and nested_value.strip():
+                    return nested_value
+        return None
 
     def _build_active_spell_summaries(self, encounter: Encounter) -> list[str]:
         summaries: list[str] = []
