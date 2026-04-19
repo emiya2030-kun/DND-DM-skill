@@ -198,6 +198,37 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
             self.assertIn("window.location.reload()", html)
             repo.close()
 
+    def test_render_localhost_page_includes_player_sheet_shell_and_tabs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = ensure_preview_encounter(repo)
+
+            html = render_localhost_battlemap_page(
+                encounter_id=encounter.encounter_id,
+                page_title="Battlemap Localhost",
+                initial_state={
+                    "encounter_id": encounter.encounter_id,
+                    "encounter_name": encounter.name,
+                    "round": encounter.round,
+                    "battlemap_details": {
+                        "name": encounter.map.name,
+                        "description": encounter.map.description,
+                        "dimensions": f"{encounter.map.width} x {encounter.map.height} tiles",
+                        "grid_size": f"Each tile represents {encounter.map.grid_size_feet} feet",
+                    },
+                    "battlemap_view": {"html": "<section>map</section>"},
+                },
+            )
+
+            self.assertIn('data-role="player-sheet-shell"', html)
+            self.assertIn('data-role="player-sheet-portrait"', html)
+            self.assertIn('data-role="player-sheet-tabs"', html)
+            self.assertIn(">技能<", html)
+            self.assertIn(">装备<", html)
+            self.assertIn(">后续追加<", html)
+            self.assertIn("44 / 44 HP · AC 16", html)
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()
