@@ -6,6 +6,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -697,7 +698,11 @@ class ExecuteSaveSpellTests(unittest.TestCase):
         with make_repositories() as (encounter_repo, event_repo):
             encounter = build_encounter()
             caster = encounter.entities["ent_ally_eric_001"]
-            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["heightened_spell"]},
+            }
             for spell in caster.spells:
                 if spell.get("spell_id") == "blindness_deafness":
                     spell["casting_class"] = "sorcerer"
@@ -735,7 +740,11 @@ class ExecuteSaveSpellTests(unittest.TestCase):
         with make_repositories() as (encounter_repo, event_repo):
             encounter = build_encounter()
             caster = encounter.entities["ent_ally_eric_001"]
-            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["careful_spell"]},
+            }
             for spell in caster.spells:
                 if spell.get("spell_id") == "burning_hands":
                     spell["casting_class"] = "sorcerer"
@@ -771,6 +780,55 @@ class ExecuteSaveSpellTests(unittest.TestCase):
             self.assertTrue(result["request"]["context"]["auto_success"])
             self.assertTrue(result["resolution"]["success"])
             self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 0)
+
+    def test_execute_empowered_and_heightened_spell_apply_together(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["empowered_spell", "heightened_spell"]},
+            }
+            for spell in caster.spells:
+                if spell.get("spell_id") == "burning_hands":
+                    spell["casting_class"] = "sorcerer"
+                    break
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteSaveSpell(
+                EncounterCastSpell(encounter_repo, append_event),
+                SavingThrowRequest(encounter_repo),
+                ResolveSavingThrow(encounter_repo),
+                SavingThrowResult(
+                    encounter_repo,
+                    append_event,
+                    update_hp=UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            with patch("tools.services.spells.metamagic_support.random.randint", side_effect=[6, 5, 4]):
+                result = service.execute(
+                    encounter_id="enc_execute_save_spell_test",
+                    target_id="ent_enemy_iron_duster_001",
+                    spell_id="burning_hands",
+                    base_rolls=[17, 4],
+                    damage_rolls=[
+                        {"source": "spell:burning_hands:failed:part_0", "rolls": [1, 1, 1]},
+                    ],
+                    metamagic_options={
+                        "selected": ["empowered_spell", "heightened_spell"],
+                        "heightened_target_id": "ent_enemy_iron_duster_001",
+                    },
+                )
+
+            updated = encounter_repo.get("enc_execute_save_spell_test")
+            assert updated is not None
+            self.assertEqual(result["request"]["context"]["vantage"], "disadvantage")
+            self.assertEqual(result["roll_result"]["metadata"]["chosen_roll"], 4)
+            self.assertEqual(result["resolution"]["damage_resolution"]["metamagic_adjustment"]["metamagic_id"], "empowered_spell")
+            self.assertEqual(updated.entities["ent_ally_eric_001"].class_features["sorcerer"]["sorcery_points"]["current"], 2)
 
     def test_execute_save_spell_rejects_second_slot_spending_spell_in_same_turn(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):

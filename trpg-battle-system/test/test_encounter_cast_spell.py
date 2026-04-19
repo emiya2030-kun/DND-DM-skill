@@ -748,6 +748,7 @@ class EncounterCastSpellTests(unittest.TestCase):
             caster.class_features["sorcerer"] = {
                 "level": 3,
                 "sorcery_points": {"max": 3, "current": 2},
+                "metamagic": {"known_options": ["subtle_spell"]},
             }
             for spell in caster.spells:
                 if spell.get("spell_id") == "fire_bolt":
@@ -787,6 +788,7 @@ class EncounterCastSpellTests(unittest.TestCase):
             caster.class_features["sorcerer"] = {
                 "level": 3,
                 "sorcery_points": {"max": 3, "current": 2},
+                "metamagic": {"known_options": ["subtle_spell"]},
             }
             for spell in caster.spells:
                 if spell.get("spell_id") == "fire_bolt":
@@ -820,6 +822,7 @@ class EncounterCastSpellTests(unittest.TestCase):
             caster.class_features["sorcerer"] = {
                 "level": 5,
                 "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["quickened_spell"]},
             }
             caster.spells.append(
                 {
@@ -862,6 +865,7 @@ class EncounterCastSpellTests(unittest.TestCase):
             caster.class_features["sorcerer"] = {
                 "level": 5,
                 "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["quickened_spell"]},
             }
             caster.action_economy["spell_slot_cast_used_this_turn"] = True
             caster.spells.append(
@@ -884,6 +888,51 @@ class EncounterCastSpellTests(unittest.TestCase):
                     metamagic_options={"selected": ["quickened_spell"]},
                 )
 
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_allows_quickened_and_heightened_with_active_innate_sorcery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.class_features["sorcerer"] = {
+                "level": 7,
+                "sorcery_points": {"max": 7, "current": 7},
+                "innate_sorcery": {"enabled": True, "active": True, "uses_max": 2, "uses_current": 1},
+                "metamagic": {"known_options": ["quickened_spell", "heightened_spell"]},
+            }
+            caster.spells.append(
+                {
+                    "spell_id": "burning_hands",
+                    "name": "Burning Hands",
+                    "level": 1,
+                    "casting_class": "sorcerer",
+                }
+            )
+            encounter_repo.save(encounter)
+
+            service = EncounterCastSpell(encounter_repo, AppendEvent(event_repo))
+            result = service.execute(
+                encounter_id="enc_cast_spell_test",
+                spell_id="burning_hands",
+                target_ids=["ent_enemy_iron_duster_001"],
+                cast_level=1,
+                metamagic_options={
+                    "selected": ["quickened_spell", "heightened_spell"],
+                    "heightened_target_id": "ent_enemy_iron_duster_001",
+                },
+            )
+
+            updated = encounter_repo.get("enc_cast_spell_test")
+            assert updated is not None
+            self.assertEqual(result["action_cost"], "bonus_action")
+            self.assertEqual(result["metamagic"]["selected"], ["quickened_spell", "heightened_spell"])
+            self.assertTrue(result["metamagic"]["quickened_spell"])
+            self.assertTrue(result["metamagic"]["heightened_spell"])
+            self.assertEqual(result["metamagic"]["sorcery_point_cost"], 4)
+            self.assertEqual(updated.entities["ent_ally_eric_001"].class_features["sorcerer"]["sorcery_points"]["current"], 3)
             encounter_repo.close()
             event_repo.close()
 

@@ -12,11 +12,11 @@ from tools.services.class_features.shared.warlock_invocations import resolve_gaz
 from tools.services.combat.shared.turn_actor_guard import resolve_current_turn_actor_or_raise
 from tools.services.encounter.movement_rules import get_center_position, get_occupied_cells
 from tools.services.spells.metamagic_support import (
-    normalize_transmuted_damage_type,
-    spell_supports_extended_spell,
-    spell_supports_transmuted_spell,
-    spell_supports_twinned_spell,
+    build_default_metamagic,
+    build_default_noticeability,
+    resolve_declared_metamagic,
 )
+from tools.services.shared.rule_validation_error import RuleValidationError
 
 
 class SpellRequest:
@@ -315,243 +315,34 @@ class SpellRequest:
         target_entity_ids: list[str],
         metamagic_options: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        default_result = {
-            "ok": True,
-            "metamagic": self._build_default_metamagic(),
-            "noticeability": self._build_default_noticeability(),
-        }
-        if not isinstance(metamagic_options, dict):
-            return default_result
-
-        selected = metamagic_options.get("selected")
-        if not isinstance(selected, list):
-            return default_result
-
-        normalized_selected = [str(item).strip().lower() for item in selected if str(item).strip()]
-        if not normalized_selected:
-            return default_result
-        if len(normalized_selected) > 1:
-            return {
-                "ok": False,
-                "error_code": "multiple_metamagic_not_supported",
-                "message": "当前一次施法只支持声明一种超魔法",
-            }
-
-        if self._resolve_spellcasting_class(known_spell=known_spell) != "sorcerer":
-            return {
-                "ok": False,
-                "error_code": "metamagic_requires_sorcerer_spell",
-                "message": "只有术士法术可以使用超魔法",
-            }
-
-        sorcerer = ensure_sorcerer_runtime(actor)
-        level = int(sorcerer.get("level", 0) or 0)
-        if level < 2:
-            return {
-                "ok": False,
-                "error_code": "subtle_spell_requires_sorcerer_level_2",
-                "message": "精妙法术需要至少 2 级术士",
-            }
-
-        sorcery_points = sorcerer.get("sorcery_points")
-        current_points = int(sorcery_points.get("current", 0) or 0) if isinstance(sorcery_points, dict) else 0
-        if current_points < 1:
-            return {
-                "ok": False,
-                "error_code": "insufficient_sorcery_points",
-                "message": "术法点不足，无法使用精妙法术",
-            }
-
-        selected_metamagic = normalized_selected[0]
-        supported_costs = {
-            "subtle_spell": 1,
-            "quickened_spell": 2,
-            "distant_spell": 1,
-            "heightened_spell": 2,
-            "careful_spell": 1,
-            "empowered_spell": 1,
-            "extended_spell": 1,
-            "seeking_spell": 1,
-            "transmuted_spell": 1,
-            "twinned_spell": 1,
-        }
-        if selected_metamagic not in supported_costs:
-            return {
-                "ok": False,
-                "error_code": "unknown_metamagic_option",
-                "message": f"未知超魔法选项：{selected_metamagic}",
-            }
-
-        metamagic = self._build_default_metamagic()
-        metamagic["selected"] = [selected_metamagic]
-        metamagic[selected_metamagic] = True
-        metamagic["sorcery_point_cost"] = supported_costs[selected_metamagic]
-
-        if selected_metamagic == "quickened_spell" and action_cost != "action":
-            return {
-                "ok": False,
-                "error_code": "quickened_spell_requires_action_cast_time",
-                "message": "瞬发法术只能作用于施法时间为动作的法术",
-            }
-
-        if selected_metamagic == "distant_spell":
-            if not self._spell_can_use_distant_spell(spell_definition=spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "distant_spell_requires_range_or_touch_spell",
-                    "message": "远程法术只能用于具有射程或触碰距离的法术",
-                }
-            metamagic["effective_range_override_feet"] = self._resolve_distant_spell_range_override_feet(
-                spell_definition=spell_definition
+        try:
+            resolved = resolve_declared_metamagic(
+                actor=actor,
+                spellcasting_class=self._resolve_spellcasting_class(known_spell=known_spell),
+                spell_definition=spell_definition,
+                action_cost=action_cost,
+                spell_target_ids=target_entity_ids,
+                encounter_entity_ids=list(encounter.entities.keys()),
+                metamagic_options=metamagic_options,
             )
-
-        if selected_metamagic == "heightened_spell":
-            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "heightened_spell_requires_saving_throw_spell",
-                    "message": "升阶法术只能用于要求目标进行豁免的法术",
-                }
-            heightened_target_id = metamagic_options.get("heightened_target_id")
-            if not isinstance(heightened_target_id, str) or not heightened_target_id.strip():
-                return {
-                    "ok": False,
-                    "error_code": "heightened_spell_requires_target",
-                    "message": "升阶法术需要指定一个吃劣势的目标",
-                }
-            if heightened_target_id not in target_entity_ids:
-                return {
-                    "ok": False,
-                    "error_code": "heightened_target_not_in_spell_targets",
-                    "message": "升阶法术指定的目标必须属于本次法术目标",
-                }
-            metamagic["heightened_target_id"] = heightened_target_id
-
-        if selected_metamagic == "careful_spell":
-            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "careful_spell_requires_saving_throw_spell",
-                    "message": "谨慎法术只能用于要求目标进行豁免的法术",
-                }
-            careful_target_ids = metamagic_options.get("careful_target_ids")
-            if not isinstance(careful_target_ids, list) or not careful_target_ids:
-                return {
-                    "ok": False,
-                    "error_code": "careful_spell_requires_targets",
-                    "message": "谨慎法术需要提供被保护目标列表",
-                }
-            normalized_careful_target_ids = [str(item).strip() for item in careful_target_ids if str(item).strip()]
-            max_protected_targets = max(1, int(actor.ability_mods.get("cha", 0) or 0))
-            if len(normalized_careful_target_ids) > max_protected_targets:
-                return {
-                    "ok": False,
-                    "error_code": "careful_spell_too_many_targets",
-                    "message": "谨慎法术指定的被保护目标数量超过了魅力调整值上限",
-                }
-            for entity_id in normalized_careful_target_ids:
-                if entity_id not in encounter.entities:
-                    return {
-                        "ok": False,
-                        "error_code": "careful_target_not_in_spell_targets",
-                        "message": "谨慎法术指定的目标必须存在于当前遭遇战中",
-                    }
-            metamagic["careful_target_ids"] = normalized_careful_target_ids
-
-        if selected_metamagic == "empowered_spell":
-            if not self._spell_has_damage_resolution(spell_definition=spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "empowered_spell_requires_damage_spell",
-                    "message": "强效法术只能用于造成伤害的法术",
-                }
-
-        if selected_metamagic == "extended_spell":
-            if not spell_supports_extended_spell(spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "extended_spell_requires_duration_spell",
-                    "message": "延效法术只能用于持续时间至少 1 分钟的法术",
-                }
-
-        if selected_metamagic == "seeking_spell":
-            if not bool(spell_definition.get("requires_attack_roll")):
-                return {
-                    "ok": False,
-                    "error_code": "seeking_spell_requires_attack_roll_spell",
-                    "message": "追踪法术只能用于需要攻击检定的法术",
-                }
-
-        if selected_metamagic == "transmuted_spell":
-            if not spell_supports_transmuted_spell(spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "transmuted_spell_requires_eligible_damage_type",
-                    "message": "转化法术只能用于造成可转化元素伤害的法术",
-                }
-            transmuted_damage_type = normalize_transmuted_damage_type(metamagic_options.get("transmuted_damage_type"))
-            if transmuted_damage_type is None:
-                return {
-                    "ok": False,
-                    "error_code": "invalid_transmuted_damage_type",
-                    "message": "转化法术需要指定 acid/cold/fire/lightning/poison/thunder 之一",
-                }
-            metamagic["transmuted_damage_type"] = transmuted_damage_type
-
-        if selected_metamagic == "twinned_spell":
-            if not spell_supports_twinned_spell(spell_definition):
-                return {
-                    "ok": False,
-                    "error_code": "twinned_spell_requires_scaling_target_spell",
-                    "message": "孪生法术只能用于可通过升环增加目标的单体法术",
-                }
-            metamagic["effective_target_scaling_bonus_levels"] = 1
-
-        noticeability = self._build_default_noticeability()
-        if selected_metamagic == "subtle_spell":
-            noticeability = {
-                "casting_is_perceptible": False,
-                "verbal_visible": False,
-                "somatic_visible": False,
-                "material_visible": False,
-                "spell_effect_visible": True,
+        except RuleValidationError as exc:
+            return {
+                "ok": False,
+                "error_code": exc.error_code,
+                "message": exc.message,
             }
 
         return {
             "ok": True,
-            "metamagic": metamagic,
-            "noticeability": noticeability,
+            "metamagic": resolved["metamagic"],
+            "noticeability": resolved["noticeability"],
         }
 
     def _build_default_metamagic(self) -> dict[str, Any]:
-        return {
-            "selected": [],
-            "subtle_spell": False,
-            "quickened_spell": False,
-            "distant_spell": False,
-            "heightened_spell": False,
-            "careful_spell": False,
-            "empowered_spell": False,
-            "extended_spell": False,
-            "seeking_spell": False,
-            "transmuted_spell": False,
-            "twinned_spell": False,
-            "sorcery_point_cost": 0,
-            "heightened_target_id": None,
-            "careful_target_ids": [],
-            "effective_range_override_feet": None,
-            "transmuted_damage_type": None,
-            "effective_target_scaling_bonus_levels": 0,
-        }
+        return build_default_metamagic()
 
     def _build_default_noticeability(self) -> dict[str, Any]:
-        return {
-            "casting_is_perceptible": True,
-            "verbal_visible": True,
-            "somatic_visible": True,
-            "material_visible": True,
-            "spell_effect_visible": True,
-        }
+        return build_default_noticeability()
 
     def _spell_can_use_distant_spell(self, *, spell_definition: dict[str, Any]) -> bool:
         targeting = spell_definition.get("targeting")

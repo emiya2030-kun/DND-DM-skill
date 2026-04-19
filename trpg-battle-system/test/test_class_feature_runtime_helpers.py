@@ -239,6 +239,18 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         self.assertTrue(sorcerer["sorcery_incarnate"]["enabled"])
         self.assertEqual(sorcerer["cantrips_known"], 5)
         self.assertEqual(sorcerer["prepared_spells_count"], 11)
+        self.assertEqual(sorcerer["metamagic"]["max_known_options"], 2)
+        self.assertEqual(sorcerer["metamagic"]["known_options"], [])
+
+    def test_ensure_sorcerer_runtime_initializes_metamagic_state(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"sorcerer": {"level": 10}}
+
+        sorcerer = helpers.ensure_sorcerer_runtime(entity)
+
+        self.assertEqual(sorcerer["metamagic"]["max_known_options"], 4)
+        self.assertEqual(sorcerer["metamagic"]["known_options"], [])
 
     def test_get_sorcerer_runtime_reads_existing_bucket_from_entity_class_features(self) -> None:
         helpers = _import_helpers()

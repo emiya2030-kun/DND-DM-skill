@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
+_SUPPORTED_METAMAGIC_OPTIONS = {
+    "subtle_spell",
+    "quickened_spell",
+    "distant_spell",
+    "heightened_spell",
+    "careful_spell",
+    "empowered_spell",
+    "extended_spell",
+    "seeking_spell",
+    "transmuted_spell",
+    "twinned_spell",
+}
+
 
 def get_class_runtime(entity_or_class_features: Any, class_id: str) -> dict[str, Any]:
     class_features = _read_class_features(entity_or_class_features)
@@ -294,6 +307,21 @@ def ensure_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
 
     sorcery_incarnate = sorcerer.setdefault("sorcery_incarnate", {})
     sorcery_incarnate["enabled"] = level >= 7
+
+    metamagic = sorcerer.setdefault("metamagic", {})
+    metamagic["max_known_options"] = _resolve_sorcerer_metamagic_known_count(level)
+    raw_known_options = metamagic.get("known_options")
+    normalized_known_options: list[str] = []
+    if isinstance(raw_known_options, list):
+        for item in raw_known_options:
+            normalized = str(item).strip().lower()
+            if (
+                normalized
+                and normalized in _SUPPORTED_METAMAGIC_OPTIONS
+                and normalized not in normalized_known_options
+            ):
+                normalized_known_options.append(normalized)
+    metamagic["known_options"] = normalized_known_options[: metamagic["max_known_options"]]
 
     created_spell_slots = sorcerer.setdefault("created_spell_slots", {})
     for slot_level in range(1, 6):
@@ -641,3 +669,11 @@ def _resolve_sorcerer_prepared_spells_count(level: int) -> int:
         20: 22,
     }
     return progression.get(level, 0)
+
+
+def _resolve_sorcerer_metamagic_known_count(level: int) -> int:
+    if level >= 17:
+        return 6
+    if level >= 10:
+        return 4
+    return 2 if level >= 2 else 0

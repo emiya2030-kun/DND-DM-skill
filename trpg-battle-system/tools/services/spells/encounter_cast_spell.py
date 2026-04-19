@@ -25,10 +25,8 @@ from tools.services.spells.area_geometry import build_spell_zone_instance
 from tools.services.spells.build_spell_instance import build_spell_instance
 from tools.services.spells.build_turn_effect_instance import build_turn_effect_instance
 from tools.services.spells.metamagic_support import (
-    normalize_transmuted_damage_type,
-    spell_supports_extended_spell,
-    spell_supports_transmuted_spell,
-    spell_supports_twinned_spell,
+    build_default_metamagic,
+    resolve_declared_metamagic,
 )
 from tools.services.spells.summons.create_summoned_entity import (
     create_summoned_entity,
@@ -134,6 +132,7 @@ class EncounterCastSpell:
         if spell_level > 0 and resolved_cast_level < spell_level:
             raise ValueError("cast_level cannot be lower than the spell's base level")
         metamagic = self._resolve_metamagic(
+            encounter=encounter,
             caster=caster,
             spell_id=spell_id,
             spell_definition=spell_definition,
@@ -615,6 +614,7 @@ class EncounterCastSpell:
     def _resolve_metamagic(
         self,
         *,
+        encounter: Encounter,
         caster: EncounterEntity,
         spell_id: str,
         spell_definition: dict[str, Any],
@@ -622,144 +622,20 @@ class EncounterCastSpell:
         target_ids: list[str],
         metamagic_options: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        default_result = self._build_default_metamagic()
-        if not isinstance(metamagic_options, dict):
-            return default_result
-        selected = metamagic_options.get("selected")
-        if not isinstance(selected, list):
-            return default_result
-
-        normalized_selected = [str(item).strip().lower() for item in selected if str(item).strip()]
-        if not normalized_selected:
-            return default_result
-        if len(normalized_selected) > 1:
-            raise ValueError("multiple_metamagic_not_supported")
-
         known_spell = self._find_known_spell(caster, spell_id)
-        if self._resolve_spellcasting_class(known_spell) != "sorcerer":
-            raise ValueError("metamagic_requires_sorcerer_spell")
-
-        sorcerer = ensure_sorcerer_runtime(caster)
-        if int(sorcerer.get("level", 0) or 0) < 2:
-            raise ValueError("metamagic_requires_sorcerer_level_2")
-        sorcery_points = sorcerer.get("sorcery_points")
-        current_points = int(sorcery_points.get("current", 0) or 0) if isinstance(sorcery_points, dict) else 0
-        selected_metamagic = normalized_selected[0]
-        supported_costs = {
-            "subtle_spell": 1,
-            "quickened_spell": 2,
-            "distant_spell": 1,
-            "heightened_spell": 2,
-            "careful_spell": 1,
-            "empowered_spell": 1,
-            "extended_spell": 1,
-            "seeking_spell": 1,
-            "transmuted_spell": 1,
-            "twinned_spell": 1,
-        }
-        cost = supported_costs.get(selected_metamagic)
-        if cost is None:
-            raise ValueError("unsupported_metamagic")
-        if current_points < cost:
-            raise ValueError("insufficient_sorcery_points")
-
-        metamagic = self._build_default_metamagic()
-        metamagic["selected"] = [selected_metamagic]
-        metamagic[selected_metamagic] = True
-        metamagic["sorcery_point_cost"] = cost
-
-        if selected_metamagic == "quickened_spell":
-            if action_cost != "action":
-                raise ValueError("quickened_spell_requires_action_cast_time")
-            return metamagic
-
-        if selected_metamagic == "distant_spell":
-            if not self._spell_can_use_distant_spell(spell_definition=spell_definition):
-                raise ValueError("distant_spell_requires_range_or_touch_spell")
-            metamagic["effective_range_override_feet"] = self._resolve_distant_spell_range_override_feet(
-                spell_definition=spell_definition
-            )
-            return metamagic
-
-        if selected_metamagic == "heightened_spell":
-            heightened_target_id = metamagic_options.get("heightened_target_id")
-            if not isinstance(heightened_target_id, str) or not heightened_target_id.strip():
-                raise ValueError("heightened_spell_requires_target")
-            if heightened_target_id not in target_ids:
-                raise ValueError("heightened_spell_target_must_be_one_of_the_spell_targets")
-            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
-                raise ValueError("heightened_spell_requires_save_spell")
-            metamagic["heightened_target_id"] = heightened_target_id
-            return metamagic
-
-        if selected_metamagic == "careful_spell":
-            careful_target_ids = metamagic_options.get("careful_target_ids")
-            if not isinstance(careful_target_ids, list) or not careful_target_ids:
-                raise ValueError("careful_spell_requires_targets")
-            normalized_careful_target_ids = [str(item).strip() for item in careful_target_ids if str(item).strip()]
-            max_protected_targets = max(1, int(caster.ability_mods.get("cha", 0) or 0))
-            if len(normalized_careful_target_ids) > max_protected_targets:
-                raise ValueError("careful_spell_too_many_targets")
-            for entity_id in normalized_careful_target_ids:
-                if entity_id not in target_ids:
-                    raise ValueError("careful_spell_targets_must_be_spell_targets")
-            if not self._spell_requires_saving_throw(spell_definition=spell_definition):
-                raise ValueError("careful_spell_requires_save_spell")
-            metamagic["careful_target_ids"] = normalized_careful_target_ids
-            return metamagic
-
-        if selected_metamagic == "empowered_spell":
-            if not self._spell_has_damage_resolution(spell_definition=spell_definition):
-                raise ValueError("empowered_spell_requires_damage_spell")
-            return metamagic
-
-        if selected_metamagic == "extended_spell":
-            if not spell_supports_extended_spell(spell_definition):
-                raise ValueError("extended_spell_requires_duration_spell")
-            return metamagic
-
-        if selected_metamagic == "seeking_spell":
-            if not bool(spell_definition.get("requires_attack_roll")):
-                raise ValueError("seeking_spell_requires_attack_roll_spell")
-            return metamagic
-
-        if selected_metamagic == "transmuted_spell":
-            if not spell_supports_transmuted_spell(spell_definition):
-                raise ValueError("transmuted_spell_requires_eligible_damage_type")
-            transmuted_damage_type = normalize_transmuted_damage_type(metamagic_options.get("transmuted_damage_type"))
-            if transmuted_damage_type is None:
-                raise ValueError("invalid_transmuted_damage_type")
-            metamagic["transmuted_damage_type"] = transmuted_damage_type
-            return metamagic
-
-        if selected_metamagic == "twinned_spell":
-            if not spell_supports_twinned_spell(spell_definition):
-                raise ValueError("twinned_spell_requires_scaling_target_spell")
-            metamagic["effective_target_scaling_bonus_levels"] = 1
-            return metamagic
-
-        return metamagic
+        resolved = resolve_declared_metamagic(
+            actor=caster,
+            spellcasting_class=self._resolve_spellcasting_class(known_spell),
+            spell_definition=spell_definition,
+            action_cost=action_cost,
+            spell_target_ids=target_ids,
+            encounter_entity_ids=list(encounter.entities.keys()),
+            metamagic_options=metamagic_options,
+        )
+        return resolved["metamagic"]
 
     def _build_default_metamagic(self) -> dict[str, Any]:
-        return {
-            "selected": [],
-            "subtle_spell": False,
-            "quickened_spell": False,
-            "distant_spell": False,
-            "heightened_spell": False,
-            "careful_spell": False,
-            "empowered_spell": False,
-            "extended_spell": False,
-            "seeking_spell": False,
-            "transmuted_spell": False,
-            "twinned_spell": False,
-            "sorcery_point_cost": 0,
-            "heightened_target_id": None,
-            "careful_target_ids": [],
-            "effective_range_override_feet": None,
-            "transmuted_damage_type": None,
-            "effective_target_scaling_bonus_levels": 0,
-        }
+        return build_default_metamagic()
 
     def _spell_can_use_distant_spell(self, *, spell_definition: dict[str, Any]) -> bool:
         targeting = spell_definition.get("targeting")

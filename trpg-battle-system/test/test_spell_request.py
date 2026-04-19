@@ -616,6 +616,7 @@ class SpellRequestTests(unittest.TestCase):
             "sorcerer": {
                 "level": 3,
                 "sorcery_points": {"max": 3, "current": 2},
+                "metamagic": {"known_options": ["subtle_spell"]},
             }
         }
         caster.spells.append(
@@ -657,7 +658,171 @@ class SpellRequestTests(unittest.TestCase):
             },
         )
 
-    def test_execute_rejects_multiple_metamagic_selection(self) -> None:
+    def test_execute_allows_empowered_spell_with_heightened_spell_without_active_innate_sorcery(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "mindfire_lance": {
+                        "id": "mindfire_lance",
+                        "name": "Mindfire Lance",
+                        "level": 3,
+                        "base": {"level": 3, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "save", "save_ability": "dex"},
+                        "targeting": {"type": "single_target", "range_feet": 90, "allowed_target_types": ["creature"]},
+                        "save_ability": "dex",
+                        "on_cast": {
+                            "on_failed_save": {
+                                "damage_parts": [{"formula": "8d6", "damage_type": "fire", "source": "primary"}]
+                            }
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["empowered_spell", "heightened_spell"]},
+            }
+        }
+        caster.spells.append(
+            {"spell_id": "mindfire_lance", "name": "Mindfire Lance", "level": 3, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="mindfire_lance",
+            cast_level=3,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={
+                "selected": ["empowered_spell", "heightened_spell"],
+                "heightened_target_id": "ent_target_humanoid_001",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["metamagic"]["selected"], ["empowered_spell", "heightened_spell"])
+        self.assertTrue(result["metamagic"]["empowered_spell"])
+        self.assertTrue(result["metamagic"]["heightened_spell"])
+        self.assertEqual(result["metamagic"]["heightened_target_id"], "ent_target_humanoid_001")
+        self.assertEqual(result["metamagic"]["sorcery_point_cost"], 3)
+
+    def test_execute_rejects_quickened_and_heightened_without_active_innate_sorcery(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "mindfire_lance": {
+                        "id": "mindfire_lance",
+                        "name": "Mindfire Lance",
+                        "level": 3,
+                        "base": {"level": 3, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "save", "save_ability": "dex"},
+                        "targeting": {"type": "single_target", "range_feet": 90, "allowed_target_types": ["creature"]},
+                        "save_ability": "dex",
+                        "on_cast": {
+                            "on_failed_save": {
+                                "damage_parts": [{"formula": "8d6", "damage_type": "fire", "source": "primary"}]
+                            }
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["quickened_spell", "heightened_spell"]},
+            }
+        }
+        caster.spells.append(
+            {"spell_id": "mindfire_lance", "name": "Mindfire Lance", "level": 3, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="mindfire_lance",
+            cast_level=3,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={
+                "selected": ["quickened_spell", "heightened_spell"],
+                "heightened_target_id": "ent_target_humanoid_001",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "metamagic_combination_not_allowed")
+
+    def test_execute_allows_quickened_and_heightened_with_active_innate_sorcery(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "mindfire_lance": {
+                        "id": "mindfire_lance",
+                        "name": "Mindfire Lance",
+                        "level": 3,
+                        "base": {"level": 3, "casting_time": "1 action", "concentration": False},
+                        "resolution": {"activation": "action", "mode": "save", "save_ability": "dex"},
+                        "targeting": {"type": "single_target", "range_feet": 90, "allowed_target_types": ["creature"]},
+                        "save_ability": "dex",
+                        "on_cast": {
+                            "on_failed_save": {
+                                "damage_parts": [{"formula": "8d6", "damage_type": "fire", "source": "primary"}]
+                            }
+                        },
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.class_features = {
+            "sorcerer": {
+                "level": 7,
+                "sorcery_points": {"max": 7, "current": 7},
+                "innate_sorcery": {"enabled": True, "active": True, "uses_max": 2, "uses_current": 1},
+                "metamagic": {"known_options": ["quickened_spell", "heightened_spell"]},
+            }
+        }
+        caster.spells.append(
+            {"spell_id": "mindfire_lance", "name": "Mindfire Lance", "level": 3, "casting_class": "sorcerer"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="mindfire_lance",
+            cast_level=3,
+            target_entity_ids=["ent_target_humanoid_001"],
+            metamagic_options={
+                "selected": ["quickened_spell", "heightened_spell"],
+                "heightened_target_id": "ent_target_humanoid_001",
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["metamagic"]["selected"], ["quickened_spell", "heightened_spell"])
+        self.assertTrue(result["metamagic"]["quickened_spell"])
+        self.assertTrue(result["metamagic"]["heightened_spell"])
+        self.assertEqual(result["metamagic"]["sorcery_point_cost"], 4)
+
+    def test_execute_rejects_unlearned_metamagic_option(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(
             {
                 "spell_definitions": {
@@ -676,7 +841,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["quickened_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
         )
@@ -689,11 +860,11 @@ class SpellRequestTests(unittest.TestCase):
             spell_id="chromatic_orb",
             cast_level=1,
             target_entity_ids=["ent_target_humanoid_001"],
-            metamagic_options={"selected": ["subtle_spell", "quickened_spell"]},
+            metamagic_options={"selected": ["heightened_spell"]},
         )
 
         self.assertFalse(result["ok"])
-        self.assertEqual(result["error_code"], "multiple_metamagic_not_supported")
+        self.assertEqual(result["error_code"], "metamagic_option_not_known")
 
     def test_execute_accepts_quickened_spell_and_returns_cost(self) -> None:
         encounter_repo, spell_repo = self._build_repositories(
@@ -714,7 +885,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["quickened_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
         )
@@ -760,7 +937,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter.map.width = 12
         encounter.entities["ent_target_humanoid_001"].position = {"x": 7, "y": 1}
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["distant_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "shocking_grasp", "name": "Shocking Grasp", "level": 0, "casting_class": "sorcerer"}
         )
@@ -798,7 +981,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["heightened_spell"]},
+            }
+        }
         for spell in caster.spells:
             if spell.get("spell_id") == "hold_person":
                 spell["casting_class"] = "sorcerer"
@@ -838,7 +1027,13 @@ class SpellRequestTests(unittest.TestCase):
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
         caster.ability_mods["cha"] = 1
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["careful_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "burning_hands", "name": "Burning Hands", "level": 1, "casting_class": "sorcerer"}
         )
@@ -886,7 +1081,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["extended_spell"]},
+            }
+        }
         for spell in caster.spells:
             if spell.get("spell_id") == "hold_person":
                 spell["casting_class"] = "sorcerer"
@@ -941,7 +1142,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["transmuted_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "burning_hands", "name": "Burning Hands", "level": 1, "casting_class": "sorcerer"}
         )
@@ -992,7 +1199,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["transmuted_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "burning_hands", "name": "Burning Hands", "level": 1, "casting_class": "sorcerer"}
         )
@@ -1034,7 +1247,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["twinned_spell"]},
+            }
+        }
         for spell in caster.spells:
             if spell.get("spell_id") == "hold_person":
                 spell["casting_class"] = "sorcerer"
@@ -1089,7 +1308,13 @@ class SpellRequestTests(unittest.TestCase):
         encounter = encounter_repo.get("enc_spell_request_test")
         self.assertIsNotNone(encounter)
         caster = encounter.entities["ent_caster_001"]
-        caster.class_features = {"sorcerer": {"level": 5, "sorcery_points": {"max": 5, "current": 5}}}
+        caster.class_features = {
+            "sorcerer": {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["twinned_spell"]},
+            }
+        }
         caster.spells.append(
             {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}
         )

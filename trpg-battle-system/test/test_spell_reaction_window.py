@@ -179,6 +179,7 @@ class SpellReactionWindowTests(unittest.TestCase):
             caster.class_features["sorcerer"] = {
                 "level": 5,
                 "sorcery_points": {"max": 5, "current": 2},
+                "metamagic": {"known_options": ["subtle_spell"]},
             }
             caster.spells = [
                 {

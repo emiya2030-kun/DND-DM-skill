@@ -1261,6 +1261,9 @@ class GetEncounterStateTests(unittest.TestCase):
                     "level": 7,
                     "sorcery_points": {"current": 5, "max": 7},
                     "innate_sorcery": {"enabled": True, "uses_max": 2, "uses_current": 1, "active": False},
+                    "metamagic": {
+                        "known_options": ["quickened_spell", "heightened_spell"],
+                    },
                     "created_spell_slots": {"1": 1, "2": 0, "3": 0, "4": 0, "5": 0},
                 }
             }
@@ -1271,6 +1274,8 @@ class GetEncounterStateTests(unittest.TestCase):
 
             self.assertEqual(sorcerer["level"], 7)
             self.assertEqual(sorcerer["sorcery_points"], {"current": 5, "max": 7})
+            self.assertEqual(sorcerer["metamagic"]["max_known_options"], 2)
+            self.assertEqual(sorcerer["metamagic"]["known_options"], ["quickened_spell", "heightened_spell"])
             self.assertEqual(sorcerer["created_spell_slots"]["1"], 1)
             self.assertIn("font_of_magic", sorcerer["available_features"])
             self.assertIn("sorcerous_restoration", sorcerer["available_features"])

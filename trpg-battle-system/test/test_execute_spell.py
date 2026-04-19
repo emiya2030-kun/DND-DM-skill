@@ -736,7 +736,11 @@ class ExecuteSpellTests(unittest.TestCase):
             write_chromatic_orb_attack_spell_definition(spell_repo_path)
             encounter = build_encounter()
             caster = encounter.entities["ent_caster_001"]
-            caster.class_features["sorcerer"] = {"level": 5, "sorcery_points": {"max": 5, "current": 5}}
+            caster.class_features["sorcerer"] = {
+                "level": 5,
+                "sorcery_points": {"max": 5, "current": 5},
+                "metamagic": {"known_options": ["seeking_spell"]},
+            }
             caster.resources["spell_slots"]["1"] = {"max": 2, "remaining": 2}
             caster.spells.append(
                 {"spell_id": "chromatic_orb", "name": "Chromatic Orb", "level": 1, "casting_class": "sorcerer"}

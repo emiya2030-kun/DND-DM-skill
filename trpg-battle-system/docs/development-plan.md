@@ -145,15 +145,21 @@ LLM 使用规则：
 
 当前规则：
 
-- 当前一次施法只支持声明一种超魔法
 - 当前支持：
   - `subtle_spell`
   - `quickened_spell`
   - `distant_spell`
   - `heightened_spell`
   - `careful_spell`
+- `GetEncounterState` 与术士运行时会暴露：
+  - `class_features.sorcerer.metamagic.known_options`
+  - `class_features.sorcerer.metamagic.max_known_options`
 - 只有术士法术可以使用这些超魔法
 - 施法者至少需要 `2` 级术士
+- 术士必须已经习得对应超魔法选项
+- 默认一次施法只能应用一个超魔法
+- `empowered_spell` / `seeking_spell` 作为规则特例，可以与另一个超魔法组合
+- 若 `Innate Sorcery / 先天术法` 已激活，且术士等级至少 `7`，则一次施法最多可应用两个超魔法
 - 后端会自动扣除对应术法点：
   - `subtle_spell = 1`
   - `distant_spell = 1`
@@ -252,12 +258,14 @@ LLM 使用规则：
 
 当前规则：
 
-- 当前一次施法仍只支持声明一种超魔法
 - `empowered_spell = 1`
 - `extended_spell = 1`
 - `seeking_spell = 1`
 - `transmuted_spell = 1`
 - `twinned_spell = 1`
+- 默认一次施法只能应用一个超魔法
+- `empowered_spell` / `seeking_spell` 可以与另一个超魔法组合
+- 若 `Innate Sorcery / 先天术法` 已激活，且术士等级至少 `7`，则一次施法最多可应用两个超魔法
 - `empowered_spell`
   - 只能用于造成伤害的法术
   - 仍然必须在施法声明时提前传 `metamagic_options`

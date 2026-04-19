@@ -247,6 +247,9 @@ window.applyEncounterState(nextState)
 
 - `Metamagic Batch 1 / 超魔法第一批`
   - 目前不单独拆 service，仍然通过 `EncounterCastSpell` / `ExecuteSaveSpell` 施法
+  - 术士运行时会暴露：
+    - `class_features.sorcerer.metamagic.known_options`
+    - `class_features.sorcerer.metamagic.max_known_options`
   - 通用声明格式：
 
 ```json
@@ -257,7 +260,6 @@ window.applyEncounterState(nextState)
 }
 ```
 
-  - 当前一次施法只支持一个超魔法
   - 当前支持：
     - `subtle_spell`
     - `quickened_spell`
@@ -267,6 +269,11 @@ window.applyEncounterState(nextState)
   - 共同使用前提：
     - 该法术必须是术士法术
     - 施法者至少是 `2` 级术士
+    - 术士必须已经习得所声明的超魔法
+  - 组合规则：
+    - 默认一次施法只能应用一个超魔法
+    - `empowered_spell` / `seeking_spell` 可以与另一个超魔法组合
+    - 若 `Innate Sorcery / 先天术法` 已激活，且术士等级至少 `7`，则一次施法最多可应用两个超魔法
   - 术法点消耗：
     - `subtle_spell = 1`
     - `distant_spell = 1`
@@ -310,6 +317,8 @@ window.applyEncounterState(nextState)
     - 这些超魔都必须在施法声明时提前传
     - LLM 不需要在伤害结算后再补发重骰请求
     - LLM 不需要自己手算等效升环或伤害类型替换
+    - `empowered_spell` / `seeking_spell` 可以与其他一个超魔同时声明
+    - 若 `Innate Sorcery / 先天术法` 已激活且术士至少 7 级，则也可以声明任意两种超魔
   - 后端当前会自动处理：
     - `empowered_spell`
       - 自动重骰期望收益最高的低伤害骰

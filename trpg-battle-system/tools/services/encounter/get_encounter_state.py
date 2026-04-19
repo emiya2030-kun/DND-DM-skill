@@ -113,6 +113,7 @@ MARTIAL_CLASS_SUMMARIES = {
             "prepared_spells_count",
             "sorcery_points",
             "innate_sorcery",
+            "metamagic",
             "font_of_magic",
             "sorcerous_restoration",
             "sorcery_incarnate",
