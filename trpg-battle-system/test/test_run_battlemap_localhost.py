@@ -198,6 +198,107 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
             self.assertIn("window.location.reload()", html)
             repo.close()
 
+    def test_render_localhost_page_includes_player_sheet_shell_and_tabs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = ensure_preview_encounter(repo)
+
+            html = render_localhost_battlemap_page(
+                encounter_id=encounter.encounter_id,
+                page_title="Battlemap Localhost",
+                initial_state={
+                    "encounter_id": encounter.encounter_id,
+                    "encounter_name": encounter.name,
+                    "round": encounter.round,
+                    "battlemap_details": {
+                        "name": encounter.map.name,
+                        "description": encounter.map.description,
+                        "dimensions": f"{encounter.map.width} x {encounter.map.height} tiles",
+                        "grid_size": f"Each tile represents {encounter.map.grid_size_feet} feet",
+                    },
+                    "battlemap_view": {"html": "<section>map</section>"},
+                },
+            )
+
+            self.assertIn('data-role="player-sheet-shell"', html)
+            self.assertIn('data-role="player-sheet-portrait"', html)
+            self.assertIn('data-role="player-sheet-tabs"', html)
+            self.assertIn(">技能<", html)
+            self.assertIn(">装备<", html)
+            self.assertIn(">后续追加<", html)
+            self.assertIn("44 / 44 HP · AC 16", html)
+            repo.close()
+
+    def test_render_localhost_page_player_sheet_scripts_keep_zero_skills_and_tab_state(self) -> None:
+        html = render_localhost_battlemap_page(
+            encounter_id="enc_preview_demo",
+            page_title="Battlemap Localhost",
+            initial_state={
+                "encounter_id": "enc_preview_demo",
+                "encounter_name": "测试遭遇",
+                "round": 1,
+                "battlemap_details": {
+                    "name": "测试地图",
+                    "description": "desc",
+                    "dimensions": "10 x 10 tiles",
+                    "grid_size": "Each tile represents 5 feet",
+                },
+                "battlemap_view": {"html": "<section>map</section>"},
+            },
+        )
+
+        self.assertIn("window.__PLAYER_SHEET_ACTIVE_TAB__", html)
+        self.assertIn("if(value===0){return '0';}", html)
+        self.assertIn("驯服动物", html)
+        self.assertIn("欺瞒", html)
+        self.assertIn("后续追加", html)
+
+    def test_render_localhost_page_player_sheet_builds_from_encounter_state_source(self) -> None:
+        html = render_localhost_battlemap_page(
+            encounter_id="enc_preview_demo",
+            page_title="Battlemap Localhost",
+            initial_state={
+                "encounter_id": "enc_preview_demo",
+                "encounter_name": "测试遭遇",
+                "round": 1,
+                "battlemap_details": {
+                    "name": "测试地图",
+                    "description": "desc",
+                    "dimensions": "10 x 10 tiles",
+                    "grid_size": "Each tile represents 5 feet",
+                },
+                "battlemap_view": {"html": "<section>map</section>"},
+                "player_sheet_source": {
+                    "summary": {
+                        "name": "艾瑞克",
+                        "class_name": "圣武士",
+                        "subclass_name": "远古誓言",
+                        "level": 5,
+                        "hp_current": 18,
+                        "hp_max": 20,
+                        "ac": 15,
+                        "spell_save_dc": 14,
+                        "spell_attack_bonus": 6,
+                        "portrait_url": None,
+                    },
+                    "abilities": [
+                        {"key": "str", "label": "力量", "score": 10, "save_bonus": 0},
+                    ],
+                    "tabs": {
+                        "skills": [{"key": "arcana", "label": "奥秘", "modifier": 1}],
+                        "equipment": [{"name": "刺剑", "attack_bonus": 5, "damage": "1d8+3", "mastery": "--"}],
+                        "extras": {"placeholder_title": "后续追加", "placeholder_body": "动态资料"},
+                    },
+                },
+            },
+        )
+
+        self.assertIn("window.buildPlayerSheet = function(nextState)", html)
+        self.assertIn("window.__PLAYER_SHEET__ = window.buildPlayerSheet(window.__BATTLEMAP_STATE__);", html)
+        self.assertIn("window.__PLAYER_SHEET__=window.buildPlayerSheet(nextState);", html)
+        self.assertIn("艾瑞克", html)
+        self.assertIn("动态资料", html)
+
 
 if __name__ == "__main__":
     unittest.main()

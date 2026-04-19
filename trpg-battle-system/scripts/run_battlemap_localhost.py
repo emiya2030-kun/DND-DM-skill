@@ -133,6 +133,215 @@ def build_dev_reload_script(dev_reload_path: str) -> str:
     )
 
 
+def build_static_player_sheet() -> dict[str, object]:
+    return {
+        "summary": {
+            "name": "奎里昂",
+            "class_name": "战士",
+            "subclass_name": "奥法骑士",
+            "level": 4,
+            "hp_current": 44,
+            "hp_max": 44,
+            "ac": 16,
+            "spell_save_dc": 13,
+            "spell_attack_bonus": 5,
+            "portrait_url": None,
+        },
+        "abilities": [
+            {"key": "str", "label": "力量", "score": 8, "save_bonus": 2},
+            {"key": "dex", "label": "敏捷", "score": 18, "save_bonus": 4},
+            {"key": "con", "label": "体魄", "score": 14, "save_bonus": 5},
+            {"key": "int", "label": "智力", "score": 14, "save_bonus": 2},
+            {"key": "wis", "label": "感知", "score": 10, "save_bonus": 0},
+            {"key": "cha", "label": "魅力", "score": 10, "save_bonus": 0},
+        ],
+        "tabs": {
+            "skills": [
+                {"key": "athletics", "label": "运动", "modifier": -1},
+                {"key": "acrobatics", "label": "特技", "modifier": 4},
+                {"key": "sleight_of_hand", "label": "巧手", "modifier": 4},
+                {"key": "stealth", "label": "隐匿", "modifier": 4},
+                {"key": "arcana", "label": "奥秘", "modifier": 5},
+                {"key": "history", "label": "历史", "modifier": 2},
+                {"key": "investigation", "label": "调查", "modifier": 2},
+                {"key": "nature", "label": "自然", "modifier": 2},
+                {"key": "religion", "label": "宗教", "modifier": 2},
+                {"key": "animal_handling", "label": "驯服动物", "modifier": 0},
+                {"key": "insight", "label": "洞悉", "modifier": 0},
+                {"key": "medicine", "label": "医疗", "modifier": 0},
+                {"key": "perception", "label": "察觉", "modifier": 3},
+                {"key": "survival", "label": "求生", "modifier": 0},
+                {"key": "deception", "label": "欺瞒", "modifier": 0},
+                {"key": "intimidation", "label": "威吓", "modifier": 0},
+                {"key": "performance", "label": "表演", "modifier": 0},
+                {"key": "persuasion", "label": "说服", "modifier": 3},
+            ],
+            "equipment": [
+                {"name": "干将", "attack_bonus": 7, "damage": "1d6+4", "mastery": "侵扰"},
+                {"name": "莫邪", "attack_bonus": 7, "damage": "1d6+4", "mastery": "讯切"},
+            ],
+            "extras": {
+                "placeholder_title": "后续追加",
+                "placeholder_body": "后续会加入特性、状态、资源与法术相关信息。",
+            },
+        },
+    }
+
+
+def build_player_sheet_from_state(initial_state: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(initial_state, dict):
+        return build_static_player_sheet()
+    player_sheet = initial_state.get("player_sheet_source")
+    if isinstance(player_sheet, dict):
+        return player_sheet
+    return build_static_player_sheet()
+
+
+def render_player_sheet_shell(player_sheet: dict[str, object]) -> str:
+    summary = player_sheet.get("summary", {}) if isinstance(player_sheet, dict) else {}
+    health_line = (
+        f"{summary.get('hp_current', '--')} / {summary.get('hp_max', '--')} HP · AC {summary.get('ac', '--')}"
+    )
+    return (
+        '<section class="player-sheet-shell" data-role="player-sheet-shell">'
+        '<div class="player-sheet-grid">'
+        '<aside class="player-sheet-portrait" data-role="player-sheet-portrait">'
+        '<div class="player-sheet-portrait-frame">'
+        '<div class="player-sheet-portrait-mark"></div>'
+        '<div class="player-sheet-portrait-label">主角头像</div>'
+        "</div>"
+        "</aside>"
+        '<div class="player-sheet-main">'
+        f'<div class="player-sheet-summary" data-role="player-sheet-summary">{health_line}</div>'
+        '<div class="player-sheet-abilities" data-role="player-sheet-abilities"></div>'
+        '<div class="player-sheet-tabs" data-role="player-sheet-tabs"></div>'
+        '<div class="player-sheet-panel" data-role="player-sheet-panel"></div>'
+        "</div>"
+        "</div>"
+        "</section>"
+    )
+
+
+def build_player_sheet_styles() -> str:
+    return (
+        ".player-sheet-shell{position:relative;padding:18px;border-radius:28px;"
+        "background:linear-gradient(180deg,rgba(29,24,19,.96),rgba(11,12,14,.98));"
+        "border:1px solid rgba(214,176,112,.22);"
+        "box-shadow:0 24px 48px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,237,203,.05);}"
+        ".player-sheet-grid{display:grid;grid-template-columns:170px minmax(0,1fr);gap:16px;align-items:stretch;}"
+        ".player-sheet-portrait-frame{min-height:320px;border-radius:20px;padding:14px;"
+        "display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;"
+        "background:linear-gradient(180deg,rgba(85,56,28,.92),rgba(24,20,18,.96));"
+        "border:1px solid rgba(225,188,122,.28);box-shadow:inset 0 0 0 1px rgba(255,246,222,.05),0 14px 28px rgba(0,0,0,.28);}"
+        ".player-sheet-portrait-mark{width:74px;height:74px;border-radius:50%;"
+        "background:radial-gradient(circle at 35% 30%,#f0d4a4 0,#9d6f3b 26%,#352518 62%,#1a1613 100%);}"
+        ".player-sheet-portrait-label{color:#ead7b1;font-size:13px;letter-spacing:.18em;text-transform:uppercase;}"
+        ".player-sheet-main{display:grid;gap:14px;}"
+        ".player-sheet-summary{padding:16px 18px;border-radius:20px;"
+        "background:linear-gradient(180deg,rgba(15,15,16,.72),rgba(8,8,10,.82));"
+        "border:1px solid rgba(214,176,112,.2);}"
+        ".player-sheet-name{font-size:36px;font-weight:900;letter-spacing:.01em;color:#f3e7cf;}"
+        ".player-sheet-class{margin-top:4px;color:#bea57a;font-size:12px;letter-spacing:.2em;text-transform:uppercase;}"
+        ".player-sheet-health{margin-top:10px;display:inline-flex;padding:8px 12px;border-radius:999px;"
+        "background:rgba(112,34,29,.38);border:1px solid rgba(255,151,135,.18);color:#ffe0d7;font-weight:800;}"
+        ".player-sheet-spell{margin-top:10px;color:#cbbca2;font-size:13px;}"
+        ".player-sheet-abilities{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;}"
+        ".player-sheet-ability{padding:12px 8px;border-radius:16px;background:rgba(18,15,12,.94);"
+        "border:1px solid rgba(214,176,112,.14);text-align:center;}"
+        ".player-sheet-ability-label{display:block;font-size:11px;color:#90816a;letter-spacing:.12em;}"
+        ".player-sheet-ability-score{display:block;font-size:26px;font-weight:900;color:#f6e7ca;}"
+        ".player-sheet-ability-save{display:block;font-size:12px;color:#d0b27b;}"
+        ".player-sheet-tabs{display:flex;gap:10px;flex-wrap:wrap;}"
+        ".player-sheet-tab{appearance:none;border:none;padding:10px 16px;border-radius:999px;"
+        "background:rgba(255,255,255,.04);color:#b7a98d;border:1px solid rgba(214,176,112,.12);font-weight:700;cursor:pointer;}"
+        ".player-sheet-tab.is-active{background:linear-gradient(180deg,rgba(197,149,75,.3),rgba(110,76,32,.36));"
+        "color:#f7e6c6;border-color:rgba(223,187,122,.3);font-weight:800;letter-spacing:.08em;}"
+        ".player-sheet-panel{padding:14px;border-radius:20px;background:rgba(8,8,10,.72);border:1px solid rgba(214,176,112,.16);"
+        "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;}"
+        ".player-sheet-skill-row,.player-sheet-equipment-row{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.03);"
+        "border:1px solid rgba(214,176,112,.08);display:flex;justify-content:space-between;gap:10px;color:#eee2c8;}"
+        ".player-sheet-equipment-row{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) 72px 92px 88px;}"
+        ".player-sheet-empty{grid-column:1 / -1;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);"
+        "border:1px solid rgba(214,176,112,.08);color:#d8c8aa;}"
+        ".player-sheet-empty p{margin:8px 0 0;color:#a8997f;}"
+        "@media (max-width: 1080px){.player-sheet-grid{grid-template-columns:1fr;}.player-sheet-portrait-frame{min-height:220px;}.player-sheet-panel{grid-template-columns:repeat(2,minmax(0,1fr));}}"
+        "@media (max-width: 760px){.player-sheet-shell{padding:16px;}.player-sheet-abilities{grid-template-columns:repeat(2,minmax(0,1fr));}.player-sheet-panel{grid-template-columns:1fr;}.player-sheet-equipment-row{grid-template-columns:1fr 64px 88px 76px;}}"
+    )
+
+
+def build_player_sheet_runtime_script(player_sheet: dict[str, object]) -> str:
+    player_sheet_json = json.dumps(player_sheet, ensure_ascii=False)
+    return (
+        f"window.__PLAYER_SHEET_STATIC__ = {player_sheet_json};"
+        "window.__PLAYER_SHEET_ACTIVE_TAB__ = 'skills';"
+        "window.buildPlayerSheet = function(nextState){"
+        "if(nextState&&typeof nextState==='object'&&nextState.player_sheet_source&&typeof nextState.player_sheet_source==='object'){"
+        "return nextState.player_sheet_source;"
+        "}"
+        "return window.__PLAYER_SHEET_STATIC__;"
+        "};"
+        "window.__PLAYER_SHEET__ = window.buildPlayerSheet(window.__BATTLEMAP_STATE__);"
+        "window.formatSignedModifier = function(value){"
+        "if(typeof value!=='number'){return '--';}"
+        "if(value>0){return '+' + value;}"
+        "if(value===0){return '0';}"
+        "return String(value);"
+        "};"
+        "window.renderPlayerSheet = function(playerSheet){"
+        "var summary=(playerSheet&&playerSheet.summary)||{};"
+        "var summaryRoot=document.querySelector('[data-role=\"player-sheet-summary\"]');"
+        "if(summaryRoot){summaryRoot.innerHTML='"
+        "<div class=\"player-sheet-name\">' + (summary.name||'未命名角色') + '</div>' + "
+        "'<div class=\"player-sheet-class\">' + ((summary.subclass_name||summary.class_name||'未知职业') + ' · ' + (summary.level||'--') + '级') + '</div>' + "
+        "'<div class=\"player-sheet-health\">' + (summary.hp_current ?? '--') + ' / ' + (summary.hp_max ?? '--') + ' HP · AC ' + (summary.ac ?? '--') + '</div>' + "
+        "'<div class=\"player-sheet-spell\">法术豁免 ' + (summary.spell_save_dc ?? '--') + ' · 法术攻击 ' + window.formatSignedModifier(summary.spell_attack_bonus) + '</div>';}"
+        "var abilityRoot=document.querySelector('[data-role=\"player-sheet-abilities\"]');"
+        "if(abilityRoot){abilityRoot.innerHTML=((playerSheet&&playerSheet.abilities)||[]).map(function(item){"
+        "return '<div class=\"player-sheet-ability\">' + "
+        "'<span class=\"player-sheet-ability-label\">' + item.label + '</span>' + "
+        "'<strong class=\"player-sheet-ability-score\">' + item.score + '</strong>' + "
+        "'<span class=\"player-sheet-ability-save\">豁免 ' + window.formatSignedModifier(item.save_bonus) + '</span>' + "
+        "'</div>';"
+        "}).join('');}"
+        "var tabRoot=document.querySelector('[data-role=\"player-sheet-tabs\"]');"
+        "if(tabRoot){tabRoot.innerHTML=["
+        "'<button class=\"player-sheet-tab' + (window.__PLAYER_SHEET_ACTIVE_TAB__==='skills' ? ' is-active' : '') + '\" data-player-sheet-tab=\"skills\">技能</button>',"
+        "'<button class=\"player-sheet-tab' + (window.__PLAYER_SHEET_ACTIVE_TAB__==='equipment' ? ' is-active' : '') + '\" data-player-sheet-tab=\"equipment\">装备</button>',"
+        "'<button class=\"player-sheet-tab' + (window.__PLAYER_SHEET_ACTIVE_TAB__==='extras' ? ' is-active' : '') + '\" data-player-sheet-tab=\"extras\">后续追加</button>'"
+        "].join('');}"
+        "window.renderPlayerSheetPanel(playerSheet, window.__PLAYER_SHEET_ACTIVE_TAB__);"
+        "return playerSheet;"
+        "};"
+        "window.renderPlayerSheetPanel = function(playerSheet, activeTab){"
+        "var panelRoot=document.querySelector('[data-role=\"player-sheet-panel\"]');"
+        "if(!panelRoot){return;}"
+        "if(activeTab==='equipment'){panelRoot.innerHTML=((playerSheet&&playerSheet.tabs&&playerSheet.tabs.equipment)||[]).map(function(item){"
+        "return '<div class=\"player-sheet-equipment-row\">' + "
+        "'<strong>' + item.name + '</strong>' + "
+        "'<span>' + window.formatSignedModifier(item.attack_bonus) + '</span>' + "
+        "'<span>' + item.damage + '</span>' + "
+        "'<span>' + (item.mastery||'--') + '</span>' + "
+        "'</div>';"
+        "}).join('') || '<div class=\"player-sheet-empty\">暂无装备数据</div>';return;}"
+        "if(activeTab==='extras'){var extras=(playerSheet&&playerSheet.tabs&&playerSheet.tabs.extras)||{};"
+        "panelRoot.innerHTML='<div class=\"player-sheet-empty\"><strong>' + (extras.placeholder_title||'后续追加') + '</strong><p>' + (extras.placeholder_body||'后续会加入更多角色信息。') + '</p></div>';return;}"
+        "panelRoot.innerHTML=((playerSheet&&playerSheet.tabs&&playerSheet.tabs.skills)||[]).map(function(item){"
+        "return '<div class=\"player-sheet-skill-row\">' + "
+        "'<span>' + item.label + '</span>' + "
+        "'<strong>' + window.formatSignedModifier(item.modifier) + '</strong>' + "
+        "'</div>';"
+        "}).join('');"
+        "};"
+        "document.addEventListener('click',function(event){"
+        "var button=event.target&&event.target.closest('[data-player-sheet-tab]');"
+        "if(!button){return;}"
+        "window.__PLAYER_SHEET_ACTIVE_TAB__=button.getAttribute('data-player-sheet-tab')||'skills';"
+        "window.renderPlayerSheet(window.__PLAYER_SHEET__);"
+        "});"
+        "window.renderPlayerSheet(window.__PLAYER_SHEET__);"
+    )
+
+
 def post_runtime_command(
     runtime_base_url: str,
     *,
@@ -263,6 +472,7 @@ def render_localhost_battlemap_page(
     initial_state: dict[str, object] | None = None,
 ) -> str:
     if initial_state is not None:
+        player_sheet = build_player_sheet_from_state(initial_state)
         battlemap_details = initial_state.get("battlemap_details")
         if not isinstance(battlemap_details, dict):
             battlemap_details = {}
@@ -313,6 +523,7 @@ def render_localhost_battlemap_page(
             ".fact{padding:14px 16px;border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(169,191,224,.12);backdrop-filter:blur(12px);}"
             ".fact-label{display:block;margin-bottom:6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}"
             ".fact-value{font-size:22px;font-weight:700;letter-spacing:-.03em;}"
+            f"{build_player_sheet_styles()}"
             "@media (max-width: 1080px){.hero-grid{grid-template-columns:1fr;}.hero-facts{grid-template-columns:repeat(3,minmax(0,1fr));}}"
             "@media (max-width: 760px){.battlemap-preview{padding:16px 16px 28px;}.encounter-hero{padding:18px;}.hero-facts{grid-template-columns:1fr;}.hero-copy h1{font-size:40px;}}"
             "</style>"
@@ -338,18 +549,21 @@ def render_localhost_battlemap_page(
             "</div></div>"
             "</section>"
             f'<div data-role="battlemap-view-root">{battlemap_html}</div>'
+            f"{render_player_sheet_shell(player_sheet)}"
             "</div>"
             "</main>"
             "<script>"
             f"window.__BATTLEMAP_STATE__ = {json.dumps(initial_state, ensure_ascii=False)};"
             "window.__LAST_TOOL_RESULT__ = null;"
             "window.__LAST_TOOL_ERROR__ = null;"
+            f"{build_player_sheet_runtime_script(player_sheet)}"
             "window.getEncounterState = function(){return window.__BATTLEMAP_STATE__;};"
             "window.getLastToolResult = function(){return window.__LAST_TOOL_RESULT__;};"
             "window.getLastToolError = function(){return window.__LAST_TOOL_ERROR__;};"
             "window.applyEncounterState = function(nextState){"
             "if(!nextState||typeof nextState !== 'object'){throw new Error('encounter state must be an object');}"
             "window.__BATTLEMAP_STATE__ = nextState;"
+            "window.__PLAYER_SHEET__=window.buildPlayerSheet(nextState);"
             "if(typeof nextState.encounter_name === 'string'){document.title = nextState.encounter_name + ' 战斗地图预览';"
             "var titleNode=document.querySelector('[data-role=\"encounter-title\"]');if(titleNode){titleNode.textContent=nextState.encounter_name;}}"
             "if(typeof nextState.round === 'number'){"
@@ -363,6 +577,7 @@ def render_localhost_battlemap_page(
             "var gridSize=document.querySelector('[data-role=\"grid-size-value\"]');if(gridSize&&typeof details.grid_size==='string'){gridSize.textContent=details.grid_size.replace('Each tile represents ', '每格 ').replace(' feet', ' 尺');}}"
             "if(nextState.battlemap_view&&typeof nextState.battlemap_view.html==='string'){"
             "var root=document.querySelector('[data-role=\"battlemap-view-root\"]');if(root){root.innerHTML=nextState.battlemap_view.html;}}"
+            "window.renderPlayerSheet(window.__PLAYER_SHEET__);"
             "document.dispatchEvent(new CustomEvent('battlemap:state-applied',{detail:{encounterState:nextState}}));"
             "return nextState;"
             "};"
