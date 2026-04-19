@@ -4,6 +4,7 @@ from importlib import import_module
 
 __all__ = [
     "EncounterRepository",
+    "EncounterTemplateRepository",
     "ArmorDefinitionRepository",
     "EntityDefinitionRepository",
     "EventRepository",
@@ -17,6 +18,10 @@ __all__ = [
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "EncounterRepository": ("tools.repositories.encounter_repository", "EncounterRepository"),
+    "EncounterTemplateRepository": (
+        "tools.repositories.encounter_template_repository",
+        "EncounterTemplateRepository",
+    ),
     "ArmorDefinitionRepository": ("tools.repositories.armor_definition_repository", "ArmorDefinitionRepository"),
     "EntityDefinitionRepository": ("tools.repositories.entity_definition_repository", "EntityDefinitionRepository"),
     "EventRepository": ("tools.repositories.event_repository", "EventRepository"),

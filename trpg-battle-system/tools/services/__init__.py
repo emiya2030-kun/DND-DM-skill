@@ -55,6 +55,10 @@ __all__ = [
     "StartTurn",
     "RollInitiativeAndStartEncounter",
     "EncounterService",
+    "SaveEncounterTemplate",
+    "ListEncounterTemplates",
+    "RestoreEncounterFromTemplate",
+    "CreateEncounterFromTemplate",
     "GetEncounterState",
     "MoveEncounterEntity",
     "RequestConcentrationCheck",
@@ -133,6 +137,16 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "RollInitiativeAndStartEncounter",
     ),
     "EncounterService": ("tools.services.encounter.manage_encounter_entities", "EncounterService"),
+    "SaveEncounterTemplate": ("tools.services.encounter.save_encounter_template", "SaveEncounterTemplate"),
+    "ListEncounterTemplates": ("tools.services.encounter.list_encounter_templates", "ListEncounterTemplates"),
+    "RestoreEncounterFromTemplate": (
+        "tools.services.encounter.restore_encounter_from_template",
+        "RestoreEncounterFromTemplate",
+    ),
+    "CreateEncounterFromTemplate": (
+        "tools.services.encounter.create_encounter_from_template",
+        "CreateEncounterFromTemplate",
+    ),
     "GetEncounterState": ("tools.services.encounter.get_encounter_state", "GetEncounterState"),
     "MoveEncounterEntity": ("tools.services.encounter.move_encounter_entity", "MoveEncounterEntity"),
     "RequestConcentrationCheck": (

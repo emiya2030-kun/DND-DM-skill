@@ -13,6 +13,8 @@ from tools.services.class_features.shared import (
     ensure_ranger_runtime,
     ensure_rogue_runtime,
     get_fighter_runtime,
+    has_skill_expertise,
+    has_skill_proficiency,
     resolve_entity_skill_proficiencies,
 )
 from tools.services.combat.rules.conditions import ConditionRuntime
@@ -206,8 +208,8 @@ class ResolveAbilityCheck:
             }
 
         ability_modifier = int(actor.ability_mods.get(resolved_ability, 0))
-        is_proficient = check in resolve_entity_skill_proficiencies(actor)
-        proficiency_multiplier = 2 if is_proficient and self._has_expertise(actor=actor, skill=check) else 1
+        is_proficient = has_skill_proficiency(actor, check)
+        proficiency_multiplier = 2 if is_proficient and has_skill_expertise(actor, check) else 1
         proficiency_bonus = int(actor.proficiency_bonus) * proficiency_multiplier if is_proficient else 0
         return ability_modifier + proficiency_bonus + additional_bonus, {
             "source": "ability_plus_proficiency",
@@ -229,29 +231,13 @@ class ResolveAbilityCheck:
     ) -> int:
         if check_type != "skill":
             return chosen_roll
-        if check not in resolve_entity_skill_proficiencies(actor):
+        if not has_skill_proficiency(actor, check):
             return chosen_roll
         rogue_runtime = ensure_rogue_runtime(actor)
         reliable_talent = rogue_runtime.get("reliable_talent")
         if not isinstance(reliable_talent, dict) or not reliable_talent.get("enabled"):
             return chosen_roll
         return max(chosen_roll, 10)
-
-    def _has_expertise(self, *, actor: EncounterEntity, skill: str) -> bool:
-        return self._has_expertise_in_runtime(ensure_rogue_runtime(actor), skill) or self._has_expertise_in_runtime(
-            ensure_ranger_runtime(actor),
-            skill,
-        )
-
-    def _has_expertise_in_runtime(self, runtime: dict[str, Any], skill: str) -> bool:
-        expertise = runtime.get("expertise")
-        if not isinstance(expertise, dict):
-            return False
-        skills = expertise.get("skills")
-        if not isinstance(skills, list):
-            return False
-        normalized = {str(item).strip().lower() for item in skills if str(item).strip()}
-        return skill in normalized
 
     def _get_encounter_or_raise(self, encounter_id: str) -> Encounter:
         encounter = self.encounter_repository.get(encounter_id)

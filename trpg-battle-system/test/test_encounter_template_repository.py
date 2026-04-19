@@ -1,4 +1,4 @@
-"""仓储层测试：覆盖 encounter 在 TinyDB 中的持久化行为。"""
+"""样板快照仓储测试。"""
 
 import sys
 import tempfile
@@ -11,74 +11,62 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.models import Encounter, EncounterEntity, EncounterMap
-from tools.repositories import EncounterRepository
+from test.test_encounter_repository import build_encounter
+from tools.repositories import EncounterTemplateRepository
 
 
-def build_entity(entity_id: str = "ent_ally_eric_001") -> EncounterEntity:
-    """构造仓储测试用的最小合法实体。"""
-    return EncounterEntity(
-        entity_id=entity_id,
-        name="Eric",
-        side="ally",
-        category="pc",
-        controller="player",
-        position={"x": 15, "y": 19},
-        hp={"current": 80, "max": 80, "temp": 0},
-        ac=16,
-        speed={"walk": 30, "remaining": 30},
-        initiative=17,
-    )
+def build_template_record(
+    *,
+    template_id: str = "tpl_chapel_v1",
+    name: str = "礼拜堂稳定版",
+    source_encounter_id: str = "enc_preview_demo",
+) -> dict[str, object]:
+    return {
+        "template_id": template_id,
+        "name": name,
+        "source_encounter_id": source_encounter_id,
+        "snapshot": build_encounter().to_dict(),
+        "created_at": "2026-04-19T00:00:00Z",
+        "updated_at": "2026-04-19T00:00:00Z",
+    }
 
 
-def build_encounter() -> Encounter:
-    """构造仓储测试用的最小合法 encounter 快照。"""
-    entity = build_entity()
-    return Encounter(
-        encounter_id="enc_repo_test",
-        name="Repository Test Encounter",
-        status="active",
-        round=1,
-        current_entity_id=entity.entity_id,
-        turn_order=[entity.entity_id],
-        entities={entity.entity_id: entity},
-        map=EncounterMap(
-            map_id="map_repo_test",
-            name="Repo Test Map",
-            description="A map for repository tests.",
-            width=10,
-            height=10,
-        ),
-    )
-
-
-class EncounterRepositoryTests(unittest.TestCase):
-    def test_save_and_get_encounter(self) -> None:
-        """测试保存后再读取 encounter，关键字段应保持一致。"""
+class EncounterTemplateRepositoryTests(unittest.TestCase):
+    def test_save_and_get_template(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
-            encounter = build_encounter()
+            repo = EncounterTemplateRepository(Path(tmp_dir) / "encounter_templates.json")
+            template = build_template_record()
 
-            repo.save(encounter)
-            loaded = repo.get(encounter.encounter_id)
+            repo.save(template)
+            loaded = repo.get(template["template_id"])
 
             self.assertIsNotNone(loaded)
             assert loaded is not None
-            self.assertEqual(loaded.encounter_id, encounter.encounter_id)
-            self.assertEqual(loaded.current_entity_id, encounter.current_entity_id)
+            self.assertEqual(loaded["name"], "礼拜堂稳定版")
+            self.assertEqual(loaded["source_encounter_id"], "enc_preview_demo")
             repo.close()
 
-    def test_delete_encounter(self) -> None:
-        """测试删除 encounter 后，后续读取应返回空。"""
+    def test_list_templates_returns_sorted_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
-            encounter = build_encounter()
+            repo = EncounterTemplateRepository(Path(tmp_dir) / "encounter_templates.json")
+            repo.save(build_template_record(template_id="tpl_b", name="B"))
+            repo.save(build_template_record(template_id="tpl_a", name="A"))
 
-            repo.save(encounter)
-            removed = repo.delete(encounter.encounter_id)
+            templates = repo.list_templates()
+
+            self.assertEqual([item["name"] for item in templates], ["A", "B"])
+            repo.close()
+
+    def test_delete_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterTemplateRepository(Path(tmp_dir) / "encounter_templates.json")
+            template = build_template_record()
+            repo.save(template)
+
+            removed = repo.delete(template["template_id"])
 
             self.assertEqual(removed, 1)
-            self.assertIsNone(repo.get(encounter.encounter_id))
+            self.assertIsNone(repo.get(template["template_id"]))
             repo.close()
 
     def test_repositories_sharing_same_path_serialize_db_access(self) -> None:
@@ -119,9 +107,9 @@ class EncounterRepositoryTests(unittest.TestCase):
                 return
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            db_path = Path(tmp_dir) / "encounters.json"
-            repo_a = EncounterRepository(db_path)
-            repo_b = EncounterRepository(db_path)
+            db_path = Path(tmp_dir) / "encounter_templates.json"
+            repo_a = EncounterTemplateRepository(db_path)
+            repo_b = EncounterTemplateRepository(db_path)
             guarded_db = GuardedTinyDb()
             repo_a._db.close()
             repo_b._db.close()
@@ -131,11 +119,11 @@ class EncounterRepositoryTests(unittest.TestCase):
 
             def save_worker() -> None:
                 barrier.wait(timeout=1)
-                repo_a.save(build_encounter())
+                repo_a.save(build_template_record())
 
             def get_worker() -> None:
                 barrier.wait(timeout=1)
-                repo_b.get("enc_repo_test")
+                repo_b.get("tpl_chapel_v1")
 
             thread_a = threading.Thread(target=save_worker)
             thread_b = threading.Thread(target=get_worker)

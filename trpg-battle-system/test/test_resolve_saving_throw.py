@@ -503,6 +503,7 @@ class ResolveSavingThrowTests(unittest.TestCase):
             encounter = build_encounter()
             target = encounter.entities["ent_enemy_guard_001"]
             target.class_features = {"fighter": {"level": 1}}
+            target.initial_class_name = "fighter"
             target.save_proficiencies = []
             target.ability_mods["str"] = 0
             repo.save(encounter)
@@ -525,4 +526,36 @@ class ResolveSavingThrowTests(unittest.TestCase):
             self.assertEqual(result.final_total, 13)
             self.assertTrue(result.metadata["save_bonus_breakdown"]["is_proficient"])
             self.assertEqual(result.metadata["save_bonus_breakdown"]["proficiency_bonus_applied"], 2)
+            repo.close()
+
+    def test_execute_does_not_union_multiclass_template_save_proficiencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            target = encounter.entities["ent_enemy_guard_001"]
+            target.class_features = {"fighter": {"level": 1}, "rogue": {"level": 1}}
+            target.source_ref = {"class_name": "rogue"}
+            target.initial_class_name = "fighter"
+            target.save_proficiencies = []
+            target.ability_mods["dex"] = 2
+            repo.save(encounter)
+
+            request = RollRequest(
+                request_id="req_save_multiclass_template",
+                encounter_id="enc_resolve_save_test",
+                actor_entity_id=target.entity_id,
+                target_entity_id=target.entity_id,
+                roll_type="saving_throw",
+                formula="1d20",
+                context={"save_ability": "dex", "vantage": "normal"},
+            )
+            result = ResolveSavingThrow(repo).execute(
+                encounter_id="enc_resolve_save_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.final_total, 13)
+            self.assertFalse(result.metadata["save_bonus_breakdown"]["is_proficient"])
+            self.assertEqual(result.metadata["save_bonus_breakdown"]["proficiency_bonus_applied"], 0)
             repo.close()

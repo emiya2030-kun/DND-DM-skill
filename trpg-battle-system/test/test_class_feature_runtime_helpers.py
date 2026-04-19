@@ -187,11 +187,24 @@ class ClassFeatureRuntimeHelpersTests(unittest.TestCase):
         helpers = _import_helpers()
         entity = build_entity()
         entity.class_features = {"fighter": {"level": 1}}
+        entity.initial_class_name = "fighter"
         entity.save_proficiencies = ["wis"]
 
         proficiencies = helpers.resolve_entity_save_proficiencies(entity)
 
         self.assertEqual(proficiencies, ["str", "con", "wis"])
+
+    def test_resolve_entity_save_proficiencies_uses_initial_class_only_for_multiclass(self) -> None:
+        helpers = _import_helpers()
+        entity = build_entity()
+        entity.class_features = {"fighter": {"level": 1}, "rogue": {"level": 1}}
+        entity.source_ref = {"class_name": "rogue"}
+        entity.initial_class_name = "fighter"
+        entity.save_proficiencies = []
+
+        proficiencies = helpers.resolve_entity_save_proficiencies(entity)
+
+        self.assertEqual(proficiencies, ["str", "con"])
 
     def test_resolve_entity_save_proficiencies_adds_slippery_mind_wis_cha(self) -> None:
         helpers = _import_helpers()

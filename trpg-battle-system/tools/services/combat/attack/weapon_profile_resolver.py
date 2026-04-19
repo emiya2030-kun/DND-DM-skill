@@ -275,12 +275,16 @@ class WeaponProfileResolver:
         dice_count, die_size, explicit_flat_bonus = parsed_formula
         martial_arts_die_size = parsed_martial_arts[1]
         resolved_die_size = max(die_size, martial_arts_die_size)
+        monk_modifier = self._resolve_monk_weapon_modifier_value(actor)
 
         if explicit_flat_bonus is None:
-            return f"{dice_count}d{resolved_die_size}"
+            return self._build_damage_formula(
+                dice_count=dice_count,
+                die_size=resolved_die_size,
+                flat_bonus=monk_modifier,
+            )
 
         standard_modifier = self._resolve_standard_weapon_modifier_value(actor, weapon)
-        monk_modifier = self._resolve_monk_weapon_modifier_value(actor)
         adjusted_flat_bonus = explicit_flat_bonus + (monk_modifier - standard_modifier)
         return self._build_damage_formula(
             dice_count=dice_count,

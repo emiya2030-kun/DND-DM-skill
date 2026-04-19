@@ -41,7 +41,7 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             encounter = build_encounter()
             encounter.entities["ent_ally_sabur_001"].skill_modifiers = {}
-            encounter.entities["ent_ally_sabur_001"].source_ref["skill_proficiencies"] = ["perception"]
+            encounter.entities["ent_ally_sabur_001"].skill_training = {"perception": "proficient"}
             repo.save(encounter)
             request = AbilityCheckRequest(repo).execute(
                 encounter_id="enc_ability_check_test",
@@ -116,10 +116,9 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             encounter = build_encounter()
             encounter.entities["ent_ally_sabur_001"].skill_modifiers = {}
-            encounter.entities["ent_ally_sabur_001"].source_ref["skill_proficiencies"] = ["stealth"]
+            encounter.entities["ent_ally_sabur_001"].skill_training = {"stealth": "expertise"}
             encounter.entities["ent_ally_sabur_001"].class_features["rogue"] = {
                 "level": 1,
-                "expertise": {"skills": ["stealth"]},
             }
             repo.save(encounter)
             request = AbilityCheckRequest(repo).execute(
@@ -145,10 +144,9 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             encounter = build_encounter()
             encounter.entities["ent_ally_sabur_001"].skill_modifiers = {}
-            encounter.entities["ent_ally_sabur_001"].source_ref["skill_proficiencies"] = ["survival"]
+            encounter.entities["ent_ally_sabur_001"].skill_training = {"survival": "expertise"}
             encounter.entities["ent_ally_sabur_001"].class_features["ranger"] = {
                 "level": 2,
-                "expertise": {"skills": ["survival"]},
             }
             repo.save(encounter)
             request = AbilityCheckRequest(repo).execute(
@@ -174,7 +172,7 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
             encounter = build_encounter()
             encounter.entities["ent_ally_sabur_001"].skill_modifiers = {}
-            encounter.entities["ent_ally_sabur_001"].source_ref["skill_proficiencies"] = ["stealth"]
+            encounter.entities["ent_ally_sabur_001"].skill_training = {"stealth": "proficient"}
             encounter.entities["ent_ally_sabur_001"].class_features["rogue"] = {
                 "level": 7,
             }
@@ -237,7 +235,7 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             actor.skill_modifiers = {}
             actor.ability_mods["str"] = 4
             actor.ability_mods["dex"] = 1
-            actor.source_ref["skill_proficiencies"] = ["stealth"]
+            actor.skill_training = {"stealth": "proficient"}
             actor.class_features["barbarian"] = {
                 "level": 3,
                 "rage": {"active": True},

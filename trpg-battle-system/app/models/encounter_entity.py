@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+ALLOWED_SKILL_TRAINING_VALUES = {"none", "proficient", "expertise"}
+
 
 def _require_non_empty_string(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -25,6 +27,43 @@ def _require_dict_keys(value: dict[str, Any], field_name: str, keys: list[str]) 
     if missing_keys:
         raise ValueError(f"{field_name} is missing required keys: {', '.join(missing_keys)}")
     return value
+
+
+def _normalize_skill_training(value: Any, source_ref: dict[str, Any] | None = None) -> dict[str, str]:
+    normalized_source_ref = source_ref if isinstance(source_ref, dict) else {}
+    explicit = value if isinstance(value, dict) else {}
+    legacy = normalized_source_ref.get("skill_training")
+    migrated = explicit if explicit else legacy if isinstance(legacy, dict) else {}
+    normalized: dict[str, str] = {}
+
+    for raw_key, raw_value in migrated.items():
+        key = _require_non_empty_string(str(raw_key), "skill_training key").strip().lower()
+        training = _require_non_empty_string(str(raw_value), f"skill_training.{key}").strip().lower()
+        if training not in ALLOWED_SKILL_TRAINING_VALUES:
+            allowed = ", ".join(sorted(ALLOWED_SKILL_TRAINING_VALUES))
+            raise ValueError(f"skill_training.{key} must be one of: {allowed}")
+        normalized[key] = training
+
+    if "skill_training" in normalized_source_ref:
+        normalized_source_ref.pop("skill_training", None)
+    return normalized
+
+
+def _normalize_initial_class_name(value: Any, source_ref: dict[str, Any] | None = None) -> str | None:
+    normalized_source_ref = source_ref if isinstance(source_ref, dict) else {}
+    explicit = value if isinstance(value, str) and value.strip() else None
+    legacy = None
+    for key in ("initial_class_name", "initial_class", "starting_class", "base_class"):
+        candidate = normalized_source_ref.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            legacy = candidate
+            break
+    migrated = explicit if explicit is not None else legacy
+    for key in ("initial_class_name", "initial_class", "starting_class", "base_class"):
+        normalized_source_ref.pop(key, None)
+    if migrated is None:
+        return None
+    return _require_non_empty_string(migrated, "initial_class_name").strip().lower()
 
 
 @dataclass
@@ -55,6 +94,8 @@ class EncounterEntity:
     entity_def_id: str | None = None
     # 来源引用信息,可挂角色卡 id、怪物模板 id、施法属性等额外元数据.
     source_ref: dict[str, Any] = field(default_factory=dict)
+    # 初始职业名,用于豁免熟练等只看初始职业的规则.
+    initial_class_name: str | None = None
     # 六维属性原始值,例如 STR 10、DEX 18.
     ability_scores: dict[str, int] = field(default_factory=dict)
     # 六维属性调整值,例如 DEX +4、CHA +3.
@@ -63,6 +104,8 @@ class EncounterEntity:
     proficiency_bonus: int = 0
     # 拥有熟练的豁免列表,例如 ["wis", "cha"].
     save_proficiencies: list[str] = field(default_factory=list)
+    # 技能训练状态,统一表示未受训/熟练/专精.
+    skill_training: dict[str, str] = field(default_factory=dict)
     # 技能修正值,例如 stealth、arcana 等.
     skill_modifiers: dict[str, int] = field(default_factory=dict)
     # 当前实体身上的标准状态列表,例如 blinded / prone.
@@ -121,6 +164,9 @@ class EncounterEntity:
         self.ac = _require_int(self.ac, "ac", minimum=0)
         self.initiative = _require_int(self.initiative, "initiative")
         self.proficiency_bonus = _require_int(self.proficiency_bonus, "proficiency_bonus", minimum=0)
+        self.source_ref = dict(self.source_ref) if isinstance(self.source_ref, dict) else {}
+        self.initial_class_name = _normalize_initial_class_name(self.initial_class_name, self.source_ref)
+        self.skill_training = _normalize_skill_training(self.skill_training, self.source_ref)
 
     def to_dict(self) -> dict[str, Any]:
         """返回符合 encounter schema 的普通 dict."""
@@ -128,6 +174,7 @@ class EncounterEntity:
             "entity_id": self.entity_id,
             "entity_def_id": self.entity_def_id,
             "source_ref": self.source_ref,
+            "initial_class_name": self.initial_class_name,
             "name": self.name,
             "side": self.side,
             "category": self.category,
@@ -141,6 +188,7 @@ class EncounterEntity:
             "ability_mods": self.ability_mods,
             "proficiency_bonus": self.proficiency_bonus,
             "save_proficiencies": self.save_proficiencies,
+            "skill_training": self.skill_training,
             "skill_modifiers": self.skill_modifiers,
             "conditions": self.conditions,
             "resources": self.resources,

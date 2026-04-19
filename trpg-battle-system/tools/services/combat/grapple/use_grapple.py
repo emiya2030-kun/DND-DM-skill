@@ -9,6 +9,7 @@ from tools.services.combat.grapple.shared import (
     grapple_size_is_legal,
     resolve_grapple_save_dc,
 )
+from tools.services.class_features.shared import resolve_entity_save_proficiencies
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.movement_rules import get_center_position
 
@@ -30,9 +31,10 @@ class UseGrapple:
         self._ensure_actor_has_no_active_grapple(actor)
 
         save_dc = resolve_grapple_save_dc(actor)
+        target_save_proficiencies = set(resolve_entity_save_proficiencies(target))
         target_save_total = max(
-            int(target.ability_mods.get("str", 0)) + (int(target.proficiency_bonus or 0) if "str" in target.save_proficiencies else 0),
-            int(target.ability_mods.get("dex", 0)) + (int(target.proficiency_bonus or 0) if "dex" in target.save_proficiencies else 0),
+            int(target.ability_mods.get("str", 0)) + (int(target.proficiency_bonus or 0) if "str" in target_save_proficiencies else 0),
+            int(target.ability_mods.get("dex", 0)) + (int(target.proficiency_bonus or 0) if "dex" in target_save_proficiencies else 0),
         )
 
         actor.action_economy["action_used"] = True

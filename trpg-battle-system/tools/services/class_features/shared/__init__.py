@@ -1,9 +1,12 @@
 from tools.services.class_features.shared.extra_attack import resolve_extra_attack_count
 from tools.services.class_features.rogue import ensure_rogue_runtime, resolve_rogue_sneak_attack_dice
 from tools.services.class_features.shared.proficiency_resolver import (
+    has_skill_expertise,
+    has_skill_proficiency,
     resolve_entity_proficiencies,
     resolve_entity_save_proficiencies,
     resolve_entity_skill_proficiencies,
+    resolve_entity_skill_training,
 )
 from tools.services.class_features.shared.martial_feature_options import (
     normalize_class_feature_options,
@@ -84,9 +87,11 @@ __all__ = [
     "get_sorcerer_runtime",
     "get_selected_warlock_invocations",
     "get_warlock_runtime",
+    "has_skill_expertise",
     "has_fighting_style",
     "has_any_spell_slot",
     "has_exact_spell_slot",
+    "has_skill_proficiency",
     "has_selected_warlock_invocation",
     "has_unconsumed_studied_attack_mark",
     "normalize_class_feature_options",
@@ -95,6 +100,7 @@ __all__ = [
     "resolve_entity_proficiencies",
     "resolve_entity_save_proficiencies",
     "resolve_entity_skill_proficiencies",
+    "resolve_entity_skill_training",
     "resolve_rogue_sneak_attack_dice",
     "restore_consumed_spell_slot",
 ]

@@ -18,6 +18,7 @@ def build_entity(entity_id: str = "ent_ally_eric_001") -> EncounterEntity:
         entity_id=entity_id,
         entity_def_id="pc_eric_lv5",
         source_ref={"character_id": "pc_eric_001"},
+        initial_class_name="fighter",
         name="Eric",
         side="ally",
         category="pc",
@@ -31,6 +32,7 @@ def build_entity(entity_id: str = "ent_ally_eric_001") -> EncounterEntity:
         ability_mods={"str": 0, "dex": 4, "con": 1, "int": 2, "wis": 0, "cha": 3},
         proficiency_bonus=3,
         save_proficiencies=["wis", "cha"],
+        skill_training={"stealth": "expertise", "arcana": "proficient"},
         skill_modifiers={"arcana": 5, "stealth": 7},
         conditions=[],
         resources={"spell_slots": {"1": {"max": 2, "remaining": 2}}},
@@ -50,6 +52,7 @@ def build_app_entity(entity_id: str = "ent_ally_eric_001") -> AppEncounterEntity
         entity_id=entity_id,
         entity_def_id="pc_eric_lv5",
         source_ref={"character_id": "pc_eric_001"},
+        initial_class_name="fighter",
         name="Eric",
         side="ally",
         category="pc",
@@ -63,6 +66,7 @@ def build_app_entity(entity_id: str = "ent_ally_eric_001") -> AppEncounterEntity
         ability_mods={"str": 0, "dex": 4, "con": 1, "int": 2, "wis": 0, "cha": 3},
         proficiency_bonus=3,
         save_proficiencies=["wis", "cha"],
+        skill_training={"stealth": "expertise", "arcana": "proficient"},
         skill_modifiers={"arcana": 5, "stealth": 7},
         conditions=[],
         resources={"spell_slots": {"1": {"max": 2, "remaining": 2}}},
@@ -90,15 +94,55 @@ def build_map() -> EncounterMap:
 
 
 class EncounterModelTests(unittest.TestCase):
+    def test_encounter_entity_roundtrip_preserves_skill_training(self) -> None:
+        entity = build_entity()
+
+        roundtrip = EncounterEntity.from_dict(entity.to_dict())
+
+        self.assertEqual(roundtrip.skill_training, {"stealth": "expertise", "arcana": "proficient"})
+        self.assertNotIn("skill_training", roundtrip.source_ref)
+
+    def test_encounter_entity_roundtrip_preserves_initial_class_name(self) -> None:
+        entity = build_entity()
+
+        roundtrip = EncounterEntity.from_dict(entity.to_dict())
+
+        self.assertEqual(roundtrip.initial_class_name, "fighter")
+        self.assertNotIn("initial_class_name", roundtrip.source_ref)
+
+    def test_encounter_entity_from_dict_migrates_legacy_source_ref_initial_class_name(self) -> None:
+        legacy = build_entity().to_dict()
+        legacy["initial_class_name"] = None
+        legacy["source_ref"]["initial_class_name"] = "rogue"
+
+        entity = EncounterEntity.from_dict(legacy)
+
+        self.assertEqual(entity.initial_class_name, "rogue")
+        self.assertNotIn("initial_class_name", entity.source_ref)
+
+    def test_encounter_entity_from_dict_migrates_legacy_source_ref_skill_training(self) -> None:
+        legacy = build_entity().to_dict()
+        legacy["skill_training"] = {}
+        legacy["source_ref"]["skill_training"] = {"perception": "expertise", "stealth": "proficient"}
+
+        entity = EncounterEntity.from_dict(legacy)
+
+        self.assertEqual(entity.skill_training, {"perception": "expertise", "stealth": "proficient"})
+        self.assertNotIn("skill_training", entity.source_ref)
+
     def test_encounter_entity_roundtrip_preserves_equipped_armor_and_shield(self) -> None:
         entity = build_entity()
         entity.equipped_armor = {"armor_id": "chain_mail"}
         entity.equipped_shield = {"armor_id": "shield"}
+        entity.inventory = [{"name": "链条", "quantity": 1}, {"name": "口粮", "quantity": 5}]
+        entity.currency = {"gp": 127}
 
         roundtrip = EncounterEntity.from_dict(entity.to_dict())
 
         self.assertEqual(roundtrip.equipped_armor, {"armor_id": "chain_mail"})
         self.assertEqual(roundtrip.equipped_shield, {"armor_id": "shield"})
+        self.assertEqual(roundtrip.inventory, [{"name": "链条", "quantity": 1}, {"name": "口粮", "quantity": 5}])
+        self.assertEqual(roundtrip.currency, {"gp": 127})
 
     def test_encounter_roundtrip(self) -> None:
         """测试合法的 encounter 在 to_dict/from_dict 后仍能保持关键信息不变。"""
