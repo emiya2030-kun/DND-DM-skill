@@ -253,6 +253,59 @@ REACTION_DEFINITIONS = {
             "short_label": "Indomitable",
         },
     },
+    "disciplined_survivor": {
+        "reaction_type": "disciplined_survivor",
+        "template_type": "failed_save_reroll",
+        "name": "Disciplined Survivor",
+        "trigger_type": "failed_save",
+        "resource_cost": {"class_feature": "focus_point"},
+        "timing": {
+            "window_phase": "after_failed_save_before_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "actor_has_disciplined_survivor",
+            "actor_has_remaining_focus_point",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_disciplined_survivor_reaction"},
+        "ui": {
+            "prompt": "Use Disciplined Survivor?",
+            "short_label": "Disciplined Survivor",
+        },
+    },
+    "countercharm": {
+        "reaction_type": "countercharm",
+        "template_type": "failed_save_reroll",
+        "name": "Countercharm",
+        "trigger_type": "failed_save",
+        "resource_cost": {"reaction": True},
+        "timing": {
+            "window_phase": "after_failed_save_before_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "nearby_ally",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "reaction_not_used",
+            "actor_has_countercharm",
+            "target_failed_charmed_or_frightened_save",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_countercharm_reaction"},
+        "ui": {
+            "prompt": "Use Countercharm?",
+            "short_label": "Countercharm",
+        },
+    },
     "tactical_mind": {
         "reaction_type": "tactical_mind",
         "template_type": "failed_ability_check_boost",
@@ -277,6 +330,31 @@ REACTION_DEFINITIONS = {
         "ui": {
             "prompt": "Use Tactical Mind?",
             "short_label": "Tactical Mind",
+        },
+    },
+    "bardic_inspiration": {
+        "reaction_type": "bardic_inspiration",
+        "template_type": "failed_ability_check_boost",
+        "name": "Bardic Inspiration",
+        "trigger_type": "failed_ability_check",
+        "resource_cost": {"class_feature": "bardic_inspiration"},
+        "timing": {
+            "window_phase": "after_failed_ability_check_before_result_locked",
+            "blocking": True,
+        },
+        "targeting": {
+            "scope": "self",
+            "requires_visible_source": False,
+            "requires_hostile_source": False,
+        },
+        "eligibility_checks": [
+            "actor_has_bardic_inspiration",
+        ],
+        "ask_mode": "player_or_auto_ai",
+        "resolver": {"service": "resolve_bardic_inspiration_reaction"},
+        "ui": {
+            "prompt": "Use Bardic Inspiration?",
+            "short_label": "Bardic Inspiration",
         },
     },
 }

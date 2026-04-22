@@ -6,6 +6,7 @@ import math
 
 from tools.models import Encounter
 from tools.services.class_features.shared import (
+    ensure_bard_runtime,
     get_class_runtime,
     get_fighter_runtime,
     get_monk_runtime,
@@ -170,17 +171,36 @@ class CollectReactionCandidates:
             if target is None:
                 return []
 
-            definitions = [definition for definition in definitions if definition.get("reaction_type") == "indomitable"]
-            if not definitions or not self._eligible_for_indomitable(target):
-                return []
-
-            return [
-                {
-                    "actor_entity_id": target.entity_id,
-                    "reaction_definition": definition,
-                }
-                for definition in definitions
-            ]
+            candidates: list[dict[str, Any]] = []
+            for definition in definitions:
+                reaction_type = definition.get("reaction_type")
+                if reaction_type == "indomitable" and self._eligible_for_indomitable(target):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target.entity_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+                    continue
+                if reaction_type == "disciplined_survivor" and self._eligible_for_disciplined_survivor(target):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target.entity_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+                    continue
+                if reaction_type != "countercharm":
+                    continue
+                for entity in encounter.entities.values():
+                    if self._eligible_for_countercharm(entity=entity, target=target, trigger_event=trigger_event):
+                        candidates.append(
+                            {
+                                "actor_entity_id": entity.entity_id,
+                                "reaction_definition": definition,
+                            }
+                        )
+            return candidates
 
         if trigger_type == "failed_ability_check":
             target_id = trigger_event.get("target_entity_id")
@@ -190,17 +210,24 @@ class CollectReactionCandidates:
             if target is None:
                 return []
 
-            definitions = [definition for definition in definitions if definition.get("reaction_type") == "tactical_mind"]
-            if not definitions or not self._eligible_for_tactical_mind(target):
-                return []
-
-            return [
-                {
-                    "actor_entity_id": target.entity_id,
-                    "reaction_definition": definition,
-                }
-                for definition in definitions
-            ]
+            candidates: list[dict[str, Any]] = []
+            for definition in definitions:
+                reaction_type = definition.get("reaction_type")
+                if reaction_type == "tactical_mind" and self._eligible_for_tactical_mind(target):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target.entity_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+                elif reaction_type == "bardic_inspiration" and self._eligible_for_bardic_inspiration(target):
+                    candidates.append(
+                        {
+                            "actor_entity_id": target.entity_id,
+                            "reaction_definition": definition,
+                        }
+                    )
+            return candidates
 
         return []
 
@@ -282,9 +309,8 @@ class CollectReactionCandidates:
         return isinstance(getattr(entity, "equipped_shield", None), dict)
 
     def _eligible_for_indomitable(self, entity: Any) -> bool:
-        class_features = entity.class_features if isinstance(entity.class_features, dict) else {}
-        fighter = class_features.get("fighter")
-        if not isinstance(fighter, dict):
+        fighter = get_fighter_runtime(entity)
+        if not isinstance(fighter, dict) or not fighter:
             return False
 
         fighter_level = fighter.get("fighter_level", fighter.get("level", 0))
@@ -296,6 +322,28 @@ class CollectReactionCandidates:
             return False
         remaining_uses = indomitable_state.get("remaining_uses")
         return isinstance(remaining_uses, int) and not isinstance(remaining_uses, bool) and remaining_uses > 0
+
+    def _eligible_for_disciplined_survivor(self, entity: Any) -> bool:
+        monk = get_monk_runtime(entity)
+        if not isinstance(monk, dict) or not monk:
+            return False
+
+        disciplined_survivor = monk.get("disciplined_survivor")
+        if not isinstance(disciplined_survivor, dict) or not bool(disciplined_survivor.get("enabled")):
+            return False
+
+        focus_points = monk.get("focus_points")
+        if not isinstance(focus_points, dict):
+            return False
+        remaining = focus_points.get("remaining")
+        focus_cost = disciplined_survivor.get("focus_cost")
+        return (
+            isinstance(remaining, int)
+            and not isinstance(remaining, bool)
+            and isinstance(focus_cost, int)
+            and not isinstance(focus_cost, bool)
+            and remaining >= focus_cost
+        )
 
     def _eligible_for_tactical_mind(self, entity: Any) -> bool:
         fighter = get_fighter_runtime(entity)
@@ -315,6 +363,43 @@ class CollectReactionCandidates:
             return False
         remaining_uses = second_wind.get("remaining_uses")
         return isinstance(remaining_uses, int) and not isinstance(remaining_uses, bool) and remaining_uses > 0
+
+    def _eligible_for_bardic_inspiration(self, entity: Any) -> bool:
+        combat_flags = entity.combat_flags if isinstance(entity.combat_flags, dict) else {}
+        inspiration = combat_flags.get("bardic_inspiration")
+        if not isinstance(inspiration, dict):
+            return False
+        die = inspiration.get("die")
+        return isinstance(die, str) and bool(die.strip())
+
+    def _eligible_for_countercharm(self, *, entity: Any, target: Any, trigger_event: dict[str, Any]) -> bool:
+        if entity.entity_id == target.entity_id:
+            return False
+        if not self._reaction_available(entity):
+            return False
+        if entity.side != target.side:
+            return False
+        bard = ensure_bard_runtime(entity) if entity.class_features.get("bard") else {}
+        countercharm = bard.get("countercharm")
+        if not isinstance(countercharm, dict) or not bool(countercharm.get("enabled")):
+            return False
+        radius_feet = countercharm.get("range_feet", 30)
+        if not isinstance(radius_feet, int) or radius_feet < 0:
+            radius_feet = 30
+        if self._distance_feet(entity, target) > radius_feet:
+            return False
+        host_snapshot = trigger_event.get("host_action_snapshot")
+        if not isinstance(host_snapshot, dict):
+            return False
+        trigger_conditions = host_snapshot.get("countercharm_trigger_conditions")
+        if not isinstance(trigger_conditions, list):
+            return False
+        normalized_conditions = {
+            str(condition).strip().lower()
+            for condition in trigger_conditions
+            if isinstance(condition, str) and condition.strip()
+        }
+        return bool(normalized_conditions & {"charmed", "frightened"})
 
     def _reaction_available(self, entity: Any) -> bool:
         action_economy = entity.action_economy if isinstance(entity.action_economy, dict) else {}

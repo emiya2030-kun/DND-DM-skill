@@ -10,6 +10,7 @@ from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.check_catalog import SKILL_TO_ABILITY
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
 from tools.services.class_features.shared import (
+    ensure_bard_runtime,
     ensure_ranger_runtime,
     ensure_rogue_runtime,
     get_fighter_runtime,
@@ -198,7 +199,12 @@ class ResolveAbilityCheck:
             }
 
         default_ability = SKILL_TO_ABILITY[check]
-        if resolved_ability == default_ability and check in actor.skill_modifiers and isinstance(actor.skill_modifiers[check], int):
+        if (
+            resolved_ability == default_ability
+            and check in actor.skill_modifiers
+            and isinstance(actor.skill_modifiers[check], int)
+            and not self._should_apply_bard_jack_of_all_trades(actor, check)
+        ):
             skill_modifier = int(actor.skill_modifiers[check])
             return skill_modifier + additional_bonus, {
                 "source": "skill_modifier",
@@ -211,6 +217,8 @@ class ResolveAbilityCheck:
         is_proficient = has_skill_proficiency(actor, check)
         proficiency_multiplier = 2 if is_proficient and has_skill_expertise(actor, check) else 1
         proficiency_bonus = int(actor.proficiency_bonus) * proficiency_multiplier if is_proficient else 0
+        if not is_proficient and self._should_apply_bard_jack_of_all_trades(actor, check):
+            proficiency_bonus = int(actor.proficiency_bonus) // 2
         return ability_modifier + proficiency_bonus + additional_bonus, {
             "source": "ability_plus_proficiency",
             "ability": resolved_ability,
@@ -220,6 +228,18 @@ class ResolveAbilityCheck:
             "proficiency_bonus_applied": proficiency_bonus,
             "additional_bonus": additional_bonus,
         }
+
+    def _should_apply_bard_jack_of_all_trades(self, actor: EncounterEntity, check: str) -> bool:
+        if has_skill_proficiency(actor, check):
+            return False
+        source_ref = actor.source_ref if isinstance(actor.source_ref, dict) else {}
+        class_name = str(source_ref.get("class_name") or "").strip().lower()
+        class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
+        if class_name != "bard" and not isinstance(class_features.get("bard"), dict):
+            return False
+        bard = ensure_bard_runtime(actor)
+        jack_of_all_trades = bard.get("jack_of_all_trades")
+        return isinstance(jack_of_all_trades, dict) and bool(jack_of_all_trades.get("enabled"))
 
     def _apply_reliable_talent(
         self,

@@ -40,6 +40,7 @@ from tools.services.class_features.shared import (
     get_ranger_runtime,
     has_fighting_style,
     has_unconsumed_studied_attack_mark,
+    monk_qualifies_for_martial_arts,
     normalize_class_feature_options,
     resolve_extra_attack_count,
 )
@@ -143,7 +144,9 @@ class AttackRollRequest:
             light_bonus_uses_bonus_action = not bool(light_bonus_trigger.get("grants_nick"))
             if light_bonus_uses_bonus_action:
                 self._ensure_bonus_action_available(actor)
-        elif normalized_attack_mode in {"martial_arts_bonus", "flurry_of_blows"}:
+        elif normalized_attack_mode == "martial_arts_bonus":
+            self._ensure_bonus_action_available(actor)
+        elif normalized_attack_mode == "flurry_of_blows" and self._monk_flurry_activation_required(actor):
             self._ensure_bonus_action_available(actor)
         elif require_action_available:
             self._ensure_action_available(actor, weapon)
@@ -240,6 +243,9 @@ class AttackRollRequest:
                 "weapon_mastery": weapon.get("mastery"),
                 "weapon_mastery_base": weapon.get("mastery"),
                 "light_bonus_uses_bonus_action": light_bonus_uses_bonus_action,
+                "monk_flurry_activation_required": (
+                    self._monk_flurry_activation_required(actor) if normalized_attack_mode == "flurry_of_blows" else False
+                ),
                 "weapon_category": weapon.get("category"),
                 "weapon_is_proficient": bool(weapon.get("is_proficient", True)),
                 "primary_damage_type": self._resolve_primary_damage_type(weapon),
@@ -1000,8 +1006,17 @@ class AttackRollRequest:
         martial_arts_die = monk_runtime.get("martial_arts_die")
         if not isinstance(martial_arts_die, str) or not martial_arts_die.strip():
             raise ValueError("martial_arts_requires_monk_runtime")
+        if not monk_qualifies_for_martial_arts(actor):
+            if actor.equipped_armor is not None or actor.equipped_shield is not None:
+                raise ValueError("martial_arts_requires_unarmored_state")
+            raise ValueError("martial_arts_requires_monk_weapons_only")
 
         if attack_mode == "flurry_of_blows":
+            flurry_of_blows = monk_runtime.get("flurry_of_blows")
+            if isinstance(flurry_of_blows, dict) and bool(flurry_of_blows.get("active")):
+                remaining_attacks = flurry_of_blows.get("remaining_attacks")
+                if isinstance(remaining_attacks, int) and remaining_attacks > 0:
+                    return
             focus_points = monk_runtime.get("focus_points")
             if not isinstance(focus_points, dict):
                 raise ValueError("flurry_of_blows_requires_focus_points")
@@ -1009,8 +1024,20 @@ class AttackRollRequest:
             if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 1:
                 raise ValueError("flurry_of_blows_requires_focus_points")
 
+    def _monk_flurry_activation_required(self, actor: EncounterEntity) -> bool:
+        monk_runtime = get_monk_runtime(actor)
+        flurry_of_blows = monk_runtime.get("flurry_of_blows")
+        if not isinstance(flurry_of_blows, dict):
+            return True
+        if not bool(flurry_of_blows.get("active")):
+            return True
+        remaining_attacks = flurry_of_blows.get("remaining_attacks")
+        return not isinstance(remaining_attacks, int) or remaining_attacks <= 0
+
     def _is_monk_unarmed_attack(self, *, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
         if str(weapon.get("weapon_id") or "").strip().lower() != "unarmed_strike":
+            return False
+        if not monk_qualifies_for_martial_arts(actor):
             return False
         monk_runtime = get_monk_runtime(actor)
         martial_arts_die = monk_runtime.get("martial_arts_die")

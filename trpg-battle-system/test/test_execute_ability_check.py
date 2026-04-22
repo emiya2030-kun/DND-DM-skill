@@ -111,6 +111,43 @@ class ExecuteAbilityCheckTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_execute_failed_check_opens_bardic_inspiration_window_when_actor_has_die(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.action_economy = {"action_used": False, "bonus_action_used": False, "reaction_used": True}
+            actor.combat_flags["bardic_inspiration"] = {
+                "die": "d8",
+                "source_entity_id": "ent_bard_001",
+                "source_name": "诗人",
+            }
+            encounter_repo.save(encounter)
+
+            with patch("tools.services.checks.execute_ability_check.random.randint", return_value=5):
+                result = ExecuteAbilityCheck(
+                    encounter_repository=encounter_repo,
+                    append_event=AppendEvent(event_repo),
+                ).execute(
+                    encounter_id="enc_ability_check_test",
+                    actor_id="ent_ally_sabur_001",
+                    check_type="ability",
+                    check="力量",
+                    dc=15,
+                    include_encounter_state=True,
+                )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            self.assertEqual(result["pending_reaction_window"]["trigger_type"], "failed_ability_check")
+            self.assertEqual(
+                result["pending_reaction_window"]["choice_groups"][0]["options"][0]["reaction_type"],
+                "bardic_inspiration",
+            )
+            self.assertIn("encounter_state", result)
+            encounter_repo.close()
+            event_repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

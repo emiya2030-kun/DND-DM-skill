@@ -30,6 +30,7 @@ from tools.services.spells.metamagic_support import (
     spell_supports_transmuted_spell,
     spell_supports_twinned_spell,
 )
+from tools.services.spells.resolve_spellcasting_access import ResolveSpellcastingAccess
 from tools.services.spells.summons.create_summoned_entity import (
     create_summoned_entity,
     create_summoned_entity_by_initiative,
@@ -75,6 +76,7 @@ class EncounterCastSpell:
         self.encounter_repository = encounter_repository
         self.append_event = append_event
         self.spell_definition_repository = spell_definition_repository or SpellDefinitionRepository()
+        self.resolve_spellcasting_access = ResolveSpellcastingAccess(self.spell_definition_repository)
         self.armor_profile_resolver = ArmorProfileResolver(armor_definition_repository or ArmorDefinitionRepository())
         self.zone_definition_repository = zone_definition_repository or ZoneDefinitionRepository()
         if open_reaction_window is None:
@@ -120,6 +122,11 @@ class EncounterCastSpell:
         armor_profile = self.armor_profile_resolver.resolve(caster)
         if armor_profile["wearing_untrained_armor"]:
             raise ValueError("armor_training_required_for_spellcasting")
+        known_spell = self._find_known_spell(caster, spell_id)
+        if known_spell is not None:
+            spellcasting_access = self.resolve_spellcasting_access.execute(actor=caster, spell_id=spell_id)
+            if spellcasting_access["ok"] is False:
+                raise ValueError(spellcasting_access["error_code"])
         spell_definition = self._get_spell_definition_or_raise(encounter, caster, spell_id)
         normalized_target_ids = self._normalize_self_targets(
             caster=caster,

@@ -40,6 +40,19 @@ def _build_monk() -> EncounterEntity:
 
 def _build_encounter() -> Encounter:
     monk = _build_monk()
+    ally = EncounterEntity(
+        entity_id="ent_ally_002",
+        name="Ally",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 3, "y": 2},
+        hp={"current": 18, "max": 18, "temp": 0},
+        ac=15,
+        speed={"walk": 30, "remaining": 30},
+        initiative=12,
+        size="medium",
+    )
     return Encounter(
         encounter_id="enc_monk_test",
         name="Monk Test Encounter",
@@ -47,7 +60,7 @@ def _build_encounter() -> Encounter:
         round=1,
         current_entity_id=monk.entity_id,
         turn_order=[monk.entity_id],
-        entities={monk.entity_id: monk},
+        entities={monk.entity_id: monk, ally.entity_id: ally},
         map=EncounterMap(
             map_id="map_monk_test",
             name="Monk Test Map",
@@ -114,5 +127,28 @@ def test_use_step_of_the_wind_rejects_when_bonus_action_already_used() -> None:
                 actor_id="ent_monk_001",
                 spend_focus=False,
             )
+
+        repo.close()
+
+
+def test_use_step_of_the_wind_heightened_focus_can_protect_carried_ally() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+        encounter = _build_encounter()
+        encounter.entities["ent_monk_001"].class_features["monk"]["level"] = 10
+        repo.save(encounter)
+
+        result = UseStepOfTheWind(repo).execute(
+            encounter_id="enc_monk_test",
+            actor_id="ent_monk_001",
+            spend_focus=True,
+            passenger_id="ent_ally_002",
+        )
+
+        updated = repo.get("enc_monk_test")
+        assert updated is not None
+        ally = updated.entities["ent_ally_002"]
+        assert any(effect.get("effect_type") == "disengage" for effect in ally.turn_effects)
+        assert result["class_feature_result"]["step_of_the_wind"]["passenger_entity_id"] == "ent_ally_002"
 
         repo.close()

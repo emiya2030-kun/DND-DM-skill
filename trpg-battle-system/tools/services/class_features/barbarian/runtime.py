@@ -40,6 +40,10 @@ def ensure_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     primal_knowledge = barbarian.setdefault("primal_knowledge", {})
     primal_knowledge["enabled"] = level >= 3
 
+    fast_movement = barbarian.setdefault("fast_movement", {})
+    fast_movement["enabled"] = level >= 5
+    fast_movement["bonus_feet"] = 10 if level >= 5 else 0
+
     feral_instinct = barbarian.setdefault("feral_instinct", {})
     feral_instinct["enabled"] = level >= 7
 
@@ -56,8 +60,14 @@ def ensure_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     current_dc = relentless_rage.get("current_dc")
     relentless_rage["current_dc"] = current_dc if isinstance(current_dc, int) else 10
 
+    persistent_rage = barbarian.setdefault("persistent_rage", {})
+    persistent_rage["enabled"] = level >= 15
+
     indomitable_might = barbarian.setdefault("indomitable_might", {})
     indomitable_might["enabled"] = level >= 18
+
+    primal_champion = barbarian.setdefault("primal_champion", {})
+    primal_champion["enabled"] = level >= 20
 
     return barbarian
 

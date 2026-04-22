@@ -32,3 +32,21 @@ class ReactionDefinitionRepositoryTests(unittest.TestCase):
         self.assertTrue(
             all(definition.get("trigger_type") == "attack_declared" for definition in attack_defs)
         )
+
+    def test_get_returns_bardic_inspiration_definition(self) -> None:
+        definition = self.repository.get("bardic_inspiration")
+
+        self.assertEqual(definition["reaction_type"], "bardic_inspiration")
+        self.assertEqual(definition["trigger_type"], "failed_ability_check")
+
+    def test_get_returns_countercharm_definition(self) -> None:
+        definition = self.repository.get("countercharm")
+
+        self.assertEqual(definition["reaction_type"], "countercharm")
+        self.assertEqual(definition["trigger_type"], "failed_save")
+
+    def test_get_returns_disciplined_survivor_definition(self) -> None:
+        definition = self.repository.get("disciplined_survivor")
+
+        self.assertEqual(definition["reaction_type"], "disciplined_survivor")
+        self.assertEqual(definition["trigger_type"], "failed_save")

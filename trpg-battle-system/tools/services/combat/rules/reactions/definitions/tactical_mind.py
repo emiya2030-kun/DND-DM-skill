@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
+from tools.services.class_features.shared import ensure_fighter_runtime
 
 
 class ResolveTacticalMindReaction:
@@ -29,8 +30,8 @@ class ResolveTacticalMindReaction:
         if actor is None:
             raise ValueError("tactical_mind_actor_not_found")
 
-        fighter = actor.class_features.get("fighter") if isinstance(actor.class_features, dict) else None
-        if not isinstance(fighter, dict):
+        fighter = ensure_fighter_runtime(actor)
+        if not fighter:
             raise ValueError("tactical_mind_not_available")
 
         second_wind = fighter.get("second_wind")

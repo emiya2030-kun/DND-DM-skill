@@ -23,6 +23,8 @@ from tools.services import (
 )
 from tools.services.combat.rules.reactions.definitions import indomitable as indomitable_module
 from tools.services.combat.rules.reactions.definitions import tactical_mind as tactical_mind_module
+from tools.services.combat.rules.reactions.definitions import countercharm as countercharm_module
+from tools.services.combat.rules.reactions.definitions import disciplined_survivor as disciplined_survivor_module
 from tools.services.combat.rules.reactions.templates import cast_interrupt_contest as cast_interrupt_contest_module
 from tools.services.combat.rules.reactions.resolve_reaction_option import ResolveReactionOption
 from tools.services.spells.encounter_cast_spell import EncounterCastSpell
@@ -209,6 +211,32 @@ def build_indomitable_fighter() -> EncounterEntity:
             "fighter": {
                 "fighter_level": 9,
                 "indomitable": {"remaining_uses": 1, "max_uses": 1},
+            }
+        },
+    )
+
+
+def build_disciplined_survivor_monk() -> EncounterEntity:
+    return EncounterEntity(
+        entity_id="ent_monk_014",
+        name="Monk",
+        side="ally",
+        category="pc",
+        controller="player",
+        position={"x": 4, "y": 4},
+        hp={"current": 32, "max": 32, "temp": 0},
+        ac=18,
+        speed={"walk": 45, "remaining": 45},
+        initiative=14,
+        ability_scores={"str": 10, "dex": 18, "con": 14, "int": 10, "wis": 16, "cha": 8},
+        ability_mods={"str": 0, "dex": 4, "con": 2, "int": 0, "wis": 3, "cha": -1},
+        proficiency_bonus=5,
+        save_proficiencies=["str", "dex", "con", "int", "wis", "cha"],
+        action_economy={"action_used": False, "bonus_action_used": False, "reaction_used": True},
+        class_features={
+            "monk": {
+                "level": 14,
+                "focus_points": {"remaining": 2, "max": 14},
             }
         },
     )
@@ -552,6 +580,166 @@ class ResolveReactionOptionTests(unittest.TestCase):
             encounter_repo.close()
             event_repo.close()
 
+    def test_resolve_bardic_inspiration_rewrites_failed_ability_check_without_spending_reaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            target = build_shield_target()
+            target.entity_id = "ent_bard_target_001"
+            target.name = "Bard Target"
+            target.action_economy = {"reaction_used": True}
+            target.combat_flags["bardic_inspiration"] = {
+                "die": "d8",
+                "source_entity_id": "ent_bard_001",
+                "source_name": "诗人",
+            }
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_bardic_inspiration_option_test",
+                    name="Bardic Inspiration Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=target.entity_id,
+                    turn_order=[target.entity_id],
+                    entities={target.entity_id: target},
+                    map=EncounterMap(
+                        map_id="map_bardic_inspiration_option_test",
+                        name="Bardic Inspiration Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_bardic_inspiration_001",
+                            "reaction_type": "bardic_inspiration",
+                            "template_type": "failed_ability_check_boost",
+                            "trigger_type": "failed_ability_check",
+                            "status": "pending",
+                            "actor_entity_id": target.entity_id,
+                            "target_entity_id": target.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "dc": 15,
+                                "current_total": 10,
+                                "bonus_formula": "1d8",
+                                "source_entity_id": "ent_bard_001",
+                                "source_name": "诗人",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_failed_ability_check_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_failed_ability_check_001",
+                        "trigger_type": "failed_ability_check",
+                        "blocking": True,
+                        "host_action_type": "ability_check",
+                        "host_action_id": "ability_check_001",
+                        "host_action_snapshot": {
+                            "roll_request": {
+                                "type": "request_roll",
+                                "request_id": "req_ability_001",
+                                "encounter_id": "enc_bardic_inspiration_option_test",
+                                "actor_entity_id": target.entity_id,
+                                "target_entity_id": None,
+                                "roll_type": "ability_check",
+                                "formula": "1d20+check_modifier",
+                                "reason": "Dexterity check",
+                                "context": {
+                                    "check_type": "skill",
+                                    "check": "stealth",
+                                    "dc": 15,
+                                    "vantage": "normal",
+                                },
+                            },
+                            "roll_result": {
+                                "type": "roll_result",
+                                "request_id": "req_ability_001",
+                                "encounter_id": "enc_bardic_inspiration_option_test",
+                                "actor_entity_id": target.entity_id,
+                                "target_entity_id": None,
+                                "roll_type": "ability_check",
+                                "final_total": 10,
+                                "dice_rolls": {
+                                    "base_rolls": [8],
+                                    "chosen_roll": 8,
+                                    "check_bonus": 2,
+                                    "additional_bonus": 0,
+                                    "d20_penalty": 0,
+                                },
+                                "metadata": {
+                                    "check_type": "skill",
+                                    "check": "stealth",
+                                    "vantage": "normal",
+                                    "requested_vantage": "normal",
+                                    "chosen_roll": 8,
+                                    "check_bonus": 2,
+                                    "check_bonus_breakdown": {
+                                        "source": "skill_modifier",
+                                        "ability": "dex",
+                                        "skill_modifier": 2,
+                                        "additional_bonus": 0,
+                                    },
+                                    "d20_penalty": 0,
+                                },
+                                "rolled_at": None,
+                            },
+                            "check": "隐匿",
+                            "normalized_check": "stealth",
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{target.entity_id}",
+                                "actor_entity_id": target.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "class_feature",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": target.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_bardic_inspiration_001",
+                                        "reaction_type": "bardic_inspiration",
+                                        "template_type": "failed_ability_check_boost",
+                                        "request_id": "react_bardic_inspiration_001",
+                                        "label": "Bardic Inspiration",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            service = self._build_service(encounter_repo, event_repo)
+            result = service.execute(
+                encounter_id="enc_bardic_inspiration_option_test",
+                window_id="rw_failed_ability_check_001",
+                group_id=f"rg_{target.entity_id}",
+                option_id="opt_bardic_inspiration_001",
+                final_total=0,
+                dice_rolls={"base_rolls": [6]},
+            )
+
+            updated = encounter_repo.get("enc_bardic_inspiration_option_test")
+            assert updated is not None
+            self.assertEqual(result["reaction_type"], "bardic_inspiration")
+            self.assertEqual(result["resolution_mode"], "rewrite_host_action")
+            self.assertEqual(result["reaction_result"]["bonus_roll"], 6)
+            self.assertIsNotNone(result["host_action_result"])
+            self.assertTrue(result["host_action_result"]["success"])
+            self.assertEqual(result["host_action_result"]["final_total"], 16)
+            self.assertNotIn("bardic_inspiration", updated.entities[target.entity_id].combat_flags)
+            self.assertTrue(updated.entities[target.entity_id].action_economy["reaction_used"])
+            encounter_repo.close()
+            event_repo.close()
+
     def test_resolve_indomitable_rerolls_save_and_adds_fighter_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -655,6 +843,336 @@ class ResolveReactionOptionTests(unittest.TestCase):
             self.assertEqual(result["reaction_result"]["save"]["final_total"], 17)
             self.assertEqual(fighter_state["indomitable"]["remaining_uses"], 0)
             self.assertTrue(updated.entities[fighter.entity_id].action_economy["reaction_used"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_resolve_disciplined_survivor_rerolls_save_and_spends_focus_without_reaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            monk = build_disciplined_survivor_monk()
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_disciplined_survivor_option_test",
+                    name="Disciplined Survivor Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=monk.entity_id,
+                    turn_order=[monk.entity_id],
+                    entities={monk.entity_id: monk},
+                    map=EncounterMap(
+                        map_id="map_disciplined_survivor_option_test",
+                        name="Disciplined Survivor Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_disciplined_survivor_001",
+                            "reaction_type": "disciplined_survivor",
+                            "template_type": "failed_save_reroll",
+                            "trigger_type": "failed_save",
+                            "status": "pending",
+                            "actor_entity_id": monk.entity_id,
+                            "target_entity_id": monk.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "save_ability": "wis",
+                                "save_dc": 18,
+                                "vantage": "normal",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_failed_save_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_failed_save_001",
+                        "trigger_type": "failed_save",
+                        "blocking": True,
+                        "host_action_type": "save",
+                        "host_action_id": "save_001",
+                        "host_action_snapshot": {
+                            "phase": "after_failed_save",
+                            "target_entity_id": monk.entity_id,
+                            "save_ability": "wis",
+                            "save_dc": 18,
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{monk.entity_id}",
+                                "actor_entity_id": monk.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "class_feature",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": monk.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_disciplined_survivor_001",
+                                        "reaction_type": "disciplined_survivor",
+                                        "template_type": "failed_save_reroll",
+                                        "request_id": "react_disciplined_survivor_001",
+                                        "label": "Disciplined Survivor",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            service = self._build_service(encounter_repo, event_repo)
+            with patch.object(disciplined_survivor_module.random, "randint", side_effect=[10]):
+                result = service.execute(
+                    encounter_id="enc_disciplined_survivor_option_test",
+                    window_id="rw_failed_save_001",
+                    group_id=f"rg_{monk.entity_id}",
+                    option_id="opt_disciplined_survivor_001",
+                    final_total=0,
+                    dice_rolls={},
+                )
+
+            updated = encounter_repo.get("enc_disciplined_survivor_option_test")
+            assert updated is not None
+            monk_state = updated.entities[monk.entity_id].class_features["monk"]
+            self.assertEqual(result["reaction_type"], "disciplined_survivor")
+            self.assertEqual(result["resolution_mode"], "standalone")
+            self.assertEqual(result["reaction_result"]["status"], "rerolled")
+            self.assertTrue(result["reaction_result"]["save"]["success"])
+            self.assertEqual(result["reaction_result"]["save"]["final_total"], 18)
+            self.assertEqual(monk_state["focus_points"]["remaining"], 1)
+            self.assertTrue(updated.entities[monk.entity_id].action_economy["reaction_used"])
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_resolve_countercharm_rerolls_failed_save_and_resumes_spell_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            bard = build_secondary_actor()
+            bard.entity_id = "ent_bard_001"
+            bard.name = "Bard"
+            bard.position = {"x": 4, "y": 2}
+            bard.action_economy = {"reaction_used": False}
+            bard.class_features = {"bard": {"level": 7}}
+
+            target = build_shield_target()
+            target.entity_id = "ent_countercharm_target_001"
+            target.name = "Countercharm Target"
+            target.side = "ally"
+            target.position = {"x": 7, "y": 2}
+            target.ability_mods = {"wis": 1}
+            target.proficiency_bonus = 3
+            target.save_proficiencies = ["wis"]
+            target.action_economy = {"reaction_used": True}
+            target.conditions = []
+            enemy = build_target()
+            enemy.entity_id = "ent_enemy_001"
+            enemy.name = "Enemy Caster"
+            enemy.side = "enemy"
+            enemy.controller = "gm"
+            enemy.position = {"x": 2, "y": 2}
+
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_countercharm_option_test",
+                    name="Countercharm Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id="ent_enemy_001",
+                    turn_order=["ent_enemy_001", bard.entity_id, target.entity_id],
+                    entities={enemy.entity_id: enemy, bard.entity_id: bard, target.entity_id: target},
+                    map=EncounterMap(
+                        map_id="map_countercharm_option_test",
+                        name="Countercharm Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_countercharm_001",
+                            "reaction_type": "countercharm",
+                            "template_type": "failed_save_reroll",
+                            "trigger_type": "failed_save",
+                            "status": "pending",
+                            "actor_entity_id": bard.entity_id,
+                            "target_entity_id": target.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "target_entity_id": target.entity_id,
+                                "save_ability": "wis",
+                                "save_dc": 14,
+                                "vantage": "normal",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_failed_save_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_failed_save_001",
+                        "trigger_type": "failed_save",
+                        "blocking": True,
+                        "host_action_type": "save",
+                        "host_action_id": "save_001",
+                        "host_action_snapshot": {
+                            "phase": "after_failed_save",
+                            "target_entity_id": target.entity_id,
+                            "save_ability": "wis",
+                            "save_dc": 14,
+                            "countercharm_trigger_conditions": ["frightened"],
+                            "cast": {
+                                "spell_id": "fear_burst",
+                                "spell_name": "Fear Burst",
+                                "cast_level": 2,
+                            },
+                            "roll_request": {
+                                "type": "request_roll",
+                                "request_id": "req_save_001",
+                                "encounter_id": "enc_countercharm_option_test",
+                                "actor_entity_id": target.entity_id,
+                                "target_entity_id": target.entity_id,
+                                "roll_type": "saving_throw",
+                                "formula": "1d20+save_modifier",
+                                "reason": "Target makes a WIS save",
+                                "context": {
+                                    "spell_id": "fear_burst",
+                                    "spell_name": "Fear Burst",
+                                    "spell_level": 2,
+                                    "save_ability": "wis",
+                                    "spell_definition": {
+                                        "id": "fear_burst",
+                                        "name": "Fear Burst",
+                                        "level": 2,
+                                        "save_ability": "wis",
+                                        "failed_save_outcome": {"damage_parts": [], "conditions": ["frightened"], "note": None},
+                                        "successful_save_outcome": {"damage_parts": [], "conditions": [], "note": None},
+                                    },
+                                    "save_dc": 14,
+                                    "caster_entity_id": "ent_enemy_001",
+                                    "caster_name": "Enemy Caster",
+                                    "damage": [],
+                                    "half_on_success": False,
+                                    "vantage": "normal",
+                                    "vantage_sources": {"advantage": [], "disadvantage": []},
+                                    "auto_success": False,
+                                    "metamagic": {},
+                                    "distance_to_target": "25 ft",
+                                    "distance_to_target_feet": 25,
+                                },
+                            },
+                            "roll_result": {
+                                "type": "roll_result",
+                                "request_id": "req_save_001",
+                                "encounter_id": "enc_countercharm_option_test",
+                                "actor_entity_id": target.entity_id,
+                                "target_entity_id": target.entity_id,
+                                "roll_type": "saving_throw",
+                                "final_total": 9,
+                                "dice_rolls": {
+                                    "base_rolls": [5],
+                                    "chosen_roll": 5,
+                                    "ability_modifier": 1,
+                                    "proficiency_bonus": 3,
+                                    "additional_bonus": 0,
+                                    "save_bonus": 4,
+                                    "d20_penalty": 0,
+                                    "aura_of_protection_bonus": 0,
+                                },
+                                "metadata": {
+                                    "save_ability": "wis",
+                                    "vantage": "normal",
+                                    "rolled_vantage": "normal",
+                                    "chosen_roll": 5,
+                                    "save_bonus": 4,
+                                    "save_bonus_breakdown": {
+                                        "ability_modifier": 1,
+                                        "is_proficient": True,
+                                        "proficiency_bonus_applied": 3,
+                                        "additional_bonus": 0,
+                                        "aura_of_protection_bonus": 0,
+                                    },
+                                },
+                                "rolled_at": None,
+                            },
+                            "saving_throw_result_args": {
+                                "spell_definition": {
+                                    "id": "fear_burst",
+                                    "name": "Fear Burst",
+                                    "level": 2,
+                                    "save_ability": "wis",
+                                    "failed_save_outcome": {"damage_parts": [], "conditions": ["frightened"], "note": None},
+                                    "successful_save_outcome": {"damage_parts": [], "conditions": [], "note": None},
+                                },
+                                "damage_rolls": [],
+                                "cast_level": 2,
+                                "hp_change_on_failed_save": None,
+                                "hp_change_on_success": None,
+                                "damage_reason": None,
+                                "damage_type": None,
+                                "concentration_vantage": "normal",
+                                "conditions_on_failed_save": None,
+                                "conditions_on_success": None,
+                                "note_on_failed_save": None,
+                                "note_on_success": None,
+                            },
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{bard.entity_id}",
+                                "actor_entity_id": bard.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "reaction",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": bard.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_countercharm_001",
+                                        "reaction_type": "countercharm",
+                                        "template_type": "failed_save_reroll",
+                                        "request_id": "react_countercharm_001",
+                                        "label": "Countercharm",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            service = self._build_service(encounter_repo, event_repo)
+            with patch.object(countercharm_module.random, "randint", side_effect=[4, 16]):
+                result = service.execute(
+                    encounter_id="enc_countercharm_option_test",
+                    window_id="rw_failed_save_001",
+                    group_id=f"rg_{bard.entity_id}",
+                    option_id="opt_countercharm_001",
+                    final_total=0,
+                    dice_rolls={},
+                )
+
+            updated = encounter_repo.get("enc_countercharm_option_test")
+            assert updated is not None
+            self.assertEqual(result["reaction_type"], "countercharm")
+            self.assertEqual(result["resolution_mode"], "rewrite_host_action")
+            self.assertEqual(result["reaction_result"]["save"]["final_total"], 20)
+            self.assertIsNotNone(result["host_action_result"])
+            self.assertTrue(result["host_action_result"]["resolution"]["success"])
+            self.assertEqual(result["host_action_result"]["resolution"]["selected_outcome"], "successful_save")
+            self.assertEqual(updated.entities[bard.entity_id].action_economy["reaction_used"], True)
+            self.assertNotIn("frightened", updated.entities[target.entity_id].conditions)
             encounter_repo.close()
             event_repo.close()
 
@@ -764,6 +1282,117 @@ class ResolveReactionOptionTests(unittest.TestCase):
             self.assertFalse(
                 any(effect.get("effect_type") == "deflect_attacks_pending" for effect in monk.turn_effects)
             )
+            self.assertEqual(
+                result["host_action_result"]["resolution"]["deflect_attacks"]["status"],
+                "damage_reduced",
+            )
+            encounter_repo.close()
+            event_repo.close()
+
+    def test_execute_resolves_deflect_energy_on_fire_damage_and_arms_pending_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            attacker = build_attacker()
+            monk = build_deflect_monk_target()
+            monk.class_features["monk"]["level"] = 13
+            monk.class_features["monk"]["deflect_energy"] = {"enabled": True}
+            encounter_repo.save(
+                Encounter(
+                    encounter_id="enc_deflect_energy_option_test",
+                    name="Deflect Energy Reaction Option Encounter",
+                    status="active",
+                    round=1,
+                    current_entity_id=attacker.entity_id,
+                    turn_order=[attacker.entity_id, monk.entity_id],
+                    entities={attacker.entity_id: attacker, monk.entity_id: monk},
+                    map=EncounterMap(
+                        map_id="map_deflect_energy_option_test",
+                        name="Deflect Energy Reaction Option Map",
+                        description="A small combat room.",
+                        width=8,
+                        height=8,
+                    ),
+                    reaction_requests=[
+                        {
+                            "request_id": "react_deflect_energy_001",
+                            "reaction_type": "deflect_attacks",
+                            "template_type": "defensive_reaction_reduce_damage",
+                            "trigger_type": "attack_declared",
+                            "status": "pending",
+                            "actor_entity_id": monk.entity_id,
+                            "target_entity_id": monk.entity_id,
+                            "ask_player": True,
+                            "auto_resolve": False,
+                            "payload": {
+                                "primary_damage_type": "fire",
+                                "source_actor_id": attacker.entity_id,
+                                "weapon_id": "rapier",
+                            },
+                        }
+                    ],
+                    pending_reaction_window={
+                        "window_id": "rw_attack_declared_001",
+                        "status": "waiting_reaction",
+                        "trigger_event_id": "evt_attack_declared_001",
+                        "trigger_type": "attack_declared",
+                        "blocking": True,
+                        "host_action_type": "attack",
+                        "host_action_id": "attack_deflect_energy_001",
+                        "host_action_snapshot": {
+                            "attack_id": "attack_deflect_energy_001",
+                            "actor_id": attacker.entity_id,
+                            "target_id": monk.entity_id,
+                            "weapon_id": "rapier",
+                            "final_total": 18,
+                            "dice_rolls": {"base_rolls": [13], "modifier": 5},
+                            "damage_rolls": [{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                            "vantage": "normal",
+                            "consume_action": True,
+                            "consume_reaction": False,
+                            "primary_damage_type": "fire",
+                        },
+                        "choice_groups": [
+                            {
+                                "group_id": f"rg_{monk.entity_id}",
+                                "actor_entity_id": monk.entity_id,
+                                "ask_player": True,
+                                "status": "pending",
+                                "resource_pool": "reaction",
+                                "group_priority": 100,
+                                "trigger_sequence": 1,
+                                "relationship_rank": 1,
+                                "tie_break_key": monk.entity_id,
+                                "options": [
+                                    {
+                                        "option_id": "opt_deflect_energy_001",
+                                        "reaction_type": "deflect_attacks",
+                                        "template_type": "defensive_reaction_reduce_damage",
+                                        "request_id": "react_deflect_energy_001",
+                                        "label": "Deflect Attacks",
+                                        "status": "pending",
+                                    }
+                                ],
+                            }
+                        ],
+                        "resolved_group_ids": [],
+                    },
+                )
+            )
+
+            result = self._build_service(encounter_repo, event_repo).execute(
+                encounter_id="enc_deflect_energy_option_test",
+                window_id="rw_attack_declared_001",
+                group_id=f"rg_{monk.entity_id}",
+                option_id="opt_deflect_energy_001",
+                final_total=0,
+                dice_rolls={},
+                option_payload={"reduction_roll": 7},
+            )
+
+            updated = encounter_repo.get("enc_deflect_energy_option_test")
+            assert updated is not None
+            self.assertEqual(result["reaction_result"]["status"], "deflect_attacks_armed")
             self.assertEqual(
                 result["host_action_result"]["resolution"]["deflect_attacks"]["status"],
                 "damage_reduced",

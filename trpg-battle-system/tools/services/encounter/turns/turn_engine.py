@@ -71,6 +71,10 @@ def reset_turn_resources(entity: EncounterEntity) -> None:
         stunning_strike = monk.get("stunning_strike")
         if isinstance(stunning_strike, dict):
             stunning_strike["uses_this_turn"] = 0
+        flurry_of_blows = monk.get("flurry_of_blows")
+        if isinstance(flurry_of_blows, dict):
+            flurry_of_blows["active"] = False
+            flurry_of_blows["remaining_attacks"] = 0
     warlock = class_features.get("warlock")
     if isinstance(warlock, dict):
         warlock = ensure_warlock_runtime(entity)
@@ -155,6 +159,8 @@ def end_turn(encounter: Encounter) -> Encounter:
     if encounter.current_entity_id not in encounter.entities:
         raise ValueError("current_entity_id must exist in entities")
     actor = encounter.entities[encounter.current_entity_id]
+    _resolve_monk_self_restoration_at_turn_end(actor)
+    _resolve_monk_superior_defense_at_turn_end(actor)
     _resolve_warlock_gaze_of_two_minds_at_turn_end(actor)
     _resolve_barbarian_rage_at_turn_end(actor)
     return encounter
@@ -245,6 +251,42 @@ def _resolve_warlock_gaze_of_two_minds_at_turn_end(entity: EncounterEntity) -> N
         gaze["remaining_source_turn_ends"] = 0
 
 
+def _resolve_monk_self_restoration_at_turn_end(entity: EncounterEntity) -> None:
+    monk = get_monk_runtime(entity)
+    if not monk:
+        return
+
+    self_restoration = monk.get("self_restoration")
+    if not isinstance(self_restoration, dict) or not bool(self_restoration.get("enabled")):
+        return
+
+    for removable in ("charmed", "frightened", "poisoned"):
+        if removable in entity.conditions:
+            entity.conditions = [condition for condition in entity.conditions if condition != removable]
+            return
+
+
+def _resolve_monk_superior_defense_at_turn_end(entity: EncounterEntity) -> None:
+    monk = get_monk_runtime(entity)
+    if not monk:
+        return
+
+    superior_defense = monk.get("superior_defense")
+    if not isinstance(superior_defense, dict) or not bool(superior_defense.get("active")):
+        return
+
+    conditions = {str(condition).strip().lower() for condition in entity.conditions if isinstance(condition, str)}
+    if "incapacitated" in conditions or "unconscious" in conditions:
+        _disable_monk_superior_defense(entity, superior_defense)
+        return
+
+    remaining_rounds = superior_defense.get("remaining_rounds")
+    if not isinstance(remaining_rounds, int) or remaining_rounds <= 1:
+        _disable_monk_superior_defense(entity, superior_defense)
+        return
+    superior_defense["remaining_rounds"] = remaining_rounds - 1
+
+
 def _is_wearing_heavy_armor(entity: EncounterEntity) -> bool:
     armor = entity.equipped_armor
     if not isinstance(armor, dict):
@@ -272,3 +314,18 @@ def _clear_barbarian_rage_extension_flags(entity: EncounterEntity) -> None:
 def _end_rage(rage: dict[str, object]) -> None:
     rage["active"] = False
     rage["ends_at_turn_end_of"] = None
+
+
+def _disable_monk_superior_defense(entity: EncounterEntity, superior_defense: dict[str, object]) -> None:
+    removable = superior_defense.get("added_resistances")
+    removable_set = {
+        str(value).strip().lower() for value in removable if isinstance(value, str) and str(value).strip()
+    } if isinstance(removable, list) else set()
+    entity.resistances = [
+        resistance
+        for resistance in entity.resistances
+        if str(resistance).strip().lower() not in removable_set
+    ]
+    superior_defense["active"] = False
+    superior_defense["remaining_rounds"] = 0
+    superior_defense["added_resistances"] = []

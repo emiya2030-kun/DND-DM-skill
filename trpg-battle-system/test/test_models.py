@@ -130,6 +130,24 @@ class EncounterModelTests(unittest.TestCase):
         self.assertEqual(entity.skill_training, {"perception": "expertise", "stealth": "proficient"})
         self.assertNotIn("skill_training", entity.source_ref)
 
+    def test_encounter_entity_from_dict_normalizes_spellcasting_class_bucket(self) -> None:
+        legacy = build_entity().to_dict()
+        legacy["initial_class_name"] = None
+        legacy["source_ref"]["class_name"] = "bard"
+        legacy["source_ref"]["level"] = 7
+        legacy["class_features"] = {}
+        legacy["spells"] = [
+            {"spell_id": "healing_word", "name": "Healing Word", "level": 1, "casting_class": "bard"},
+            {"spell_id": "light", "name": "Light", "level": 0, "casting_class": "bard"},
+        ]
+
+        entity = EncounterEntity.from_dict(legacy)
+
+        self.assertEqual(entity.class_features["bard"]["level"], 7)
+        self.assertEqual(entity.class_features["bard"]["spell_preparation_mode"], "level_up_one")
+        self.assertEqual(entity.class_features["bard"]["prepared_spells"], ["healing_word"])
+        self.assertEqual(entity.class_features["bard"]["always_prepared_spells"], [])
+
     def test_encounter_entity_roundtrip_preserves_equipped_armor_and_shield(self) -> None:
         entity = build_entity()
         entity.equipped_armor = {"armor_id": "chain_mail"}

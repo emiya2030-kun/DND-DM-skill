@@ -117,3 +117,25 @@ def test_use_patient_defense_rejects_when_bonus_action_already_used() -> None:
 
         repo.close()
 
+
+def test_use_patient_defense_heightened_focus_grants_temp_hp_when_spending_focus() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+        encounter = _build_encounter()
+        encounter.entities["ent_monk_001"].class_features["monk"]["level"] = 10
+        repo.save(encounter)
+
+        result = UsePatientDefense(repo).execute(
+            encounter_id="enc_monk_test",
+            actor_id="ent_monk_001",
+            spend_focus=True,
+            temp_hp_roll={"rolls": [4, 5]},
+        )
+
+        updated = repo.get("enc_monk_test")
+        assert updated is not None
+        monk = updated.entities["ent_monk_001"]
+        assert monk.hp["temp"] == 9
+        assert result["class_feature_result"]["patient_defense"]["temp_hp_gained"] == 9
+
+        repo.close()

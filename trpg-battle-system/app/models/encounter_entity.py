@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from tools.models.entity_class_schema import normalize_entity_spellcasting_schema
+
 ALLOWED_SKILL_TRAINING_VALUES = {"none", "proficient", "expertise"}
 
 
@@ -167,6 +169,12 @@ class EncounterEntity:
         self.source_ref = dict(self.source_ref) if isinstance(self.source_ref, dict) else {}
         self.initial_class_name = _normalize_initial_class_name(self.initial_class_name, self.source_ref)
         self.skill_training = _normalize_skill_training(self.skill_training, self.source_ref)
+        self.class_features, self.spells = normalize_entity_spellcasting_schema(
+            source_ref=self.source_ref,
+            initial_class_name=self.initial_class_name,
+            class_features=self.class_features,
+            spells=self.spells,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """返回符合 encounter schema 的普通 dict."""

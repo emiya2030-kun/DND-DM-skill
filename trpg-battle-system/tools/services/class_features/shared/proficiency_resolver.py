@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools.repositories import ClassProficiencyDefinitionRepository
+from tools.services.class_features.shared.runtime import get_monk_runtime
 from tools.services.class_features.rogue import ensure_rogue_runtime
 from tools.services.class_features.shared.runtime import ensure_ranger_runtime
 
@@ -62,6 +63,10 @@ def resolve_entity_save_proficiencies(entity: Any) -> list[str]:
     slippery_mind = rogue_runtime.get("slippery_mind")
     if isinstance(slippery_mind, dict) and slippery_mind.get("enabled"):
         resolved.update({"wis", "cha"})
+    monk_runtime = get_monk_runtime(entity)
+    disciplined_survivor = monk_runtime.get("disciplined_survivor")
+    if isinstance(disciplined_survivor, dict) and disciplined_survivor.get("enabled"):
+        resolved.update(_SAVE_ORDER)
     return _ordered(resolved, _SAVE_ORDER)
 
 

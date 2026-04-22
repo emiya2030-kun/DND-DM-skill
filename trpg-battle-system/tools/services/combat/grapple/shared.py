@@ -4,6 +4,7 @@ from typing import Any
 
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
+from tools.services.class_features.shared import monk_qualifies_for_martial_arts
 from tools.services.combat.rules.conditions import ConditionRuntime
 
 _SIZE_ORDER = {
@@ -20,7 +21,15 @@ def resolve_grapple_save_dc(actor: EncounterEntity) -> dict[str, Any]:
     class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
     monk = class_features.get("monk")
     martial_arts = monk.get("martial_arts") if isinstance(monk, dict) else None
-    ability_used = "dex" if isinstance(martial_arts, dict) and martial_arts.get("grapple_dc_ability") == "dex" else "str"
+    ability_used = (
+        "dex"
+        if (
+            isinstance(martial_arts, dict)
+            and martial_arts.get("grapple_dc_ability") == "dex"
+            and monk_qualifies_for_martial_arts(actor)
+        )
+        else "str"
+    )
     ability_mod = int(actor.ability_mods.get(ability_used, 0))
     proficiency_bonus = int(actor.proficiency_bonus or 0)
     return {

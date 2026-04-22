@@ -167,6 +167,61 @@ class ResolveAbilityCheckTests(unittest.TestCase):
             self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 4)
             repo.close()
 
+    def test_execute_applies_bard_jack_of_all_trades_to_untrained_skill_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.skill_modifiers = {"athletics": 99}
+            actor.class_features["bard"] = {"level": 2}
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="skill",
+                check="athletics",
+                dc=13,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_roll=11,
+            )
+
+            self.assertEqual(result.final_total, 13)
+            self.assertFalse(result.metadata["check_bonus_breakdown"]["is_proficient"])
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 1)
+            repo.close()
+
+    def test_execute_does_not_stack_bard_jack_of_all_trades_on_proficient_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_sabur_001"]
+            actor.skill_modifiers = {}
+            actor.skill_training = {"perception": "proficient"}
+            actor.class_features["bard"] = {"level": 2}
+            repo.save(encounter)
+            request = AbilityCheckRequest(repo).execute(
+                encounter_id="enc_ability_check_test",
+                actor_id="ent_ally_sabur_001",
+                check_type="skill",
+                check="perception",
+                dc=13,
+            )
+
+            result = ResolveAbilityCheck(repo).execute(
+                encounter_id="enc_ability_check_test",
+                roll_request=request,
+                base_roll=10,
+            )
+
+            self.assertEqual(result.final_total, 14)
+            self.assertTrue(result.metadata["check_bonus_breakdown"]["is_proficient"])
+            self.assertEqual(result.metadata["check_bonus_breakdown"]["proficiency_bonus_applied"], 2)
+            repo.close()
+
     def test_execute_reliable_talent_raises_low_skill_roll_to_ten(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

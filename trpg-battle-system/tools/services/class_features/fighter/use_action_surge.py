@@ -5,7 +5,7 @@ from typing import Any
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
-from tools.services.class_features.shared.runtime import get_fighter_runtime
+from tools.services.class_features.shared.runtime import ensure_fighter_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 
 
@@ -21,7 +21,7 @@ class UseActionSurge:
         actor = self._get_actor_or_raise(encounter, actor_id)
         self._ensure_actor_turn(encounter, actor_id)
 
-        fighter = get_fighter_runtime(actor)
+        fighter = ensure_fighter_runtime(actor)
         action_surge = fighter.get("action_surge")
         if not isinstance(action_surge, dict):
             raise ValueError("action_surge_not_available")

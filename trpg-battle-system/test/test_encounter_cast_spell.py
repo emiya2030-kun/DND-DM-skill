@@ -1001,3 +1001,57 @@ class EncounterCastSpellTests(unittest.TestCase):
             self.assertEqual(current["resources"]["summary"], "法术位：1环 2/2, 2环 1/1, 3环 0/1")
             encounter_repo.close()
             event_repo.close()
+
+    def test_execute_rejects_unprepared_spell_even_when_called_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            encounter_repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            event_repo = EventRepository(Path(tmp_dir) / "events.json")
+            encounter = build_encounter()
+            caster = encounter.entities["ent_ally_eric_001"]
+            caster.source_ref["class_name"] = "bard"
+            caster.class_features["bard"] = {
+                "level": 5,
+                "prepared_spells": ["healing_word"],
+            }
+            caster.spells.append(
+                {"spell_id": "heroism", "name": "Heroism", "level": 1, "casting_class": "bard"}
+            )
+            encounter_repo.save(encounter)
+
+            spell_path = Path(tmp_dir) / "spell_definitions.json"
+            spell_path.write_text(
+                json.dumps(
+                    {
+                        "spell_definitions": {
+                            "heroism": {
+                                "id": "heroism",
+                                "name": "Heroism",
+                                "level": 1,
+                                "base": {
+                                    "level": 1,
+                                    "casting_time": "1 action",
+                                    "concentration": True,
+                                },
+                                "resolution": {"activation": "action"},
+                                "targeting": {"allowed_target_types": ["creature"]},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            service = EncounterCastSpell(
+                encounter_repo,
+                AppendEvent(event_repo),
+                spell_definition_repository=SpellDefinitionRepository(spell_path),
+            )
+            with self.assertRaisesRegex(ValueError, "spell_not_prepared"):
+                service.execute(
+                    encounter_id="enc_cast_spell_test",
+                    spell_id="heroism",
+                    target_ids=["ent_enemy_iron_duster_001"],
+                    cast_level=1,
+                )
+            encounter_repo.close()
+            event_repo.close()

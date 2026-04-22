@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.models.entity_class_schema import SPELL_PREPARATION_MODES, collect_always_prepared_spells
+
 
 def get_class_runtime(entity_or_class_features: Any, class_id: str) -> dict[str, Any]:
     class_features = _read_class_features(entity_or_class_features)
@@ -21,11 +23,15 @@ def ensure_class_runtime(entity_or_class_features: Any, class_id: str) -> dict[s
 
 
 def get_fighter_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return get_class_runtime(entity_or_class_features, "fighter")
+    from tools.services.class_features.fighter.runtime import get_fighter_runtime as _get_fighter_runtime
+
+    return _get_fighter_runtime(entity_or_class_features)
 
 
 def ensure_fighter_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return ensure_class_runtime(entity_or_class_features, "fighter")
+    from tools.services.class_features.fighter.runtime import ensure_fighter_runtime as _ensure_fighter_runtime
+
+    return _ensure_fighter_runtime(entity_or_class_features)
 
 
 def get_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -33,6 +39,20 @@ def get_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     if not runtime:
         return {}
     return ensure_monk_runtime(entity_or_class_features)
+
+
+def monk_qualifies_for_martial_arts(entity_or_class_features: Any) -> bool:
+    monk_runtime = get_monk_runtime(entity_or_class_features)
+    if not monk_runtime:
+        return False
+    martial_arts = monk_runtime.get("martial_arts")
+    if not isinstance(martial_arts, dict) or not bool(martial_arts.get("enabled")):
+        return False
+    if _read_equipped_item(entity_or_class_features, "equipped_armor") is not None:
+        return False
+    if _read_equipped_item(entity_or_class_features, "equipped_shield") is not None:
+        return False
+    return _wields_only_monk_weapons(entity_or_class_features)
 
 
 def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -56,6 +76,20 @@ def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     focus_points["max"] = _resolve_monk_focus_points_max(level) if level > 0 else int(focus_points.get("max", 0) or 0)
     remaining = focus_points.get("remaining")
     focus_points["remaining"] = remaining if isinstance(remaining, int) else focus_points["max"]
+
+    flurry_of_blows = monk.setdefault("flurry_of_blows", {})
+    explicit_flurry_enabled = flurry_of_blows.get("enabled")
+    flurry_of_blows["enabled"] = explicit_flurry_enabled if isinstance(explicit_flurry_enabled, bool) else level >= 2
+    if not isinstance(flurry_of_blows.get("active"), bool):
+        flurry_of_blows["active"] = False
+    flurry_base_attack_count = flurry_of_blows.get("base_attack_count")
+    flurry_of_blows["base_attack_count"] = (
+        flurry_base_attack_count
+        if isinstance(flurry_base_attack_count, int) and flurry_base_attack_count > 0
+        else 3 if level >= 10 else 2 if level >= 2 else 0
+    )
+    remaining_attacks = flurry_of_blows.get("remaining_attacks")
+    flurry_of_blows["remaining_attacks"] = remaining_attacks if isinstance(remaining_attacks, int) and remaining_attacks >= 0 else 0
 
     martial_arts = monk.setdefault("martial_arts", {})
     explicit_martial_arts_enabled = martial_arts.get("enabled")
@@ -98,19 +132,61 @@ def ensure_monk_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     explicit_heightened_focus_enabled = heightened_focus.get("enabled")
     heightened_focus["enabled"] = bool(explicit_heightened_focus_enabled) or level >= 10
 
+    self_restoration = monk.setdefault("self_restoration", {})
+    explicit_self_restoration_enabled = self_restoration.get("enabled")
+    self_restoration["enabled"] = bool(explicit_self_restoration_enabled) or level >= 10
+
     deflect_energy = monk.setdefault("deflect_energy", {})
     explicit_deflect_energy_enabled = deflect_energy.get("enabled")
     deflect_energy["enabled"] = bool(explicit_deflect_energy_enabled) or level >= 13
+
+    disciplined_survivor = monk.setdefault("disciplined_survivor", {})
+    explicit_disciplined_survivor_enabled = disciplined_survivor.get("enabled")
+    disciplined_survivor["enabled"] = bool(explicit_disciplined_survivor_enabled) or level >= 14
+    if not isinstance(disciplined_survivor.get("focus_cost"), int):
+        disciplined_survivor["focus_cost"] = 1
+    if level >= 14:
+        monk["save_proficiencies"] = ["str", "dex", "con", "int", "wis", "cha"]
+
+    perfect_focus = monk.setdefault("perfect_focus", {})
+    explicit_perfect_focus_enabled = perfect_focus.get("enabled")
+    perfect_focus["enabled"] = bool(explicit_perfect_focus_enabled) or level >= 15
+    if not isinstance(perfect_focus.get("restore_threshold"), int):
+        perfect_focus["restore_threshold"] = 3
+    if not isinstance(perfect_focus.get("restore_to"), int):
+        perfect_focus["restore_to"] = 4
+
+    superior_defense = monk.setdefault("superior_defense", {})
+    explicit_superior_defense_enabled = superior_defense.get("enabled")
+    superior_defense["enabled"] = bool(explicit_superior_defense_enabled) or level >= 18
+    if not isinstance(superior_defense.get("active"), bool):
+        superior_defense["active"] = False
+    if not isinstance(superior_defense.get("remaining_rounds"), int):
+        superior_defense["remaining_rounds"] = 0
+    if not isinstance(superior_defense.get("focus_cost"), int):
+        superior_defense["focus_cost"] = 3
+    if not isinstance(superior_defense.get("duration_rounds"), int):
+        superior_defense["duration_rounds"] = 10
+    added_resistances = superior_defense.get("added_resistances")
+    superior_defense["added_resistances"] = (
+        [str(value).strip().lower() for value in added_resistances if isinstance(value, str) and str(value).strip()]
+        if isinstance(added_resistances, list)
+        else []
+    )
 
     return monk
 
 
 def get_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return get_class_runtime(entity_or_class_features, "barbarian")
+    from tools.services.class_features.barbarian.runtime import get_barbarian_runtime as _get_barbarian_runtime
+
+    return _get_barbarian_runtime(entity_or_class_features)
 
 
 def ensure_barbarian_runtime(entity_or_class_features: Any) -> dict[str, Any]:
-    return ensure_class_runtime(entity_or_class_features, "barbarian")
+    from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime as _ensure_barbarian_runtime
+
+    return _ensure_barbarian_runtime(entity_or_class_features)
 
 
 def get_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -124,6 +200,7 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     paladin = ensure_class_runtime(entity_or_class_features, "paladin")
     level = int(paladin.get("level", 0) or 0)
     default_aura_radius_feet = 30 if level >= 18 else 10
+    paladin["spell_preparation_mode"] = SPELL_PREPARATION_MODES["paladin"]
 
     lay_on_hands = paladin.setdefault("lay_on_hands", {})
     lay_on_hands["pool_max"] = level * 5 if level > 0 else int(lay_on_hands.get("pool_max", 0) or 0)
@@ -170,14 +247,163 @@ def ensure_paladin_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     faithful_steed["free_cast_available"] = (
         free_cast_available if isinstance(free_cast_available, bool) else level >= 5
     )
+    faithful_steed["always_prepared_spells"] = ["find_steed"] if level >= 5 else []
 
     radiant_strikes = paladin.setdefault("radiant_strikes", {})
     explicit_radiant_strikes_enabled = radiant_strikes.get("enabled")
     radiant_strikes["enabled"] = (
         explicit_radiant_strikes_enabled if isinstance(explicit_radiant_strikes_enabled, bool) else level >= 11
     )
+    paladin["prepared_spells_count"] = _resolve_paladin_prepared_spells_count(level)
+    paladin["always_prepared_spells"] = collect_always_prepared_spells(paladin)
+    if level >= 2 and "divine_smite" not in paladin["always_prepared_spells"]:
+        paladin["always_prepared_spells"] = ["divine_smite", *paladin["always_prepared_spells"]]
 
     return paladin
+
+
+def get_cleric_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "cleric")
+    if not runtime:
+        return {}
+    return ensure_cleric_runtime(entity_or_class_features)
+
+
+def ensure_cleric_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    cleric = ensure_class_runtime(entity_or_class_features, "cleric")
+    level = int(cleric.get("level", 0) or 0)
+    wisdom_modifier = _extract_ability_modifier(entity_or_class_features, "wis")
+    cleric["spell_preparation_mode"] = SPELL_PREPARATION_MODES["cleric"]
+    cleric["cantrips_known"] = _resolve_cleric_cantrips_known(level)
+    cleric["prepared_spells_count"] = _resolve_cleric_prepared_spells_count(level)
+
+    channel_divinity = cleric.setdefault("channel_divinity", {})
+    channel_divinity["enabled"] = level >= 2
+    channel_divinity["max_uses"] = _resolve_cleric_channel_divinity_uses(level)
+    remaining_uses = channel_divinity.get("remaining_uses")
+    channel_divinity["remaining_uses"] = (
+        remaining_uses if isinstance(remaining_uses, int) else channel_divinity["max_uses"]
+    )
+    channel_divinity["recovery"] = "short_or_long_rest"
+    channel_divinity["short_rest_restore_uses"] = 1 if level >= 2 else 0
+
+    divine_spark = cleric.setdefault("divine_spark", {})
+    divine_spark["enabled"] = level >= 2
+    divine_spark["range_feet"] = 30 if level >= 2 else 0
+    divine_spark["healing_dice"] = _resolve_cleric_divine_spark_dice(level)
+    divine_spark["damage_dice"] = divine_spark["healing_dice"]
+    divine_spark["ability_modifier"] = "wis" if level >= 2 else None
+
+    turn_undead = cleric.setdefault("turn_undead", {})
+    turn_undead["enabled"] = level >= 2
+    turn_undead["range_feet"] = 30 if level >= 2 else 0
+    turn_undead["save_ability"] = "wis" if level >= 2 else None
+    turn_undead["duration"] = "1_minute" if level >= 2 else None
+
+    sear_undead = cleric.setdefault("sear_undead", {})
+    sear_undead["enabled"] = level >= 5
+    sear_undead["damage_die"] = "d8" if level >= 5 else None
+    sear_undead["damage_dice_count"] = max(1, wisdom_modifier) if level >= 5 else 0
+
+    blessed_strikes = cleric.setdefault("blessed_strikes", {})
+    blessed_strikes["enabled"] = level >= 7
+    blessed_strikes["options"] = ["divine_strike", "potent_spellcasting"] if level >= 7 else []
+    selected_option = blessed_strikes.get("selected_option")
+    blessed_strikes["selected_option"] = (
+        selected_option if isinstance(selected_option, str) and selected_option.strip() else None
+    )
+    blessed_strikes["divine_strike_damage"] = "1d8" if level >= 7 else None
+
+    improved_blessed_strikes = cleric.setdefault("improved_blessed_strikes", {})
+    improved_blessed_strikes["enabled"] = level >= 14
+    improved_blessed_strikes["divine_strike_damage"] = "2d8" if level >= 14 else None
+    improved_blessed_strikes["potent_spellcasting_temp_hp_multiplier"] = 2 if level >= 14 else 0
+    improved_blessed_strikes["temp_hp_range_feet"] = 60 if level >= 14 else 0
+
+    divine_intervention = cleric.setdefault("divine_intervention", {})
+    divine_intervention["enabled"] = level >= 10
+    divine_intervention["max_spell_level"] = 5 if level >= 10 else 0
+    divine_intervention["wish_enabled"] = level >= 20
+    divine_intervention["recovery"] = "long_rest" if level >= 10 else None
+    available = divine_intervention.get("available")
+    divine_intervention["available"] = available if isinstance(available, bool) else level >= 10
+
+    cleric["always_prepared_spells"] = collect_always_prepared_spells(cleric)
+    return cleric
+
+
+def get_druid_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "druid")
+    if not runtime:
+        return {}
+    return ensure_druid_runtime(entity_or_class_features)
+
+
+def ensure_druid_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    druid = ensure_class_runtime(entity_or_class_features, "druid")
+    level = int(druid.get("level", 0) or 0)
+    druid["spell_preparation_mode"] = SPELL_PREPARATION_MODES["druid"]
+    druid["cantrips_known"] = _resolve_druid_cantrips_known(level)
+    druid["prepared_spells_count"] = _resolve_druid_prepared_spells_count(level)
+
+    druidic = druid.setdefault("druidic", {})
+    druidic["enabled"] = level >= 1
+    druidic["language"] = "druidic" if level >= 1 else None
+    druidic["always_prepared_spells"] = ["speak_with_animals"] if level >= 1 else []
+
+    wild_shape = druid.setdefault("wild_shape", {})
+    wild_shape["enabled"] = level >= 2
+    wild_shape["max_uses"] = _resolve_druid_wild_shape_uses(level)
+    remaining_uses = wild_shape.get("remaining_uses")
+    wild_shape["remaining_uses"] = remaining_uses if isinstance(remaining_uses, int) else wild_shape["max_uses"]
+    wild_shape["duration_hours"] = max(1, level // 2) if level >= 2 else 0
+    wild_shape["known_forms"] = _resolve_druid_wild_shape_known_forms(level)
+    wild_shape["max_cr"] = _resolve_druid_wild_shape_max_cr(level)
+    wild_shape["fly_speed_allowed"] = level >= 8
+    wild_shape["temp_hp_formula"] = "druid_level" if level >= 2 else None
+    wild_shape["recovery"] = "short_or_long_rest" if level >= 2 else None
+    wild_shape["short_rest_restore_uses"] = 1 if level >= 2 else 0
+
+    wild_companion = druid.setdefault("wild_companion", {})
+    wild_companion["enabled"] = level >= 2
+    wild_companion["spell_id"] = "find_familiar" if level >= 2 else None
+    wild_companion["familiar_type"] = "fey" if level >= 2 else None
+    wild_companion["expires_on"] = "long_rest" if level >= 2 else None
+    wild_companion["resource_options"] = ["spell_slot", "wild_shape"] if level >= 2 else []
+
+    wild_resurgence = druid.setdefault("wild_resurgence", {})
+    wild_resurgence["enabled"] = level >= 5
+    wild_resurgence["restore_wild_shape_via_spell_slot"] = level >= 5
+    wild_resurgence["create_spell_slot_from_wild_shape"] = level >= 5
+    wild_resurgence["created_slot_level"] = 1 if level >= 5 else 0
+    used = wild_resurgence.get("create_spell_slot_used")
+    wild_resurgence["create_spell_slot_used"] = used if isinstance(used, bool) else False
+
+    elemental_fury = druid.setdefault("elemental_fury", {})
+    elemental_fury["enabled"] = level >= 7
+    elemental_fury["options"] = ["potent_spellcasting", "primal_strike"] if level >= 7 else []
+    selected_option = elemental_fury.get("selected_option")
+    elemental_fury["selected_option"] = (
+        selected_option if isinstance(selected_option, str) and selected_option.strip() else None
+    )
+    elemental_fury["primal_strike_damage"] = "1d8" if level >= 7 else None
+    elemental_fury["improved"] = level >= 15
+    elemental_fury["improved_primal_strike_damage"] = "2d8" if level >= 15 else None
+    elemental_fury["improved_potent_spellcasting_range_bonus_feet"] = 300 if level >= 15 else 0
+
+    beast_spells = druid.setdefault("beast_spells", {})
+    beast_spells["enabled"] = level >= 18
+    beast_spells["costly_material_restriction"] = level >= 18
+
+    archdruid = druid.setdefault("archdruid", {})
+    archdruid["enabled"] = level >= 20
+    archdruid["evergreen_wild_shape"] = level >= 20
+    used = archdruid.get("nature_magician_used")
+    archdruid["nature_magician_used"] = used if isinstance(used, bool) else False
+    archdruid["longevity"] = level >= 20
+
+    druid["always_prepared_spells"] = collect_always_prepared_spells(druid)
+    return druid
 
 
 def get_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -192,6 +418,8 @@ def ensure_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     level = int(ranger.get("level", 0) or 0)
     wisdom_modifier = _extract_ability_modifier(entity_or_class_features, "wis")
     minimum_wisdom_uses = max(1, wisdom_modifier)
+    ranger["spell_preparation_mode"] = SPELL_PREPARATION_MODES["ranger"]
+    ranger["prepared_spells_count"] = _resolve_ranger_prepared_spells_count(level)
 
     ranger["weapon_mastery_count"] = 2
     ranger["extra_attack_count"] = 2 if level >= 5 else 1
@@ -202,6 +430,7 @@ def ensure_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     free_cast_uses_max = favored_enemy.get("free_cast_uses_max")
     favored_enemy["free_cast_uses_max"] = free_cast_uses_max if isinstance(free_cast_uses_max, int) else (2 if level >= 1 else 0)
     favored_enemy.setdefault("spell_id", "hunters_mark")
+    favored_enemy["always_prepared_spells"] = [favored_enemy["spell_id"]] if level >= 1 else []
     remaining_free_cast_uses = favored_enemy.get("free_cast_uses_remaining")
     favored_enemy["free_cast_uses_remaining"] = (
         remaining_free_cast_uses if isinstance(remaining_free_cast_uses, int) else favored_enemy["free_cast_uses_max"]
@@ -254,8 +483,70 @@ def ensure_ranger_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     foe_slayer = ranger.setdefault("foe_slayer", {})
     foe_slayer["enabled"] = level >= 20
     foe_slayer["hunters_mark_damage_die"] = "1d10" if level >= 20 else "1d6"
+    ranger["always_prepared_spells"] = collect_always_prepared_spells(ranger)
 
     return ranger
+
+
+def get_bard_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "bard")
+    if not runtime:
+        return {}
+    return ensure_bard_runtime(entity_or_class_features)
+
+
+def ensure_bard_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    bard = ensure_class_runtime(entity_or_class_features, "bard")
+    level = int(bard.get("level", 0) or 0)
+    charisma_modifier = _extract_ability_modifier(entity_or_class_features, "cha")
+    bard["spell_preparation_mode"] = SPELL_PREPARATION_MODES["bard"]
+
+    bard["cantrips_known"] = _resolve_bard_cantrips_known(level)
+    bard["prepared_spells_count"] = _resolve_bard_prepared_spells_count(level)
+
+    bardic_inspiration = bard.setdefault("bardic_inspiration", {})
+    bardic_inspiration["die"] = _resolve_bardic_inspiration_die(level)
+    bardic_inspiration["uses_max"] = max(1, charisma_modifier) if level >= 1 else 0
+    uses_current = bardic_inspiration.get("uses_current")
+    bardic_inspiration["uses_current"] = (
+        uses_current if isinstance(uses_current, int) else bardic_inspiration["uses_max"]
+    )
+    bardic_inspiration["recovery"] = "short_or_long_rest" if level >= 5 else "long_rest"
+
+    expertise = bard.setdefault("expertise", {})
+    skills = expertise.get("skills")
+    expertise["skills"] = list(skills) if isinstance(skills, list) else []
+    expertise["enabled"] = level >= 2
+    expertise["max_skills"] = 4 if level >= 9 else 2 if level >= 2 else 0
+
+    jack_of_all_trades = bard.setdefault("jack_of_all_trades", {})
+    jack_of_all_trades["enabled"] = level >= 2
+    jack_of_all_trades["half_proficiency_rounding"] = "down"
+
+    font_of_inspiration = bard.setdefault("font_of_inspiration", {})
+    font_of_inspiration["enabled"] = level >= 5
+    font_of_inspiration["spell_slot_restore_enabled"] = level >= 5
+
+    countercharm = bard.setdefault("countercharm", {})
+    countercharm["enabled"] = level >= 7
+    countercharm["range_feet"] = 30 if level >= 7 else 0
+
+    magical_secrets = bard.setdefault("magical_secrets", {})
+    magical_secrets["enabled"] = level >= 10
+    magical_secrets["source_lists"] = ["bard", "cleric", "druid", "wizard"] if level >= 10 else ["bard"]
+
+    superior_inspiration = bard.setdefault("superior_inspiration", {})
+    superior_inspiration["enabled"] = level >= 18
+    superior_inspiration["minimum_uses_after_initiative"] = 2 if level >= 18 else 0
+
+    words_of_creation = bard.setdefault("words_of_creation", {})
+    words_of_creation["enabled"] = level >= 20
+    words_of_creation["always_prepared_spells"] = (
+        ["power_word_heal", "power_word_kill"] if level >= 20 else []
+    )
+    bard["always_prepared_spells"] = collect_always_prepared_spells(bard)
+
+    return bard
 
 
 def get_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
@@ -268,6 +559,8 @@ def get_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
 def ensure_sorcerer_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     sorcerer = ensure_class_runtime(entity_or_class_features, "sorcerer")
     level = int(sorcerer.get("level", 0) or 0)
+    sorcerer["spell_preparation_mode"] = SPELL_PREPARATION_MODES["sorcerer"]
+    sorcerer["always_prepared_spells"] = collect_always_prepared_spells(sorcerer)
 
     sorcerer["cantrips_known"] = _resolve_sorcerer_cantrips_known(level)
     sorcerer["prepared_spells_count"] = _resolve_sorcerer_prepared_spells_count(level)
@@ -314,6 +607,8 @@ def get_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
 def ensure_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     warlock = ensure_class_runtime(entity_or_class_features, "warlock")
     level = int(warlock.get("level", 0) or 0)
+    warlock["spell_preparation_mode"] = SPELL_PREPARATION_MODES["warlock"]
+    warlock["always_prepared_spells"] = collect_always_prepared_spells(warlock)
 
     warlock["invocations_known"] = _resolve_warlock_invocations_known(level)
     warlock["cantrips_known"] = _resolve_warlock_cantrips_known(level)
@@ -477,6 +772,23 @@ def ensure_warlock_runtime(entity_or_class_features: Any) -> dict[str, Any]:
     return warlock
 
 
+def get_wizard_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    runtime = get_class_runtime(entity_or_class_features, "wizard")
+    if not runtime:
+        return {}
+    return ensure_wizard_runtime(entity_or_class_features)
+
+
+def ensure_wizard_runtime(entity_or_class_features: Any) -> dict[str, Any]:
+    wizard = ensure_class_runtime(entity_or_class_features, "wizard")
+    level = int(wizard.get("level", 0) or 0)
+    wizard["spell_preparation_mode"] = SPELL_PREPARATION_MODES["wizard"]
+    wizard["always_prepared_spells"] = collect_always_prepared_spells(wizard)
+    wizard["cantrips_known"] = _resolve_wizard_cantrips_known(level)
+    wizard["prepared_spells_count"] = _resolve_wizard_prepared_spells_count(level)
+    return wizard
+
+
 def _read_class_features(entity_or_class_features: Any) -> dict[str, Any]:
     if isinstance(entity_or_class_features, dict):
         class_features = entity_or_class_features.get("class_features")
@@ -517,6 +829,60 @@ def _extract_ability_modifier(entity_or_class_features: Any, ability: str) -> in
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return 0
+
+
+def _read_equipped_item(entity_or_class_features: Any, attribute: str) -> Any:
+    if isinstance(entity_or_class_features, dict):
+        return entity_or_class_features.get(attribute)
+    return getattr(entity_or_class_features, attribute, None)
+
+
+def _read_runtime_weapons(entity_or_class_features: Any) -> list[dict[str, Any]]:
+    if isinstance(entity_or_class_features, dict):
+        weapons = entity_or_class_features.get("weapons")
+    else:
+        weapons = getattr(entity_or_class_features, "weapons", None)
+    if not isinstance(weapons, list):
+        return []
+    return [weapon for weapon in weapons if isinstance(weapon, dict)]
+
+
+def _wields_only_monk_weapons(entity_or_class_features: Any) -> bool:
+    wielded_weapons = []
+    for runtime_weapon in _read_runtime_weapons(entity_or_class_features):
+        slot = str(runtime_weapon.get("slot") or "").strip().lower()
+        if slot not in {"main_hand", "off_hand", "both_hands"}:
+            continue
+        wielded_weapons.append(runtime_weapon)
+    if not wielded_weapons:
+        return True
+    return all(_weapon_counts_as_monk_weapon(weapon) for weapon in wielded_weapons)
+
+
+def _weapon_counts_as_monk_weapon(runtime_weapon: dict[str, Any]) -> bool:
+    merged = dict(_load_weapon_definition(str(runtime_weapon.get("weapon_id") or "").strip()))
+    merged.update(runtime_weapon)
+    category = str(merged.get("category") or "").strip().lower()
+    kind = str(merged.get("kind") or "").strip().lower()
+    properties = {
+        str(value).strip().lower()
+        for value in merged.get("properties", [])
+        if isinstance(value, str) and str(value).strip()
+    }
+    if kind != "melee":
+        return False
+    if category == "simple":
+        return True
+    return category == "martial" and "light" in properties
+
+
+def _load_weapon_definition(weapon_id: str) -> dict[str, Any]:
+    if not weapon_id:
+        return {}
+    from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
+
+    definition = WeaponDefinitionRepository().get(weapon_id)
+    return dict(definition) if isinstance(definition, dict) else {}
 
 
 def _resolve_monk_martial_arts_die(level: int) -> str:
@@ -609,6 +975,212 @@ def _resolve_warlock_prepared_spells_count(level: int) -> int:
     return 2 if level >= 1 else 0
 
 
+def _resolve_bardic_inspiration_die(level: int) -> str:
+    if level >= 15:
+        return "d12"
+    if level >= 10:
+        return "d10"
+    if level >= 5:
+        return "d8"
+    return "d6"
+
+
+def _resolve_bard_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 4
+    if level >= 4:
+        return 3
+    return 2 if level >= 1 else 0
+
+
+def _resolve_bard_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 4,
+        2: 5,
+        3: 6,
+        4: 7,
+        5: 9,
+        6: 10,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+        12: 16,
+        13: 17,
+        14: 17,
+        15: 18,
+        16: 18,
+        17: 19,
+        18: 20,
+        19: 21,
+        20: 22,
+    }
+    return progression.get(level, 0)
+
+
+def _resolve_cleric_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 5
+    if level >= 4:
+        return 4
+    return 3 if level >= 1 else 0
+
+
+def _resolve_cleric_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 4,
+        2: 5,
+        3: 6,
+        4: 7,
+        5: 9,
+        6: 10,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+        12: 16,
+        13: 17,
+        14: 17,
+        15: 18,
+        16: 18,
+        17: 19,
+        18: 20,
+        19: 21,
+        20: 22,
+    }
+    return progression.get(level, 0)
+
+
+def _resolve_cleric_channel_divinity_uses(level: int) -> int:
+    if level >= 18:
+        return 4
+    if level >= 6:
+        return 3
+    return 2 if level >= 2 else 0
+
+
+def _resolve_cleric_divine_spark_dice(level: int) -> str | None:
+    if level >= 18:
+        return "4d8"
+    if level >= 13:
+        return "3d8"
+    if level >= 7:
+        return "2d8"
+    return "1d8" if level >= 2 else None
+
+
+def _resolve_druid_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 4
+    if level >= 4:
+        return 3
+    return 2 if level >= 1 else 0
+
+
+def _resolve_druid_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 4,
+        2: 5,
+        3: 6,
+        4: 7,
+        5: 9,
+        6: 10,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+        12: 16,
+        13: 17,
+        14: 17,
+        15: 18,
+        16: 18,
+        17: 19,
+        18: 20,
+        19: 21,
+        20: 22,
+    }
+    return progression.get(level, 0)
+
+
+def _resolve_druid_wild_shape_uses(level: int) -> int:
+    if level >= 17:
+        return 4
+    if level >= 6:
+        return 3
+    return 2 if level >= 2 else 0
+
+
+def _resolve_druid_wild_shape_known_forms(level: int) -> int:
+    if level >= 8:
+        return 8
+    if level >= 4:
+        return 6
+    return 4 if level >= 2 else 0
+
+
+def _resolve_druid_wild_shape_max_cr(level: int) -> str | None:
+    if level >= 8:
+        return "1"
+    if level >= 4:
+        return "1/2"
+    return "1/4" if level >= 2 else None
+
+
+def _resolve_paladin_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 2,
+        2: 3,
+        3: 4,
+        4: 5,
+        5: 6,
+        6: 6,
+        7: 7,
+        8: 7,
+        9: 9,
+        10: 9,
+        11: 10,
+        12: 10,
+        13: 11,
+        14: 11,
+        15: 12,
+        16: 12,
+        17: 14,
+        18: 14,
+        19: 15,
+        20: 15,
+    }
+    return progression.get(level, 0)
+
+
+def _resolve_ranger_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 2,
+        2: 3,
+        3: 4,
+        4: 5,
+        5: 6,
+        6: 6,
+        7: 7,
+        8: 7,
+        9: 9,
+        10: 9,
+        11: 10,
+        12: 10,
+        13: 11,
+        14: 11,
+        15: 12,
+        16: 12,
+        17: 14,
+        18: 14,
+        19: 15,
+        20: 15,
+    }
+    return progression.get(level, 0)
+
+
 def _resolve_sorcerer_cantrips_known(level: int) -> int:
     if level >= 10:
         return 6
@@ -621,6 +1193,40 @@ def _resolve_sorcerer_prepared_spells_count(level: int) -> int:
     progression = {
         1: 2,
         2: 4,
+        3: 6,
+        4: 7,
+        5: 9,
+        6: 10,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+        12: 16,
+        13: 17,
+        14: 17,
+        15: 18,
+        16: 18,
+        17: 19,
+        18: 20,
+        19: 21,
+        20: 22,
+    }
+    return progression.get(level, 0)
+
+
+def _resolve_wizard_cantrips_known(level: int) -> int:
+    if level >= 10:
+        return 5
+    if level >= 4:
+        return 4
+    return 3 if level >= 1 else 0
+
+
+def _resolve_wizard_prepared_spells_count(level: int) -> int:
+    progression = {
+        1: 4,
+        2: 5,
         3: 6,
         4: 7,
         5: 9,

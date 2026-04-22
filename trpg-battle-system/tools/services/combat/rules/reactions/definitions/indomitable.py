@@ -7,6 +7,7 @@ from uuid import uuid4
 from tools.models.roll_request import RollRequest
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.save_spell.resolve_saving_throw import ResolveSavingThrow
+from tools.services.class_features.shared import ensure_fighter_runtime
 
 
 class ResolveIndomitableReaction:
@@ -37,8 +38,8 @@ class ResolveIndomitableReaction:
         if actor is None:
             raise ValueError("indomitable_actor_not_found")
 
-        fighter = actor.class_features.get("fighter") if isinstance(actor.class_features, dict) else None
-        if not isinstance(fighter, dict):
+        fighter = ensure_fighter_runtime(actor)
+        if not fighter:
             raise ValueError("indomitable_not_available")
 
         indomitable_state = fighter.get("indomitable")

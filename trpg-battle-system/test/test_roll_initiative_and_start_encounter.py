@@ -197,6 +197,53 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
                 )
             repo.close()
 
+    def test_execute_restores_focus_to_four_for_perfect_focus_when_not_using_uncanny_metabolism(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            monk = build_entity("ent_a", name="米伦", x=2, y=2)
+            monk.ability_mods = {"dex": 5}
+            monk.class_features = {
+                "monk": {
+                    "level": 15,
+                    "focus_points": {"max": 15, "remaining": 2},
+                    "uncanny_metabolism": {"available": True},
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_perfect_focus_restore_test",
+                name="Perfect Focus Restore Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": monk},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", return_value=12):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.21):
+                    result = RollInitiativeAndStartEncounter(repo).execute("enc_perfect_focus_restore_test")
+
+            updated = repo.get("enc_perfect_focus_restore_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_a"].class_features["monk"]["focus_points"]["remaining"], 4)
+            self.assertIn(
+                {
+                    "entity_id": "ent_a",
+                    "feature_id": "monk.perfect_focus",
+                    "focus_points_restored_to": 4,
+                },
+                result["initiative_feature_results"],
+            )
+            repo.close()
+
     def test_execute_uses_advantage_for_feral_instinct(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -323,6 +370,54 @@ class RollInitiativeAndStartEncounterTests(unittest.TestCase):
             rage = updated.entities["ent_a"].class_features["barbarian"]["rage"]
             self.assertEqual(rage["remaining"], 1)
             self.assertEqual(result["initiative_feature_results"], [])
+            repo.close()
+
+    def test_execute_restores_bardic_inspiration_to_two_for_superior_inspiration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            bard = build_entity("ent_a", name="诗人", x=2, y=2)
+            bard.ability_mods = {"dex": 2, "cha": 4}
+            bard.class_features = {
+                "bard": {
+                    "level": 18,
+                    "bardic_inspiration": {"uses_current": 1},
+                }
+            }
+            encounter = Encounter(
+                encounter_id="enc_superior_inspiration_restore_test",
+                name="Superior Inspiration Restore Test",
+                status="active",
+                round=1,
+                current_entity_id=None,
+                turn_order=[],
+                entities={"ent_a": bard},
+                map=EncounterMap(
+                    map_id="map_init",
+                    name="Map",
+                    description="Map",
+                    width=10,
+                    height=10,
+                ),
+            )
+            repo.save(encounter)
+
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", return_value=12):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", return_value=0.21):
+                    result = RollInitiativeAndStartEncounter(repo).execute("enc_superior_inspiration_restore_test")
+
+            updated = repo.get("enc_superior_inspiration_restore_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities["ent_a"].class_features["bard"]["bardic_inspiration"]["uses_current"], 2)
+            self.assertEqual(
+                result["initiative_feature_results"],
+                [
+                    {
+                        "entity_id": "ent_a",
+                        "feature_id": "bard.superior_inspiration",
+                        "bardic_inspiration_restored_to": 2,
+                    }
+                ],
+            )
             repo.close()
 
 

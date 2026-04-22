@@ -112,6 +112,23 @@ class EndTurnTests(unittest.TestCase):
             self.assertTrue(updated.entities["ent_ally_eric_001"].class_features["barbarian"]["rage"]["active"])
             repo.close()
 
+    def test_execute_monk_self_restoration_removes_one_condition_at_turn_end(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            actor = encounter.entities["ent_ally_eric_001"]
+            actor.conditions = ["poisoned", "frightened", "charmed"]
+            actor.class_features = {"monk": {"level": 10}}
+            repo.save(encounter)
+
+            updated = EndTurn(repo).execute("enc_start_turn_test")
+
+            conditions = updated.entities["ent_ally_eric_001"].conditions
+            self.assertNotIn("charmed", conditions)
+            self.assertIn("frightened", conditions)
+            self.assertIn("poisoned", conditions)
+            repo.close()
+
     def test_execute_keeps_current_entity_state_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

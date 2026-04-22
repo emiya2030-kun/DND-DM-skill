@@ -8,6 +8,7 @@ from tools.models.encounter_entity import EncounterEntity
 from tools.models.map import EncounterMap
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.repositories.entity_definition_repository import EntityDefinitionRepository
+from tools.services.characters.player_character_builder import PlayerCharacterBuilder
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns import AdvanceTurn, EndTurn, StartTurn
 
@@ -22,6 +23,7 @@ class EncounterService:
     ):
         self.repository = repository
         self.entity_definition_repository = entity_definition_repository or EntityDefinitionRepository()
+        self.player_character_builder = PlayerCharacterBuilder()
 
     def create_encounter(self, encounter: Encounter) -> Encounter:
         """创建并保存一场新的 encounter。"""
@@ -340,6 +342,11 @@ class EncounterService:
         payload["source_ref"] = source_ref
 
         self._deep_merge(payload, runtime_overrides)
+        if template_ref.get("source_type") == "pc" and isinstance(payload.get("character_build"), dict):
+            return self.player_character_builder.build(
+                template=payload,
+                entity_id=str(entity_setup["entity_instance_id"]),
+            )
         return EncounterEntity.from_dict(payload)
 
     def _deep_merge(self, base: dict[str, Any], overrides: dict[str, Any]) -> None:

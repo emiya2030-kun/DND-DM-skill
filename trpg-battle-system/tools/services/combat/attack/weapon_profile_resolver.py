@@ -5,7 +5,12 @@ from typing import Any
 
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.weapon_definition_repository import WeaponDefinitionRepository
-from tools.services.class_features.shared import get_monk_runtime, has_fighting_style, resolve_entity_proficiencies
+from tools.services.class_features.shared import (
+    get_monk_runtime,
+    has_fighting_style,
+    monk_qualifies_for_martial_arts,
+    resolve_entity_proficiencies,
+)
 from tools.services.class_features.shared.warlock_invocations import (
     get_bound_pact_weapon_damage_type_override,
     is_bound_pact_weapon,
@@ -162,7 +167,12 @@ class WeaponProfileResolver:
             "kind": "melee",
             "properties": [],
             "is_proficient": True,
-            "damage": [{"formula": self._resolve_unarmed_damage_formula(actor), "type": "bludgeoning"}],
+            "damage": [
+                {
+                    "formula": self._resolve_unarmed_damage_formula(actor),
+                    "type": self._resolve_unarmed_damage_type(actor),
+                }
+            ],
             "range": {"normal": 5, "long": 5},
             "hands": {"mode": "one_handed"},
         }
@@ -173,6 +183,9 @@ class WeaponProfileResolver:
             die = "1d8" if has_both_hands_free else "1d6"
             modifier = actor.ability_mods.get("str", 0)
             return self._append_modifier_to_formula(die, modifier)
+        if not monk_qualifies_for_martial_arts(actor):
+            modifier = actor.ability_mods.get("str", 0)
+            return self._append_modifier_to_formula("1d4", modifier)
         monk_runtime = get_monk_runtime(actor)
         monk_die = monk_runtime.get("martial_arts_die")
         if isinstance(monk_die, str) and monk_die.strip():
@@ -181,6 +194,15 @@ class WeaponProfileResolver:
             return self._append_modifier_to_formula(die, modifier)
         modifier = actor.ability_mods.get("str", 0)
         return self._append_modifier_to_formula("1d4", modifier)
+
+    def _resolve_unarmed_damage_type(self, actor: EncounterEntity) -> str:
+        if not monk_qualifies_for_martial_arts(actor):
+            return "bludgeoning"
+        monk_runtime = get_monk_runtime(actor)
+        empowered_strikes = monk_runtime.get("empowered_strikes")
+        if isinstance(empowered_strikes, dict) and bool(empowered_strikes.get("enabled")):
+            return "force"
+        return "bludgeoning"
 
     def _has_both_hands_free(self, actor: EncounterEntity) -> bool:
         occupied: set[str] = set()
@@ -214,6 +236,8 @@ class WeaponProfileResolver:
         return normalized
 
     def is_monk_weapon(self, actor: EncounterEntity, weapon: dict[str, Any]) -> bool:
+        if not monk_qualifies_for_martial_arts(actor):
+            return False
         monk_runtime = get_monk_runtime(actor)
         martial_arts = monk_runtime.get("martial_arts")
         if not isinstance(martial_arts, dict) or not bool(martial_arts.get("enabled")):

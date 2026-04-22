@@ -93,3 +93,81 @@ class OpenReactionWindowTests(unittest.TestCase):
             self.assertEqual({item["reaction_type"] for item in options}, {"shield"})
             self.assertEqual(choice_groups[0]["actor_entity_id"], encounter.current_entity_id)
             repository.close()
+
+    def test_open_reaction_window_opens_bardic_inspiration_for_failed_ability_check_even_if_reaction_spent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            target = build_defender()
+            target.action_economy["reaction_used"] = True
+            target.combat_flags["bardic_inspiration"] = {
+                "die": "d8",
+                "source_entity_id": "ent_bard_001",
+                "source_name": "诗人",
+            }
+            encounter = Encounter(
+                encounter_id="enc_bardic_inspiration_window_test",
+                name="Bardic Inspiration Window Test",
+                status="active",
+                round=1,
+                current_entity_id=target.entity_id,
+                turn_order=[target.entity_id],
+                entities={target.entity_id: target},
+                map=EncounterMap(
+                    map_id="map_bardic_inspiration_window_test",
+                    name="Bardic Inspiration Window Map",
+                    description="Map for bardic inspiration window tests.",
+                    width=6,
+                    height=6,
+                ),
+            )
+            repository.save(encounter)
+
+            service = OpenReactionWindow(
+                encounter_repository=repository,
+                definition_repository=ReactionDefinitionRepository(),
+            )
+            result = service.execute(
+                encounter_id=encounter.encounter_id,
+                trigger_event={
+                    "event_id": "evt_failed_ability_check_001",
+                    "trigger_type": "failed_ability_check",
+                    "host_action_type": "ability_check",
+                    "host_action_id": "ability_check_001",
+                    "host_action_snapshot": {
+                        "roll_request": {
+                            "request_id": "req_ability_001",
+                            "context": {"check_type": "skill", "check": "stealth", "dc": 15},
+                        },
+                        "roll_result": {
+                            "request_id": "req_ability_001",
+                            "roll_type": "ability_check",
+                            "final_total": 10,
+                            "dice_rolls": {
+                                "base_rolls": [8],
+                                "chosen_roll": 8,
+                                "check_bonus": 2,
+                                "additional_bonus": 0,
+                                "d20_penalty": 0,
+                            },
+                            "metadata": {},
+                        },
+                        "check": "隐匿",
+                        "normalized_check": "stealth",
+                    },
+                    "target_entity_id": target.entity_id,
+                    "request_payloads": {
+                        target.entity_id: {
+                            "dc": 15,
+                            "current_total": 10,
+                            "bonus_formula": "1d8",
+                            "source_entity_id": "ent_bard_001",
+                            "source_name": "诗人",
+                        }
+                    },
+                },
+            )
+
+            self.assertEqual(result["status"], "waiting_reaction")
+            choice_groups = result["pending_reaction_window"]["choice_groups"]
+            self.assertEqual(choice_groups[0]["options"][0]["reaction_type"], "bardic_inspiration")
+            repository.close()

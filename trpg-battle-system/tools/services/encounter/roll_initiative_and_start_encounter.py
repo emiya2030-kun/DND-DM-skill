@@ -6,7 +6,7 @@ from typing import Any
 
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.class_features.barbarian.runtime import ensure_barbarian_runtime
-from tools.services.class_features.shared import get_monk_runtime
+from tools.services.class_features.shared import ensure_bard_runtime, get_monk_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.encounter.turns.start_turn import StartTurn
 
@@ -34,10 +34,16 @@ class RollInitiativeAndStartEncounter:
             persistent_rage_result = self._apply_persistent_rage_restore_if_available(entity=entity)
             if persistent_rage_result is not None:
                 initiative_feature_results.append(persistent_rage_result)
+            superior_inspiration_result = self._apply_superior_inspiration_restore_if_available(entity=entity)
+            if superior_inspiration_result is not None:
+                initiative_feature_results.append(superior_inspiration_result)
             option = (initiative_options or {}).get(entity_id, {})
             metabolism_result = self._apply_uncanny_metabolism_if_requested(entity=entity, option=option)
             if metabolism_result is not None:
                 initiative_feature_results.append(metabolism_result)
+            perfect_focus_result = self._apply_perfect_focus_restore_if_available(entity=entity, option=option)
+            if perfect_focus_result is not None:
+                initiative_feature_results.append(perfect_focus_result)
             modifier = int(entity.ability_mods.get("dex", 0))
             vantage = "normal"
             barbarian = ensure_barbarian_runtime(entity) if entity.class_features.get("barbarian") else {}
@@ -119,6 +125,42 @@ class RollInitiativeAndStartEncounter:
             "rage_restored_to": max_uses,
         }
 
+    def _apply_superior_inspiration_restore_if_available(self, *, entity: Any) -> dict[str, Any] | None:
+        if not entity.class_features.get("bard"):
+            return None
+
+        bard = ensure_bard_runtime(entity)
+        superior_inspiration = bard.get("superior_inspiration")
+        if not isinstance(superior_inspiration, dict) or not bool(superior_inspiration.get("enabled")):
+            return None
+
+        minimum_uses = superior_inspiration.get("minimum_uses_after_initiative")
+        if isinstance(minimum_uses, bool) or not isinstance(minimum_uses, int) or minimum_uses <= 0:
+            return None
+
+        inspiration = bard.get("bardic_inspiration")
+        if not isinstance(inspiration, dict):
+            return None
+        uses_current = inspiration.get("uses_current")
+        uses_max = inspiration.get("uses_max")
+        if (
+            isinstance(uses_current, bool)
+            or not isinstance(uses_current, int)
+            or isinstance(uses_max, bool)
+            or not isinstance(uses_max, int)
+        ):
+            return None
+        if uses_current >= minimum_uses:
+            return None
+
+        restored_to = min(uses_max, minimum_uses)
+        inspiration["uses_current"] = restored_to
+        return {
+            "entity_id": entity.entity_id,
+            "feature_id": "bard.superior_inspiration",
+            "bardic_inspiration_restored_to": restored_to,
+        }
+
     def execute_with_state(
         self,
         encounter_id: str,
@@ -172,6 +214,50 @@ class RollInitiativeAndStartEncounter:
             "focus_points_restored_to": max_points,
             "healing_roll": healing_roll,
             "healing_total": healing_total,
+        }
+
+    def _apply_perfect_focus_restore_if_available(
+        self,
+        *,
+        entity: Any,
+        option: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if bool(option.get("use_uncanny_metabolism")):
+            return None
+
+        monk_runtime = get_monk_runtime(entity)
+        if not monk_runtime:
+            return None
+
+        perfect_focus = monk_runtime.get("perfect_focus")
+        if not isinstance(perfect_focus, dict) or not bool(perfect_focus.get("enabled")):
+            return None
+
+        focus_points = monk_runtime.get("focus_points")
+        if not isinstance(focus_points, dict):
+            return None
+        max_points = focus_points.get("max")
+        remaining_points = focus_points.get("remaining")
+        restore_threshold = perfect_focus.get("restore_threshold")
+        restore_to = perfect_focus.get("restore_to")
+        if (
+            not isinstance(max_points, int)
+            or not isinstance(remaining_points, int)
+            or not isinstance(restore_threshold, int)
+            or not isinstance(restore_to, int)
+        ):
+            return None
+        if remaining_points > restore_threshold:
+            return None
+
+        restored_to = min(max_points, restore_to)
+        if restored_to <= remaining_points:
+            return None
+        focus_points["remaining"] = restored_to
+        return {
+            "entity_id": entity.entity_id,
+            "feature_id": "monk.perfect_focus",
+            "focus_points_restored_to": restored_to,
         }
 
     def _roll_formula_once(self, formula: str) -> int:

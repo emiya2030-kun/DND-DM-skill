@@ -6,6 +6,10 @@ from tools.models.roll_request import RollRequest
 from tools.models.roll_result import RollResult
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.checks.ability_check_result import AbilityCheckResult
+from tools.services.combat.save_spell.saving_throw_result import SavingThrowResult
+from tools.services.combat.shared.update_conditions import UpdateConditions
+from tools.services.combat.shared.update_encounter_notes import UpdateEncounterNotes
+from tools.services.combat.shared.update_hp import UpdateHp
 from tools.services.events.append_event import AppendEvent
 
 if TYPE_CHECKING:
@@ -25,6 +29,13 @@ class ResumeHostAction:
     ) -> None:
         self.encounter_repository = encounter_repository
         self.ability_check_result = AbilityCheckResult(encounter_repository, append_event)
+        self.saving_throw_result = SavingThrowResult(
+            encounter_repository,
+            append_event,
+            UpdateHp(encounter_repository, append_event),
+            UpdateConditions(encounter_repository, append_event),
+            UpdateEncounterNotes(encounter_repository, append_event),
+        )
         self.execute_attack = execute_attack
         self.encounter_cast_spell = encounter_cast_spell
 
@@ -80,11 +91,17 @@ class ResumeHostAction:
 
             roll_request = RollRequest.from_dict(dict(roll_request_data))
             resolved_roll_result = RollResult.from_dict(dict(roll_result_data))
+            feature_key: str | None = None
             if isinstance(reaction_result, dict):
                 final_total = reaction_result.get("final_total")
                 if isinstance(final_total, int) and not isinstance(final_total, bool):
                     resolved_roll_result.final_total = final_total
-                resolved_roll_result.metadata["tactical_mind"] = dict(reaction_result)
+                raw_feature_key = reaction_result.get("feature_key")
+                if isinstance(raw_feature_key, str) and raw_feature_key.strip():
+                    feature_key = raw_feature_key.strip()
+                else:
+                    feature_key = "tactical_mind"
+                resolved_roll_result.metadata[feature_key] = dict(reaction_result)
 
             outcome = self.ability_check_result.execute(
                 encounter_id=encounter_id,
@@ -101,8 +118,8 @@ class ResumeHostAction:
                 "roll_result": resolved_roll_result.to_dict(),
                 **outcome,
             }
-            if isinstance(reaction_result, dict):
-                host_action_result["class_feature_result"] = {"tactical_mind": dict(reaction_result)}
+            if isinstance(reaction_result, dict) and isinstance(feature_key, str):
+                host_action_result["class_feature_result"] = {feature_key: dict(reaction_result)}
             return {
                 "status": "resumed",
                 "encounter_id": encounter_id,
@@ -124,6 +141,56 @@ class ResumeHostAction:
                     allow_out_of_turn_actor=bool(snapshot.get("allow_out_of_turn_actor", False)),
                     skip_reaction_window=True,
                 ),
+                "pending_window": pending_window,
+            }
+
+        if host_action_type == "save":
+            roll_request_data = snapshot.get("roll_request")
+            roll_result_data = snapshot.get("roll_result")
+            if not isinstance(roll_request_data, dict):
+                raise ValueError("save_roll_request_missing")
+            if not isinstance(roll_result_data, dict):
+                raise ValueError("save_roll_result_missing")
+
+            roll_request = RollRequest.from_dict(dict(roll_request_data))
+            resolved_roll_result = RollResult.from_dict(dict(roll_result_data))
+            feature_key: str | None = None
+            if isinstance(reaction_result, dict):
+                save_roll_result = reaction_result.get("save_roll_result")
+                if isinstance(save_roll_result, dict):
+                    resolved_roll_result = RollResult.from_dict(dict(save_roll_result))
+                    resolved_roll_result.request_id = roll_request.request_id
+                else:
+                    final_total = reaction_result.get("final_total")
+                    if isinstance(final_total, int) and not isinstance(final_total, bool):
+                        resolved_roll_result.final_total = final_total
+                raw_feature_key = reaction_result.get("feature_key")
+                if isinstance(raw_feature_key, str) and raw_feature_key.strip():
+                    feature_key = raw_feature_key.strip()
+                    resolved_roll_result.metadata[feature_key] = dict(reaction_result)
+
+            result_args = snapshot.get("saving_throw_result_args")
+            if not isinstance(result_args, dict):
+                raise ValueError("saving_throw_result_args_missing")
+
+            resolution = self.saving_throw_result.execute(
+                encounter_id=encounter_id,
+                roll_request=roll_request,
+                roll_result=resolved_roll_result,
+                **dict(result_args),
+            )
+            host_action_result: dict[str, Any] = {
+                "cast": snapshot.get("cast"),
+                "request": roll_request.to_dict(),
+                "roll_result": resolved_roll_result.to_dict(),
+                "resolution": resolution,
+            }
+            if isinstance(feature_key, str):
+                host_action_result["class_feature_result"] = {feature_key: dict(reaction_result)}
+            return {
+                "status": "resumed",
+                "encounter_id": encounter_id,
+                "host_action_result": host_action_result,
                 "pending_window": pending_window,
             }
 

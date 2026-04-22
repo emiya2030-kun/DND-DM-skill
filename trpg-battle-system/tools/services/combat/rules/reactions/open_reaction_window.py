@@ -72,7 +72,13 @@ class OpenReactionWindow:
             if isinstance(override, dict) and isinstance(override.get("payload"), dict):
                 payload = dict(override["payload"])
             elif actor_id in payload_map:
-                payload = dict(payload_map.get(actor_id, {}))
+                actor_payload = payload_map.get(actor_id, {})
+                if isinstance(actor_payload, dict):
+                    typed_payload = actor_payload.get(reaction_type)
+                    if isinstance(typed_payload, dict):
+                        payload = dict(typed_payload)
+                    else:
+                        payload = dict(actor_payload)
             request_data = {
                 "request_id": request_id,
                 "status": "pending",

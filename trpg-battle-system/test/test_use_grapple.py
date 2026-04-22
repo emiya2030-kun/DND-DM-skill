@@ -126,6 +126,20 @@ class GrappleSharedTests(unittest.TestCase):
         self.assertEqual(result["dc"], 14)
         self.assertEqual(result["ability_used"], "dex")
 
+    def test_resolve_grapple_save_dc_armored_monk_falls_back_to_strength(self) -> None:
+        actor = build_grappler(
+            str_mod=3,
+            dex_mod=4,
+            proficiency_bonus=2,
+            class_features={"monk": {"level": 1, "martial_arts": {"grapple_dc_ability": "dex"}}},
+        )
+        actor.equipped_armor = {"armor_id": "leather_armor"}
+
+        result = resolve_grapple_save_dc(actor)
+
+        self.assertEqual(result["dc"], 13)
+        self.assertEqual(result["ability_used"], "str")
+
     def test_extract_grapple_source_from_target_condition(self) -> None:
         target = build_target(conditions=["grappled:ent_actor_001"])
 

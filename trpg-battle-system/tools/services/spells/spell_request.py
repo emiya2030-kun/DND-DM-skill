@@ -17,6 +17,7 @@ from tools.services.spells.metamagic_support import (
     spell_supports_transmuted_spell,
     spell_supports_twinned_spell,
 )
+from tools.services.spells.resolve_spellcasting_access import ResolveSpellcastingAccess
 
 
 class SpellRequest:
@@ -30,6 +31,7 @@ class SpellRequest:
     ):
         self.encounter_repository = encounter_repository
         self.spell_definition_repository = spell_definition_repository or SpellDefinitionRepository()
+        self.resolve_spellcasting_access = ResolveSpellcastingAccess(self.spell_definition_repository)
 
     def execute(
         self,
@@ -60,13 +62,14 @@ class SpellRequest:
         spell_origin = resolve_gaze_of_two_minds_origin(encounter, actor)
         origin_actor = spell_origin.get("origin_entity") or actor
 
-        known_spell = self._find_actor_spell_definition(actor=actor, spell_id=spell_id)
-        if known_spell is None:
+        spellcasting_access = self.resolve_spellcasting_access.execute(actor=actor, spell_id=spell_id)
+        if spellcasting_access["ok"] is False:
             return {
                 "ok": False,
-                "error_code": "spell_not_known",
-                "message": f"施法者未掌握 {spell_id}",
+                "error_code": spellcasting_access["error_code"],
+                "message": spellcasting_access["message"],
             }
+        known_spell = spellcasting_access["spell_entry"]
 
         repository_spell_definition = self.spell_definition_repository.get(spell_id)
         if isinstance(repository_spell_definition, dict):

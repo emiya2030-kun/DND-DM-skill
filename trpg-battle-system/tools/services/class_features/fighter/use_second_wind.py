@@ -5,7 +5,7 @@ from typing import Any
 from tools.models.encounter import Encounter
 from tools.models.encounter_entity import EncounterEntity
 from tools.repositories.encounter_repository import EncounterRepository
-from tools.services.class_features.shared.runtime import get_fighter_runtime
+from tools.services.class_features.shared.runtime import ensure_fighter_runtime
 from tools.services.encounter.get_encounter_state import GetEncounterState
 from tools.services.events.append_event import AppendEvent
 
@@ -31,7 +31,7 @@ class UseSecondWind:
         self._ensure_actor_turn(encounter, actor_id)
         self._ensure_bonus_action_available(actor)
 
-        fighter_state = get_fighter_runtime(actor)
+        fighter_state = ensure_fighter_runtime(actor)
         second_wind = fighter_state.get("second_wind")
         if not isinstance(second_wind, dict):
             raise ValueError("second_wind_not_available")

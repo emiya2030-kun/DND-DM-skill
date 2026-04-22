@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -78,21 +79,22 @@ def write_entity_definitions(path: Path) -> None:
                         "initiative": 0,
                         "size": "medium",
                         "ability_scores": {"dex": 16},
-                        "ability_mods": {"dex": 3},
-                        "proficiency_bonus": 3,
-                        "save_proficiencies": ["wis", "int"],
-                        "skill_modifiers": {"arcana": 6},
+                        "skill_training": {"arcana": "proficient"},
                         "conditions": [],
-                        "resources": {"spell_slots": {"1": 4, "2": 3, "3": 2}},
+                        "resources": {},
                         "action_economy": {},
                         "combat_flags": {},
                         "turn_effects": [],
                         "weapons": [{"weapon_id": "dagger", "name": "匕首"}],
-                        "spells": [{"spell_id": "fireball", "name": "火球术"}],
+                        "spells": [{"spell_id": "fireball", "name": "火球术", "level": 3}],
                         "resistances": [],
                         "immunities": [],
                         "vulnerabilities": [],
                         "notes": [],
+                        "character_build": {
+                            "classes": [{"class_id": "wizard", "level": 5}],
+                            "initial_class_name": "wizard",
+                        },
                     },
                     "monster_sabur": {
                         "entity_def_id": "monster_sabur",
@@ -130,7 +132,90 @@ def write_entity_definitions(path: Path) -> None:
     )
 
 
+def write_entity_definitions_with_character_build(path: Path) -> None:
+    definitions = {
+        "entity_definitions": {
+            "pc_builder_wizard": {
+                "entity_def_id": "pc_builder_wizard",
+                "name": "伊兰",
+                "side": "ally",
+                "category": "pc",
+                "controller": "player",
+                "ac": 14,
+                "speed": {"walk": 30, "remaining": 30},
+                "hp": {"current": 27, "max": 27, "temp": 0},
+                "initiative": 0,
+                "size": "medium",
+                "source_ref": {"entity_type": "humanoid"},
+                "ability_scores": {"str": 8, "dex": 14, "con": 14, "int": 18, "wis": 12, "cha": 10},
+                "skill_training": {"arcana": "expertise"},
+                "conditions": [],
+                "resources": {},
+                "action_economy": {},
+                "combat_flags": {},
+                "turn_effects": [],
+                "weapons": [{"weapon_id": "dagger", "name": "匕首"}],
+                "spells": [{"spell_id": "fireball", "name": "火球术", "level": 3}],
+                "resistances": [],
+                "immunities": [],
+                "vulnerabilities": [],
+                "notes": [],
+                "character_build": {
+                    "classes": [{"class_id": "wizard", "level": 5}],
+                    "initial_class_name": "wizard",
+                },
+            }
+        }
+    }
+    path.write_text(json.dumps(definitions, ensure_ascii=False), encoding="utf-8")
+
+
 class EncounterServiceTests(unittest.TestCase):
+    def test_initialize_encounter_builds_pc_template_via_character_builder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            definition_path = Path(tmp_dir) / "entity_definitions.json"
+            write_entity_definitions_with_character_build(definition_path)
+            service = EncounterService(repo, EntityDefinitionRepository(definition_path))
+            encounter = build_encounter()
+            service.create_encounter(encounter)
+
+            initialized = service.initialize_encounter(
+                encounter.encounter_id,
+                map_setup={
+                    "map_id": "map_new",
+                    "name": "New Battle Map",
+                    "description": "Fresh battle map",
+                    "width": 12,
+                    "height": 12,
+                    "terrain": [],
+                    "zones": [],
+                    "auras": [],
+                    "remains": [],
+                    "battlemap_details": [],
+                },
+                entity_setups=[
+                    {
+                        "entity_instance_id": "ent_pc_builder_001",
+                        "template_ref": {
+                            "source_type": "pc",
+                            "template_id": "pc_builder_wizard",
+                        },
+                        "runtime_overrides": {
+                            "position": {"x": 4, "y": 6},
+                        },
+                    }
+                ],
+            )
+
+            entity = initialized.entities["ent_pc_builder_001"]
+            self.assertEqual(entity.initial_class_name, "wizard")
+            self.assertEqual(entity.proficiency_bonus, 3)
+            self.assertEqual(entity.save_proficiencies, ["int", "wis"])
+            self.assertEqual(entity.class_features["wizard"]["level"], 5)
+            self.assertEqual(entity.resources["spell_slots"]["3"]["max"], 2)
+            repo.close()
+
     def test_initialize_encounter_replaces_map_and_entities_and_resets_runtime_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -191,6 +276,9 @@ class EncounterServiceTests(unittest.TestCase):
             self.assertEqual(initialized.entities["ent_pc_miren"].hp["current"], 18)
             self.assertEqual(initialized.entities["ent_pc_miren"].hp["max"], 22)
             self.assertEqual(initialized.entities["ent_pc_miren"].hp["temp"], 2)
+            self.assertEqual(initialized.entities["ent_pc_miren"].proficiency_bonus, 3)
+            self.assertEqual(initialized.entities["ent_pc_miren"].save_proficiencies, ["int", "wis"])
+            self.assertEqual(initialized.entities["ent_pc_miren"].resources["spell_slots"]["3"]["max"], 2)
             self.assertEqual(initialized.entities["ent_enemy_sabur"].conditions, ["poisoned"])
             self.assertEqual(initialized.turn_order, [])
             self.assertIsNone(initialized.current_entity_id)

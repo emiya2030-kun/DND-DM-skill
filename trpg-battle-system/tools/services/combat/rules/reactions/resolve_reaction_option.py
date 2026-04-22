@@ -6,8 +6,11 @@ from tools.models import Encounter
 from tools.repositories.encounter_repository import EncounterRepository
 from tools.services.combat.attack.execute_attack import ExecuteAttack
 from tools.services.combat.rules.reactions.close_reaction_window import CloseReactionWindow
+from tools.services.combat.rules.reactions.definitions.bardic_inspiration import ResolveBardicInspirationReaction
+from tools.services.combat.rules.reactions.definitions.countercharm import ResolveCountercharmReaction
 from tools.services.combat.rules.reactions.definitions.counterspell import ResolveCounterspellReaction
 from tools.services.combat.rules.reactions.definitions.deflect_attacks import ResolveDeflectAttacksReaction
+from tools.services.combat.rules.reactions.definitions.disciplined_survivor import ResolveDisciplinedSurvivorReaction
 from tools.services.combat.rules.reactions.definitions.indomitable import ResolveIndomitableReaction
 from tools.services.combat.rules.reactions.definitions.interception import ResolveInterceptionReaction
 from tools.services.combat.rules.reactions.definitions.opportunity_attack import ResolveOpportunityAttackReaction
@@ -49,12 +52,15 @@ class ResolveReactionOption:
         self.counterspell_resolver = ResolveCounterspellReaction(
             CastInterruptContest(encounter_repository),
         )
+        self.countercharm_resolver = ResolveCountercharmReaction(encounter_repository)
         self.deflect_attacks_resolver = ResolveDeflectAttacksReaction(encounter_repository)
         self.uncanny_dodge_resolver = ResolveUncannyDodgeReaction(encounter_repository)
         self.interception_resolver = ResolveInterceptionReaction(encounter_repository)
         self.protection_resolver = ResolveProtectionReaction(encounter_repository)
         self.indomitable_resolver = ResolveIndomitableReaction(encounter_repository)
+        self.disciplined_survivor_resolver = ResolveDisciplinedSurvivorReaction(encounter_repository)
         self.tactical_mind_resolver = ResolveTacticalMindReaction(encounter_repository)
+        self.bardic_inspiration_resolver = ResolveBardicInspirationReaction(encounter_repository)
         encounter_cast_spell = encounter_cast_spell or EncounterCastSpell(encounter_repository, append_event)
         self.resume_host_action = resume_host_action or ResumeHostAction(
             encounter_repository=encounter_repository,
@@ -329,6 +335,13 @@ class ResolveReactionOption:
                 final_total=final_total,
                 dice_rolls=dice_rolls,
             )
+        if reaction_type == "countercharm":
+            return self.countercharm_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+            )
         if reaction_type == "indomitable":
             return self.indomitable_resolver.execute(
                 encounter_id=encounter_id,
@@ -336,8 +349,22 @@ class ResolveReactionOption:
                 final_total=final_total,
                 dice_rolls=dice_rolls,
             )
+        if reaction_type == "disciplined_survivor":
+            return self.disciplined_survivor_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+            )
         if reaction_type == "tactical_mind":
             return self.tactical_mind_resolver.execute(
+                encounter_id=encounter_id,
+                request=request,
+                final_total=final_total,
+                dice_rolls=dice_rolls,
+            )
+        if reaction_type == "bardic_inspiration":
+            return self.bardic_inspiration_resolver.execute(
                 encounter_id=encounter_id,
                 request=request,
                 final_total=final_total,

@@ -221,5 +221,5 @@ def test_get_encounter_state_projects_pact_of_the_chain_summary() -> None:
         assert warlock["pact_of_the_chain"]["enabled"] is True
         assert warlock["pact_of_the_chain"]["familiar_name"] == "Sprite"
         assert warlock["pact_of_the_chain"]["familiar_form_id"] == "sprite"
-        assert "pact_of_the_chain" in warlock["available_features"]
+        assert "链之契约" in warlock["available_features_zh"]
         repo.close()

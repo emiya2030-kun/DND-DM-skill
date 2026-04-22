@@ -1944,6 +1944,58 @@ class AttackRollRequestTests(unittest.TestCase):
             self.assertEqual(request.context["attack_kind"], "melee_weapon")
             repo.close()
 
+    def test_execute_rejects_martial_arts_bonus_when_monk_is_armored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            actor.equipped_armor = {"armor_id": "leather_armor"}
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "martial_arts_requires_unarmored_state"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="unarmed_strike",
+                    attack_mode="martial_arts_bonus",
+                )
+            repo.close()
+
+    def test_execute_rejects_martial_arts_bonus_when_wielding_non_monk_weapon(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 5},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            actor.weapons = [
+                {
+                    "weapon_id": "greatsword",
+                    "slot": "both_hands",
+                    "is_proficient": True,
+                }
+            ]
+            repo.save(build_encounter(actor=actor))
+
+            with self.assertRaisesRegex(ValueError, "martial_arts_requires_monk_weapons_only"):
+                AttackRollRequest(repo).execute(
+                    encounter_id="enc_attack_request_test",
+                    target_id="ent_enemy_goblin_001",
+                    weapon_id="unarmed_strike",
+                    attack_mode="martial_arts_bonus",
+                )
+            repo.close()
+
     def test_resolve_weapon_uses_martial_arts_die_for_simple_melee_monk_weapon(self) -> None:
         actor = build_actor(
             class_features={
@@ -1967,6 +2019,45 @@ class AttackRollRequestTests(unittest.TestCase):
         weapon = WeaponProfileResolver().resolve(actor, "quarterstaff")
 
         self.assertEqual(weapon["damage"][0]["formula"], "1d8+3")
+
+    def test_resolve_weapon_does_not_apply_monk_weapon_bonus_when_monk_is_armored(self) -> None:
+        actor = build_actor(
+            class_features={
+                "monk": {
+                    "level": 5,
+                }
+            }
+        )
+        actor.equipped_armor = {"armor_id": "leather_armor"}
+        actor.weapons = [
+            {
+                "weapon_id": "quarterstaff",
+                "name": "Quarterstaff",
+                "category": "simple",
+                "kind": "melee",
+                "damage": [{"formula": "1d6+1", "type": "bludgeoning"}],
+                "properties": ["versatile"],
+                "range": {"normal": 5, "long": 5},
+            }
+        ]
+
+        weapon = WeaponProfileResolver().resolve(actor, "quarterstaff")
+
+        self.assertEqual(weapon["damage"][0]["formula"], "1d6+1")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="quarterstaff",
+            )
+
+            self.assertEqual(request.context["modifier"], "str")
+            self.assertEqual(request.context["modifier_value"], 1)
+            repo.close()
 
     def test_execute_uses_dex_for_simple_melee_monk_weapon_attack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2052,6 +2143,27 @@ class AttackRollRequestTests(unittest.TestCase):
 
         self.assertEqual(weapon["damage"][0]["formula"], "1d6+1")
 
+    def test_execute_uses_force_for_level_6_monk_unarmed_strike_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor(
+                class_features={
+                    "monk": {
+                        "level": 6,
+                    }
+                }
+            )
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="unarmed_strike",
+            )
+
+            self.assertEqual(request.context["primary_damage_type"], "force")
+            repo.close()
+
     def test_execute_rejects_flurry_of_blows_when_no_focus_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
@@ -2072,6 +2184,36 @@ class AttackRollRequestTests(unittest.TestCase):
                     weapon_id="unarmed_strike",
                     attack_mode="flurry_of_blows",
                 )
+            repo.close()
+
+    def test_execute_allows_follow_up_flurry_of_blows_attack_after_bonus_action_is_spent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "bonus_action_used": True, "reaction_used": False}
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 4},
+                    "martial_arts_die": "1d8",
+                    "flurry_of_blows": {
+                        "enabled": True,
+                        "active": True,
+                        "base_attack_count": 2,
+                        "remaining_attacks": 1,
+                    },
+                }
+            }
+            repo.save(build_encounter(actor=actor))
+
+            request = AttackRollRequest(repo).execute(
+                encounter_id="enc_attack_request_test",
+                target_id="ent_enemy_goblin_001",
+                weapon_id="unarmed_strike",
+                attack_mode="flurry_of_blows",
+            )
+
+            self.assertEqual(request.context["attack_mode"], "flurry_of_blows")
             repo.close()
 
     def test_execute_applies_reckless_attack_advantage_for_strength_attack(self) -> None:

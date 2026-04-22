@@ -4,6 +4,7 @@
     "fighter.second_wind": {
       "id": "fighter.second_wind",
       "name": "Second Wind",
+      "name_zh": "回气",
       "class_id": "fighter",
       "level_required": 1,
       "template_type": "activated_heal",
@@ -22,6 +23,7 @@
         "type": "self"
       },
       "effect_summary": "Regain hit points based on fighter level.",
+      "summary_zh": "附赠动作回复 1d10 + 战士等级生命。初始 2 次；短休回 1 次，长休全回。高等级获得更多次数。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -30,6 +32,7 @@
     "fighter.action_surge": {
       "id": "fighter.action_surge",
       "name": "Action Surge",
+      "name_zh": "动作如潮",
       "class_id": "fighter",
       "level_required": 2,
       "template_type": "extra_action_grant",
@@ -49,6 +52,7 @@
         "type": "self"
       },
       "effect_summary": "Gain one additional action on your turn.",
+      "summary_zh": "你的回合内额外获得 1 个动作，但不能用于魔法动作。短休或长休恢复；17级起每次休息可用 2 次。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -57,6 +61,7 @@
     "fighter.tactical_shift": {
       "id": "fighter.tactical_shift",
       "name": "Tactical Shift",
+      "name_zh": "战术转进",
       "class_id": "fighter",
       "level_required": 2,
       "template_type": "post_activation_free_movement",
@@ -72,6 +77,7 @@
         "type": "self"
       },
       "effect_summary": "After Second Wind, move up to half Speed without opportunity attacks.",
+      "summary_zh": "使用回气时，可额外移动最多一半速度，且不会引发借机攻击。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -80,6 +86,7 @@
     "fighter.indomitable": {
       "id": "fighter.indomitable",
       "name": "Indomitable",
+      "name_zh": "不屈",
       "class_id": "fighter",
       "level_required": 9,
       "template_type": "failed_save_reroll",
@@ -99,6 +106,7 @@
         "type": "self"
       },
       "effect_summary": "Reroll a failed saving throw.",
+      "summary_zh": "豁免失败时可重骰，并获得等同战士等级的加值。长休恢复；13级起 2 次，17级起 3 次。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -107,6 +115,7 @@
     "fighter.studied_attacks": {
       "id": "fighter.studied_attacks",
       "name": "Studied Attacks",
+      "name_zh": "究明攻击",
       "class_id": "fighter",
       "level_required": 13,
       "template_type": "miss_applies_next_attack_advantage_mark",
@@ -121,6 +130,7 @@
         "type": "attack_target"
       },
       "effect_summary": "A miss can grant advantage on your next attack against that target.",
+      "summary_zh": "攻击失手后，在你下个回合结束前对该目标的下一次攻击具有优势。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -129,6 +139,7 @@
     "fighter.extra_attack": {
       "id": "fighter.extra_attack",
       "name": "Extra Attack",
+      "name_zh": "额外攻击",
       "class_id": "fighter",
       "level_required": 5,
       "template_type": "attack_action_multi_strike",
@@ -143,6 +154,7 @@
         "type": "self"
       },
       "effect_summary": "Attack more than once when taking the Attack action.",
+      "summary_zh": "执行攻击动作时可攻击 2 次。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -154,6 +166,7 @@
     "fighter.tactical_master": {
       "id": "fighter.tactical_master",
       "name": "Tactical Master",
+      "name_zh": "战术主宰",
       "class_id": "fighter",
       "level_required": 9,
       "template_type": "attack_mastery_override",
@@ -168,6 +181,199 @@
         "type": "attack_target"
       },
       "effect_summary": "Temporarily replace weapon mastery option on qualifying attacks.",
+      "summary_zh": "使用武器精通时，可将精通词条改为推离、削弱或缓速之一。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.fighting_style": {
+      "id": "fighter.fighting_style",
+      "name": "Fighting Style",
+      "name_zh": "战斗风格",
+      "class_id": "fighter",
+      "level_required": 1,
+      "template_type": "passive_specialization",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one Fighting Style feat and replace it whenever you gain a fighter level.",
+      "summary_zh": "获得 1 项战斗风格专长；每次获得战士等级时可更换。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.weapon_mastery": {
+      "id": "fighter.weapon_mastery",
+      "name": "Weapon Mastery",
+      "name_zh": "武器精通",
+      "class_id": "fighter",
+      "level_required": 1,
+      "template_type": "weapon_mastery_selection",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "long_rest_retrain"
+      },
+      "trigger": {
+        "type": "on_weapon_attack"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Master three weapon mastery properties and retrain one after a Long Rest.",
+      "summary_zh": "掌握 3 种简易或军用武器的精通词条；长休后可替换 1 种。高等级可掌握更多武器。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.tactical_mind": {
+      "id": "fighter.tactical_mind",
+      "name": "Tactical Mind",
+      "name_zh": "战术思维",
+      "class_id": "fighter",
+      "level_required": 2,
+      "template_type": "failed_check_boost",
+      "activation": "reaction_like",
+      "resource_model": {
+        "linked_to_feature": "fighter.second_wind"
+      },
+      "trigger": {
+        "type": "on_failed_ability_check"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Roll 1d10 on a failed ability check by spending Second Wind, only if it turns the failure into a success.",
+      "summary_zh": "属性检定失败时，可消耗 1 次回气来掷 1d10 加到结果上；若仍失败，则不消耗回气次数。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.subclass": {
+      "id": "fighter.subclass",
+      "name": "Fighter Subclass",
+      "name_zh": "战士子职",
+      "class_id": "fighter",
+      "level_required": 3,
+      "template_type": "subclass_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Choose a fighter subclass and gain its features at the listed levels.",
+      "summary_zh": "选择 1 个战士子职，并获得对应等级的全部子职特性。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.ability_score_improvement": {
+      "id": "fighter.ability_score_improvement",
+      "name": "Ability Score Improvement",
+      "name_zh": "属性值提升",
+      "class_id": "fighter",
+      "level_required": 4,
+      "template_type": "feat_or_asi_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain an Ability Score Improvement feat or another eligible feat.",
+      "summary_zh": "获得属性值提升专长或其他符合条件的专长；后续多个战士等级会再次获得。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.extra_attack_2": {
+      "id": "fighter.extra_attack_2",
+      "name": "Two Extra Attacks",
+      "name_zh": "额外攻击（二）",
+      "class_id": "fighter",
+      "level_required": 11,
+      "template_type": "attack_action_multi_strike_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Make three attacks when you take the Attack action.",
+      "summary_zh": "执行攻击动作时可攻击 3 次。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.epic_boon": {
+      "id": "fighter.epic_boon",
+      "name": "Epic Boon",
+      "name_zh": "传奇恩惠",
+      "class_id": "fighter",
+      "level_required": 19,
+      "template_type": "epic_boon_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one Epic Boon feat or another eligible feat.",
+      "summary_zh": "获得 1 项传奇恩惠专长或其他适用专长。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "fighter.extra_attack_3": {
+      "id": "fighter.extra_attack_3",
+      "name": "Three Extra Attacks",
+      "name_zh": "额外攻击（三）",
+      "class_id": "fighter",
+      "level_required": 20,
+      "template_type": "attack_action_multi_strike_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Make four attacks when you take the Attack action.",
+      "summary_zh": "执行攻击动作时可攻击 4 次。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
@@ -176,6 +382,7 @@
     "barbarian.rage": {
       "id": "barbarian.rage",
       "name": "Rage",
+      "name_zh": "狂暴",
       "class_id": "barbarian",
       "level_required": 1,
       "template_type": "stance_or_mode_toggle",
@@ -194,61 +401,594 @@
         "type": "self"
       },
       "effect_summary": "Enter a rage that bolsters damage and resistances for multiple turns.",
+      "summary_zh": "附赠动作进入狂暴。获得钝击/穿刺/挥砍抗性；基于力量的攻击伤害获得额外加值；力量检定与力量豁免具有优势；不能专注或施法。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
       }
     },
-    "monk.deflect_attacks": {
-      "id": "monk.deflect_attacks",
-      "name": "Deflect Attacks",
-      "class_id": "monk",
-      "level_required": 3,
-      "template_type": "defensive_reaction_reduce_damage",
-      "activation": "reaction",
-      "resource_model": {
-        "cost": {
-          "focus_points": 1
-        },
-        "recharge": "none"
-      },
-      "trigger": {
-        "type": "on_being_attacked"
-      },
-      "targeting": {
-        "type": "self"
-      },
-      "effect_summary": "Spend focus to reduce incoming damage and potentially redirect it.",
-      "runtime_support": {
-        "in_encounter": "template_only",
-        "out_of_encounter": "template_only"
-      }
-    },
-    "monk.empowered_strikes": {
-      "id": "monk.empowered_strikes",
-      "name": "Empowered Strikes",
-      "class_id": "monk",
-      "level_required": 6,
-      "template_type": "conditional_damage_conversion",
+    "barbarian.unarmored_defense": {
+      "id": "barbarian.unarmored_defense",
+      "name": "Unarmored Defense",
+      "name_zh": "无甲防御",
+      "class_id": "barbarian",
+      "level_required": 1,
+      "template_type": "passive_ac_formula",
       "activation": "passive",
       "resource_model": {
         "recharge": "none"
       },
       "trigger": {
-        "type": "on_monk_damage"
+        "type": "while_unarmored"
       },
       "targeting": {
-        "type": "attack_target"
+        "type": "self"
       },
-      "effect_summary": "Transform unarmed damage to radiant damage when empowered by ki.",
+      "effect_summary": "Base AC becomes 10 + Dexterity modifier + Constitution modifier while unarmored.",
+      "summary_zh": "未穿护甲时，AC = 10 + 敏捷调整值 + 体质调整值；持盾仍可生效。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.weapon_mastery": {
+      "id": "barbarian.weapon_mastery",
+      "name": "Weapon Mastery",
+      "name_zh": "武器精通",
+      "class_id": "barbarian",
+      "level_required": 1,
+      "template_type": "weapon_mastery_selection",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "long_rest_retrain"
+      },
+      "trigger": {
+        "type": "on_weapon_attack"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Master two melee weapon mastery properties and retrain one after a Long Rest.",
+      "summary_zh": "掌握 2 种简易或军用近战武器的精通词条；长休后可替换 1 种。高等级可掌握更多武器。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
       }
     },
+    "barbarian.danger_sense": {
+      "id": "barbarian.danger_sense",
+      "name": "Danger Sense",
+      "name_zh": "危机感应",
+      "class_id": "barbarian",
+      "level_required": 2,
+      "template_type": "advantage_on_save",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_dexterity_save"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain advantage on Dexterity saving throws while not incapacitated.",
+      "summary_zh": "未失能时，敏捷豁免具有优势。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.reckless_attack": {
+      "id": "barbarian.reckless_attack",
+      "name": "Reckless Attack",
+      "name_zh": "鲁莽攻击",
+      "class_id": "barbarian",
+      "level_required": 2,
+      "template_type": "attack_advantage_tradeoff",
+      "activation": "declared_on_attack",
+      "resource_model": {
+        "recharge": "turn"
+      },
+      "trigger": {
+        "type": "on_first_attack_roll_of_turn"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain advantage on Strength-based attacks this turn, but attacks against you gain advantage until your next turn.",
+      "summary_zh": "你回合中的第一次攻击检定可选择鲁莽攻击；本回合基于力量的攻击具有优势，但直到你下回合开始前，针对你的攻击也具有优势。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "barbarian.subclass": {
+      "id": "barbarian.subclass",
+      "name": "Barbarian Subclass",
+      "name_zh": "野蛮人子职",
+      "class_id": "barbarian",
+      "level_required": 3,
+      "template_type": "subclass_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Choose a barbarian subclass and gain its features at the listed levels.",
+      "summary_zh": "选择 1 个野蛮人子职，并获得对应等级的全部子职特性。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "barbarian.primal_knowledge": {
+      "id": "barbarian.primal_knowledge",
+      "name": "Primal Knowledge",
+      "name_zh": "原初学识",
+      "class_id": "barbarian",
+      "level_required": 3,
+      "template_type": "skill_proficiency_plus_strength_substitution",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "while_raging_or_on_build"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one barbarian skill proficiency and use Strength for specific checks while raging.",
+      "summary_zh": "额外获得 1 项野蛮人技能熟练；狂暴期间可用力量进行特定技能检定。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "barbarian.ability_score_improvement": {
+      "id": "barbarian.ability_score_improvement",
+      "name": "Ability Score Improvement",
+      "name_zh": "属性值提升",
+      "class_id": "barbarian",
+      "level_required": 4,
+      "template_type": "feat_or_asi_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain an Ability Score Improvement feat or another eligible feat.",
+      "summary_zh": "获得属性值提升专长或其他符合条件的专长；后续多个野蛮人等级会再次获得。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "barbarian.extra_attack": {
+      "id": "barbarian.extra_attack",
+      "name": "Extra Attack",
+      "name_zh": "额外攻击",
+      "class_id": "barbarian",
+      "level_required": 5,
+      "template_type": "attack_action_multi_strike",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Attack more than once when taking the Attack action.",
+      "summary_zh": "执行攻击动作时可攻击 2 次。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.fast_movement": {
+      "id": "barbarian.fast_movement",
+      "name": "Fast Movement",
+      "name_zh": "快速移动",
+      "class_id": "barbarian",
+      "level_required": 5,
+      "template_type": "speed_bonus_while_unarmored",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "while_not_wearing_heavy_armor"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Increase speed by 10 feet while not wearing heavy armor.",
+      "summary_zh": "未穿重甲时，速度 +10 尺。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.feral_instinct": {
+      "id": "barbarian.feral_instinct",
+      "name": "Feral Instinct",
+      "name_zh": "野性直觉",
+      "class_id": "barbarian",
+      "level_required": 7,
+      "template_type": "initiative_advantage",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_initiative_roll"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain advantage on initiative rolls.",
+      "summary_zh": "先攻检定具有优势。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.instinctive_pounce": {
+      "id": "barbarian.instinctive_pounce",
+      "name": "Instinctive Pounce",
+      "name_zh": "莽驰",
+      "class_id": "barbarian",
+      "level_required": 7,
+      "template_type": "free_movement_on_rage",
+      "activation": "free",
+      "resource_model": {
+        "linked_to_feature": "barbarian.rage"
+      },
+      "trigger": {
+        "type": "after_feature_use",
+        "feature_id": "barbarian.rage"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Move up to half your Speed as part of entering rage.",
+      "summary_zh": "进入狂暴时，可额外移动最多一半速度。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "barbarian.brutal_strike": {
+      "id": "barbarian.brutal_strike",
+      "name": "Brutal Strike",
+      "name_zh": "凶蛮打击",
+      "class_id": "barbarian",
+      "level_required": 9,
+      "template_type": "advantage_for_damage_and_rider_tradeoff",
+      "activation": "on_hit",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_reckless_attack_hit"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Trade one reckless advantage for extra damage and one brutal strike rider.",
+      "summary_zh": "若本回合使用了鲁莽攻击，可放弃一次力量攻击的优势；命中时额外造成 1d10 伤害，并附带 1 种凶蛮打击效果。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "barbarian.relentless_rage": {
+      "id": "barbarian.relentless_rage",
+      "name": "Relentless Rage",
+      "name_zh": "坚韧狂暴",
+      "class_id": "barbarian",
+      "level_required": 11,
+      "template_type": "drop_to_zero_save_to_stay_up",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "short_or_long_rest_dc_reset"
+      },
+      "trigger": {
+        "type": "on_drop_to_zero_while_raging"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "While raging, make a Constitution save to avoid dropping to 0 hit points.",
+      "summary_zh": "狂暴中若降到 0 HP 且未立即死亡，可进行 DC10 体质豁免；成功则改为回复到野蛮人等级 × 2 HP。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "barbarian.improved_brutal_strike_13": {
+      "id": "barbarian.improved_brutal_strike_13",
+      "name": "Improved Brutal Strike",
+      "name_zh": "强化凶蛮打击",
+      "class_id": "barbarian",
+      "level_required": 13,
+      "template_type": "brutal_strike_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_brutal_strike"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain additional brutal strike rider options.",
+      "summary_zh": "凶蛮打击获得更多可选效果。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "barbarian.persistent_rage": {
+      "id": "barbarian.persistent_rage",
+      "name": "Persistent Rage",
+      "name_zh": "持久狂暴",
+      "class_id": "barbarian",
+      "level_required": 15,
+      "template_type": "rage_persistence_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "long_rest_for_initiative_refresh"
+      },
+      "trigger": {
+        "type": "on_initiative_or_while_raging"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Rage lasts 10 minutes automatically and can refresh on initiative once per long rest.",
+      "summary_zh": "投先攻时可回满狂暴次数一次/长休；狂暴固定可持续 10 分钟，不再需要主动延长。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.improved_brutal_strike_17": {
+      "id": "barbarian.improved_brutal_strike_17",
+      "name": "Improved Brutal Strike",
+      "name_zh": "强化凶蛮打击",
+      "class_id": "barbarian",
+      "level_required": 17,
+      "template_type": "brutal_strike_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_brutal_strike"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Brutal Strike damage becomes 2d10 and can apply two different rider effects.",
+      "summary_zh": "凶蛮打击额外伤害提升为 2d10，且可同时附加 2 种不同效果。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "barbarian.indomitable_might": {
+      "id": "barbarian.indomitable_might",
+      "name": "Indomitable Might",
+      "name_zh": "不屈勇武",
+      "class_id": "barbarian",
+      "level_required": 18,
+      "template_type": "minimum_strength_total",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_strength_check_or_save"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Use your Strength score if a Strength check or save total would be lower.",
+      "summary_zh": "力量检定或力量豁免总值低于力量值时，可直接改用力量属性值。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "barbarian.epic_boon": {
+      "id": "barbarian.epic_boon",
+      "name": "Epic Boon",
+      "name_zh": "传奇恩惠",
+      "class_id": "barbarian",
+      "level_required": 19,
+      "template_type": "epic_boon_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one Epic Boon feat or another eligible feat.",
+      "summary_zh": "获得 1 项传奇恩惠专长或其他适用专长。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "barbarian.primal_champion": {
+      "id": "barbarian.primal_champion",
+      "name": "Primal Champion",
+      "name_zh": "原初斗士",
+      "class_id": "barbarian",
+      "level_required": 20,
+      "template_type": "ability_capstone",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Increase Strength and Constitution by 4, to a maximum of 25.",
+      "summary_zh": "力量和体质各 +4，二者上限提升到 25。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.martial_arts": {
+      "id": "monk.martial_arts",
+      "name": "Martial Arts",
+      "name_zh": "武艺",
+      "class_id": "monk",
+      "level_required": 1,
+      "template_type": "bonus_attack_grant",
+      "activation": "bonus_action",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "after_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Make a bonus unarmed strike and use martial arts dice plus Dexterity with monk weapons and unarmed strikes.",
+      "summary_zh": "满足条件时，可用附赠动作追加一次徒手打击，并以武艺骰和敏捷强化徒手打击与武僧武器攻击。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.unarmored_defense": {
+      "id": "monk.unarmored_defense",
+      "name": "Unarmored Defense",
+      "name_zh": "无甲防御",
+      "class_id": "monk",
+      "level_required": 1,
+      "template_type": "passive_ac_formula",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "while_unarmored_and_unshielded"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Base AC becomes 10 + Dexterity modifier + Wisdom modifier while unarmored and unshielded.",
+      "summary_zh": "未穿护甲且未持盾时，AC = 10 + 敏捷调整值 + 感知调整值。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.monks_focus": {
+      "id": "monk.monks_focus",
+      "name": "Monk's Focus",
+      "name_zh": "武僧武功",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "resource_plus_feature_bundle",
+      "activation": "passive",
+      "resource_model": {
+        "resource": "focus_points",
+        "recharge": "short_or_long_rest"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain focus points and three core techniques: Flurry of Blows, Patient Defense, and Step of the Wind.",
+      "summary_zh": "获得功力资源，并可用其发动三项核心武功：疾风连击可用附赠动作进行两次徒手打击；坚强防御可用附赠动作撤离，消耗功力时还可同时回避；疾步如风可用附赠动作疾走，消耗功力时还可同时撤离并强化跳跃。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.unarmored_movement": {
+      "id": "monk.unarmored_movement",
+      "name": "Unarmored Movement",
+      "name_zh": "无甲移动",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "speed_bonus_while_unarmored",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "while_unarmored_and_unshielded"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Increase speed while unarmored and unshielded; the bonus scales with monk level.",
+      "summary_zh": "未穿护甲且未持盾时，速度提高；加值随武僧等级成长。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.uncanny_metabolism": {
+      "id": "monk.uncanny_metabolism",
+      "name": "Uncanny Metabolism",
+      "name_zh": "运转周天",
+      "class_id": "monk",
+      "level_required": 2,
+      "template_type": "initiative_refresh_heal",
+      "activation": "free",
+      "resource_model": {
+        "recharge": "long_rest"
+      },
+      "trigger": {
+        "type": "on_initiative_roll"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "On initiative, refresh all focus points and heal once per long rest.",
+      "summary_zh": "投先攻时可回满功力并恢复生命，但长休前只能这样做一次。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
     "monk.flurry_of_blows": {
       "id": "monk.flurry_of_blows",
       "name": "Flurry of Blows",
+      "name_zh": "疾风连击",
       "class_id": "monk",
       "level_required": 2,
       "template_type": "bonus_attack_grant",
@@ -265,37 +1005,17 @@
       "targeting": {
         "type": "self"
       },
-      "effect_summary": "Spend ki to unleash two bonus-action unarmed strikes after your Attack action.",
+      "effect_summary": "Spend focus to unleash two bonus-action unarmed strikes after your Attack action.",
+      "summary_zh": "消耗 1 点功力，以附赠动作进行两次徒手打击。",
       "runtime_support": {
-        "in_encounter": "template_only",
-        "out_of_encounter": "template_only"
-      }
-    },
-    "monk.martial_arts": {
-      "id": "monk.martial_arts",
-      "name": "Martial Arts",
-      "class_id": "monk",
-      "level_required": 1,
-      "template_type": "bonus_attack_grant",
-      "activation": "bonus_action",
-      "resource_model": {
-        "recharge": "none"
-      },
-      "trigger": {
-        "type": "after_attack_action"
-      },
-      "targeting": {
-        "type": "self"
-      },
-      "effect_summary": "Make one bonus-action unarmed strike while unarmored and unshielded.",
-      "runtime_support": {
-        "in_encounter": "template_only",
-        "out_of_encounter": "template_only"
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
       }
     },
     "monk.patient_defense": {
       "id": "monk.patient_defense",
       "name": "Patient Defense",
+      "name_zh": "坚强防御",
       "class_id": "monk",
       "level_required": 2,
       "template_type": "defensive_bonus_action",
@@ -312,15 +1032,17 @@
       "targeting": {
         "type": "self"
       },
-      "effect_summary": "Spend focus to gain Dodge and disengage benefits until your next turn.",
+      "effect_summary": "Take Disengage as a bonus action, or spend focus to Disengage and Dodge together.",
+      "summary_zh": "可用附赠动作撤离；消耗 1 点功力时，还可同时获得回避。",
       "runtime_support": {
-        "in_encounter": "template_only",
-        "out_of_encounter": "template_only"
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
       }
     },
     "monk.step_of_the_wind": {
       "id": "monk.step_of_the_wind",
       "name": "Step of the Wind",
+      "name_zh": "疾步如风",
       "class_id": "monk",
       "level_required": 2,
       "template_type": "mobility_bonus",
@@ -337,19 +1059,21 @@
       "targeting": {
         "type": "self"
       },
-      "effect_summary": "Spend ki to double your movement and take Disengage without provoking opportunity attacks.",
+      "effect_summary": "Take Dash as a bonus action, or spend focus to Dash, Disengage, and enhance jumping.",
+      "summary_zh": "可用附赠动作疾走；消耗 1 点功力时，还可同时撤离并强化跳跃。",
       "runtime_support": {
-        "in_encounter": "template_only",
-        "out_of_encounter": "template_only"
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
       }
     },
-    "monk.stunning_strike": {
-      "id": "monk.stunning_strike",
-      "name": "Stunning Strike",
+    "monk.deflect_attacks": {
+      "id": "monk.deflect_attacks",
+      "name": "Deflect Attacks",
+      "name_zh": "拨挡攻击",
       "class_id": "monk",
-      "level_required": 2,
-      "template_type": "save_on_hit_control",
-      "activation": "bonus_action",
+      "level_required": 3,
+      "template_type": "defensive_reaction_reduce_damage",
+      "activation": "reaction",
       "resource_model": {
         "cost": {
           "focus_points": 1
@@ -357,15 +1081,409 @@
         "recharge": "none"
       },
       "trigger": {
+        "type": "on_being_attacked"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Reduce incoming damage as a reaction and potentially redirect it if reduced to zero.",
+      "summary_zh": "被攻击命中时，可用反应减少伤害；若减到 0，可消耗 1 点功力把伤害转回给其他目标。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "monk.subclass": {
+      "id": "monk.subclass",
+      "name": "Monk Subclass",
+      "name_zh": "武僧子职",
+      "class_id": "monk",
+      "level_required": 3,
+      "template_type": "subclass_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Choose a monk subclass and gain its features at the listed levels.",
+      "summary_zh": "选择 1 个武僧子职，并获得对应等级的全部子职特性。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.ability_score_improvement": {
+      "id": "monk.ability_score_improvement",
+      "name": "Ability Score Improvement",
+      "name_zh": "属性值提升",
+      "class_id": "monk",
+      "level_required": 4,
+      "template_type": "feat_or_asi_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain an Ability Score Improvement feat or another eligible feat.",
+      "summary_zh": "获得属性值提升专长或其他符合条件的专长。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.slow_fall": {
+      "id": "monk.slow_fall",
+      "name": "Slow Fall",
+      "name_zh": "轻身坠",
+      "class_id": "monk",
+      "level_required": 4,
+      "template_type": "reaction_damage_reduction",
+      "activation": "reaction",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_fall_damage"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Use a reaction to greatly reduce falling damage.",
+      "summary_zh": "坠落时可用反应大幅减少坠落伤害。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.extra_attack": {
+      "id": "monk.extra_attack",
+      "name": "Extra Attack",
+      "name_zh": "额外攻击",
+      "class_id": "monk",
+      "level_required": 5,
+      "template_type": "attack_action_multi_strike",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_attack_action"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Attack twice when you take the Attack action.",
+      "summary_zh": "执行攻击动作时可攻击 2 次。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.stunning_strike": {
+      "id": "monk.stunning_strike",
+      "name": "Stunning Strike",
+      "name_zh": "震慑拳",
+      "class_id": "monk",
+      "level_required": 5,
+      "template_type": "save_on_hit_control",
+      "activation": "on_hit",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "turn"
+      },
+      "trigger": {
         "type": "after_attack_hit"
       },
       "targeting": {
         "type": "attack_target"
       },
-      "effect_summary": "Spend ki to force a Constitution save, stunning the target on a failure.",
+      "effect_summary": "Once per turn on a hit, spend focus to force a Constitution save that stuns on failure or hinders on success.",
+      "summary_zh": "每回合一次，命中后可消耗 1 点功力迫使目标体质豁免；失败则震慑，成功也会被减速并更容易被后续攻击命中。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "monk.empowered_strikes": {
+      "id": "monk.empowered_strikes",
+      "name": "Empowered Strikes",
+      "name_zh": "真力注拳",
+      "class_id": "monk",
+      "level_required": 6,
+      "template_type": "conditional_damage_conversion",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_monk_damage"
+      },
+      "targeting": {
+        "type": "attack_target"
+      },
+      "effect_summary": "Transform unarmed strike damage into force damage.",
+      "summary_zh": "徒手打击可改造成力场伤害。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.evasion": {
+      "id": "monk.evasion",
+      "name": "Evasion",
+      "name_zh": "反射闪避",
+      "class_id": "monk",
+      "level_required": 7,
+      "template_type": "dex_save_damage_mitigation",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_dexterity_save_for_half"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "On Dexterity saves for half damage, take none on success and half on failure.",
+      "summary_zh": "面对可进行敏捷豁免减半伤害的效果时，成功则无伤，失败也只受一半伤害；失能时无效。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.acrobatic_movement": {
+      "id": "monk.acrobatic_movement",
+      "name": "Acrobatic Movement",
+      "name_zh": "飞檐走壁",
+      "class_id": "monk",
+      "level_required": 9,
+      "template_type": "surface_movement",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "while_unarmored_and_unshielded"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Move across vertical surfaces and liquids without falling during your turn.",
+      "summary_zh": "未穿护甲且未持盾时，在自己的回合内可沿垂直表面与液体表面移动而不坠落。",
       "runtime_support": {
         "in_encounter": "template_only",
         "out_of_encounter": "template_only"
+      }
+    },
+    "monk.heightened_focus": {
+      "id": "monk.heightened_focus",
+      "name": "Heightened Focus",
+      "name_zh": "出神入化",
+      "class_id": "monk",
+      "level_required": 10,
+      "template_type": "feature_bundle_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_feature_use"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Upgrade Flurry of Blows, Patient Defense, and Step of the Wind with stronger quantified benefits.",
+      "summary_zh": "强化三项核心武功：疾风连击消耗 1 点功力时可进行 3 次徒手打击而非 2 次；坚强防御消耗功力使用时获得 2 个武艺骰的临时生命值；疾步如风消耗功力使用时可带上 1 名邻近自愿生物一起移动且不触发借机攻击。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.self_restoration": {
+      "id": "monk.self_restoration",
+      "name": "Self-Restoration",
+      "name_zh": "返本还元",
+      "class_id": "monk",
+      "level_required": 10,
+      "template_type": "end_of_turn_condition_cleanse",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "end_of_turn"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Remove one listed condition each turn and ignore exhaustion from food or water deprivation.",
+      "summary_zh": "每回合结束可移除魅惑、恐慌或中毒之一；也不再因不吃不喝而累积力竭。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.deflect_energy": {
+      "id": "monk.deflect_energy",
+      "name": "Deflect Energy",
+      "name_zh": "拨挡能量",
+      "class_id": "monk",
+      "level_required": 13,
+      "template_type": "deflect_attacks_upgrade",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_deflect_attacks"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Deflect Attacks now works against any damage type.",
+      "summary_zh": "拨挡攻击现在可对抗任何伤害类型，不再只限物理伤害。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.disciplined_survivor": {
+      "id": "monk.disciplined_survivor",
+      "name": "Disciplined Survivor",
+      "name_zh": "圆融自在",
+      "class_id": "monk",
+      "level_required": 14,
+      "template_type": "all_saves_proficiency_plus_reroll",
+      "activation": "passive",
+      "resource_model": {
+        "cost": {
+          "focus_points": 1
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_failed_save"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain proficiency in all saving throws and spend focus to reroll a failed save.",
+      "summary_zh": "获得所有豁免熟练；豁免失败时可消耗 1 点功力重骰。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
+      }
+    },
+    "monk.perfect_focus": {
+      "id": "monk.perfect_focus",
+      "name": "Perfect Focus",
+      "name_zh": "明镜止水",
+      "class_id": "monk",
+      "level_required": 15,
+      "template_type": "initiative_focus_floor",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_initiative_roll"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "On initiative, if you do not use Uncanny Metabolism and have little focus left, restore it to four points.",
+      "summary_zh": "投先攻时若不使用运转周天，且功力过低，可直接恢复到 4 点。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "monk.superior_defense": {
+      "id": "monk.superior_defense",
+      "name": "Superior Defense",
+      "name_zh": "无懈可击",
+      "class_id": "monk",
+      "level_required": 18,
+      "template_type": "broad_damage_resistance_mode",
+      "activation": "turn_start",
+      "resource_model": {
+        "cost": {
+          "focus_points": 3
+        },
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_turn_start"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Spend 3 focus to gain resistance to all damage except force for up to 1 minute.",
+      "summary_zh": "可消耗 3 点功力进入高防御状态，持续期间对力场以外的所有伤害具有抗性。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "n_a"
+      }
+    },
+    "monk.epic_boon": {
+      "id": "monk.epic_boon",
+      "name": "Epic Boon",
+      "name_zh": "传奇恩惠",
+      "class_id": "monk",
+      "level_required": 19,
+      "template_type": "epic_boon_choice",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Gain one Epic Boon feat or another eligible feat.",
+      "summary_zh": "获得 1 项传奇恩惠专长或其他适用专长。",
+      "runtime_support": {
+        "in_encounter": "template_only",
+        "out_of_encounter": "template_only"
+      }
+    },
+    "monk.body_and_mind": {
+      "id": "monk.body_and_mind",
+      "name": "Body and Mind",
+      "name_zh": "天人合一",
+      "class_id": "monk",
+      "level_required": 20,
+      "template_type": "ability_capstone",
+      "activation": "passive",
+      "resource_model": {
+        "recharge": "none"
+      },
+      "trigger": {
+        "type": "on_level_gain"
+      },
+      "targeting": {
+        "type": "self"
+      },
+      "effect_summary": "Increase Dexterity and Wisdom by 4, to a maximum of 25.",
+      "summary_zh": "敏捷和感知各 +4，且两者上限提升到 25。",
+      "runtime_support": {
+        "in_encounter": "implemented",
+        "out_of_encounter": "implemented"
       }
     },
     "paladin.divine_smite": {

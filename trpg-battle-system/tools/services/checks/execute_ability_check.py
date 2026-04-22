@@ -163,6 +163,31 @@ class ExecuteAbilityCheck:
         if not isinstance(dc, int) or roll_result.final_total >= dc:
             return None
 
+        request_payloads = {
+            actor_id: {
+                "tactical_mind": {
+                    "dc": dc,
+                    "current_total": roll_result.final_total,
+                    "bonus_formula": "1d10",
+                    "consume_only_on_success": True,
+                }
+            }
+        }
+        encounter = self.encounter_repository.get(encounter_id)
+        actor = encounter.entities.get(actor_id) if encounter is not None else None
+        if actor is not None and isinstance(actor.combat_flags, dict):
+            inspiration = actor.combat_flags.get("bardic_inspiration")
+            if isinstance(inspiration, dict):
+                die = inspiration.get("die")
+                if isinstance(die, str) and die.strip():
+                    request_payloads[actor_id]["bardic_inspiration"] = {
+                        "dc": dc,
+                        "current_total": roll_result.final_total,
+                        "bonus_formula": die.strip().lower(),
+                        "source_entity_id": inspiration.get("source_entity_id"),
+                        "source_name": inspiration.get("source_name"),
+                    }
+
         trigger_event = {
             "event_id": f"evt_failed_ability_check_{request.request_id}",
             "trigger_type": "failed_ability_check",
@@ -175,14 +200,7 @@ class ExecuteAbilityCheck:
                 "normalized_check": request.context.get("check"),
             },
             "target_entity_id": actor_id,
-            "request_payloads": {
-                actor_id: {
-                    "dc": dc,
-                    "current_total": roll_result.final_total,
-                    "bonus_formula": "1d10",
-                    "consume_only_on_success": True,
-                }
-            },
+            "request_payloads": request_payloads,
         }
         result = self.open_reaction_window.execute(encounter_id=encounter_id, trigger_event=trigger_event)
         if result.get("status") != "waiting_reaction":

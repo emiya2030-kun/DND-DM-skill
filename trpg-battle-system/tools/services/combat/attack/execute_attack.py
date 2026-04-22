@@ -129,9 +129,11 @@ class ExecuteAttack:
         if normalized_attack_mode == "light_bonus":
             effective_consume_action = False
             effective_consume_bonus_action = True
-        elif normalized_attack_mode in {"martial_arts_bonus", "flurry_of_blows"}:
+        elif normalized_attack_mode == "martial_arts_bonus":
             effective_consume_action = False
             effective_consume_bonus_action = True
+        elif normalized_attack_mode == "flurry_of_blows":
+            effective_consume_action = False
 
         try:
             request = self.attack_roll_request.execute(
@@ -173,6 +175,8 @@ class ExecuteAttack:
 
         if normalized_attack_mode == "light_bonus":
             effective_consume_bonus_action = bool(request.context.get("light_bonus_uses_bonus_action", True))
+        elif normalized_attack_mode == "flurry_of_blows":
+            effective_consume_bonus_action = bool(request.context.get("monk_flurry_activation_required"))
 
         resolved_attack_roll = self._resolve_attack_roll(
             attack_context=request.context,
@@ -491,7 +495,13 @@ class ExecuteAttack:
 
         class_features = actor.class_features if isinstance(actor.class_features, dict) else {}
         fighter = class_features.get("fighter")
-        if not isinstance(fighter, dict) or not bool(fighter.get("tactical_master_enabled")):
+        if not isinstance(fighter, dict):
+            raise ValueError("invalid_mastery_override")
+        tactical_master = fighter.get("tactical_master")
+        explicit_enabled = fighter.get("tactical_master_enabled")
+        if not isinstance(explicit_enabled, bool) and isinstance(tactical_master, dict):
+            explicit_enabled = tactical_master.get("enabled")
+        if explicit_enabled is not True:
             raise ValueError("invalid_mastery_override")
 
         base_mastery = str(
@@ -2094,7 +2104,10 @@ class ExecuteAttack:
             }
         elif consume_action:
             actor.combat_flags.pop("light_bonus_trigger", None)
-        self._consume_monk_flurry_focus_if_needed(actor=actor, attack_mode=attack_mode)
+        self._apply_monk_flurry_of_blows_updates_if_needed(
+            actor=actor,
+            attack_context=attack_context,
+        )
         self._mark_rogue_sneak_attack_used_if_applied(
             actor=actor,
             attack_context=attack_context,
@@ -2371,19 +2384,41 @@ class ExecuteAttack:
             )
         target.speed["remaining"] = max(0, int(target.speed.get("remaining", 0) or 0) - penalty_feet)
 
-    def _consume_monk_flurry_focus_if_needed(self, *, actor: Any, attack_mode: str) -> None:
+    def _apply_monk_flurry_of_blows_updates_if_needed(
+        self,
+        *,
+        actor: Any,
+        attack_context: dict[str, Any],
+    ) -> None:
+        attack_mode = str(attack_context.get("attack_mode") or "default").lower()
         if attack_mode != "flurry_of_blows":
             return
         monk_runtime = get_monk_runtime(actor)
-        focus_points = monk_runtime.get("focus_points")
-        if not isinstance(focus_points, dict):
+        flurry = monk_runtime.get("flurry_of_blows")
+        if not isinstance(flurry, dict):
             return
-        remaining = focus_points.get("remaining")
-        if isinstance(remaining, bool) or not isinstance(remaining, int):
+        if bool(attack_context.get("monk_flurry_activation_required")):
+            focus_points = monk_runtime.get("focus_points")
+            if not isinstance(focus_points, dict):
+                return
+            remaining = focus_points.get("remaining")
+            if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining <= 0:
+                return
+            focus_points["remaining"] = remaining - 1
+            attack_count = flurry.get("base_attack_count")
+            if isinstance(attack_count, bool) or not isinstance(attack_count, int) or attack_count <= 0:
+                attack_count = 2
+            flurry["remaining_attacks"] = max(0, attack_count - 1)
+            flurry["active"] = flurry["remaining_attacks"] > 0
             return
-        if remaining <= 0:
+
+        remaining_attacks = flurry.get("remaining_attacks")
+        if isinstance(remaining_attacks, bool) or not isinstance(remaining_attacks, int) or remaining_attacks <= 0:
+            flurry["remaining_attacks"] = 0
+            flurry["active"] = False
             return
-        focus_points["remaining"] = remaining - 1
+        flurry["remaining_attacks"] = remaining_attacks - 1
+        flurry["active"] = flurry["remaining_attacks"] > 0
 
     def _mark_rogue_sneak_attack_used_if_applied(
         self,

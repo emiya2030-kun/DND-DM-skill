@@ -1596,3 +1596,49 @@ class SpellRequestTests(unittest.TestCase):
             "special_rules",
         ):
             self.assertIn(key, spell_definition)
+
+    def test_execute_rejects_unprepared_spell_for_preparation_caster(self) -> None:
+        encounter_repo, spell_repo = self._build_repositories(
+            {
+                "spell_definitions": {
+                    "heroism": {
+                        "id": "heroism",
+                        "name": "Heroism",
+                        "level": 1,
+                        "base": {"level": 1, "casting_time": "1 action", "concentration": True},
+                        "resolution": {"activation": "action"},
+                        "targeting": {"allowed_target_types": ["creature"]},
+                    }
+                }
+            }
+        )
+        encounter = encounter_repo.get("enc_spell_request_test")
+        self.assertIsNotNone(encounter)
+        caster = encounter.entities["ent_caster_001"]
+        caster.source_ref["class_name"] = "bard"
+        caster.class_features["bard"] = {
+            "level": 5,
+            "prepared_spells": ["healing_word"],
+        }
+        caster.spells.append(
+            {"spell_id": "heroism", "name": "Heroism", "level": 1, "casting_class": "bard"}
+        )
+        encounter_repo.save(encounter)
+        service = SpellRequest(encounter_repo, spell_repo)
+
+        result = service.execute(
+            encounter_id="enc_spell_request_test",
+            actor_id="ent_caster_001",
+            spell_id="heroism",
+            cast_level=1,
+            target_entity_ids=["ent_target_humanoid_001"],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "ok": False,
+                "error_code": "spell_not_prepared",
+                "message": "施法者当前未准备 heroism",
+            },
+        )

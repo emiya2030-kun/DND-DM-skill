@@ -2357,6 +2357,87 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertEqual(updated.entities[target.entity_id].class_features["monk"]["focus_points"]["remaining"], 2)
             self.assertEqual(updated.entities[redirect_target.entity_id].hp["current"], 3)
 
+    def test_execute_applies_deflect_energy_redirect_preserving_fire_damage_type(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.weapons[0]["damage"][0]["type"] = "fire"
+            target = build_target()
+            target.side = "ally"
+            target.controller = "player"
+            target.entity_id = "ent_ally_monk_001"
+            target.name = "Monk"
+            target.ability_mods = {"dex": 3}
+            target.proficiency_bonus = 5
+            target.class_features = {
+                "monk": {
+                    "level": 13,
+                    "focus_points": {"max": 13, "remaining": 3},
+                    "martial_arts_die": "1d10",
+                    "deflect_energy": {"enabled": True},
+                }
+            }
+            redirect_target = EncounterEntity(
+                entity_id="ent_enemy_orc_002",
+                name="Orc 2",
+                side="enemy",
+                category="monster",
+                controller="gm",
+                position={"x": 4, "y": 2},
+                hp={"current": 15, "max": 15, "temp": 0},
+                ac=12,
+                speed={"walk": 30, "remaining": 30},
+                initiative=9,
+                ability_mods={"dex": 1},
+                resistances=["fire"],
+            )
+            target.turn_effects = [
+                {
+                    "effect_id": "effect_deflect_energy_001",
+                    "effect_type": "deflect_attacks_pending",
+                    "attack_id": "attack_deflect_energy_001",
+                    "damage_reduction_total": 15,
+                    "redirect_requested": True,
+                    "redirect_target_id": redirect_target.entity_id,
+                    "redirect_save_roll": 7,
+                    "redirect_damage_rolls": [5, 4],
+                    "redirect_damage_type": "fire",
+                }
+            ]
+            encounter = build_encounter(actor=actor, target=target)
+            encounter.entities[redirect_target.entity_id] = redirect_target
+            encounter.turn_order.append(redirect_target.entity_id)
+            encounter_repo.save(encounter)
+
+            append_event = AppendEvent(event_repo)
+            result = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            ).execute(
+                encounter_id="enc_execute_attack_test",
+                actor_id=actor.entity_id,
+                target_id=target.entity_id,
+                weapon_id="rapier",
+                final_total=18,
+                dice_rolls={"base_rolls": [13], "modifier": 5},
+                damage_rolls=[{"source": "weapon:rapier:part_0", "rolls": [6]}],
+                host_action_id="attack_deflect_energy_001",
+                skip_reaction_window=True,
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(result["resolution"]["damage_resolution"]["total_damage"], 0)
+            self.assertEqual(
+                result["resolution"]["deflect_attacks"]["redirect_resolution"]["total_damage"],
+                12,
+            )
+            self.assertEqual(updated.entities[target.entity_id].class_features["monk"]["focus_points"]["remaining"], 2)
+            self.assertEqual(updated.entities[redirect_target.entity_id].hp["current"], 9)
+
     def test_execute_runs_full_flow_and_auto_applies_damage(self) -> None:
         """测试新主路径会串起请求、命中判定、事件写入和自动扣血."""
         with make_repositories() as (encounter_repo, event_repo):
@@ -3823,6 +3904,131 @@ class ExecuteAttackTests(unittest.TestCase):
             self.assertFalse(updated.entities[actor.entity_id].action_economy["action_used"])
             self.assertTrue(updated.entities[actor.entity_id].action_economy["bonus_action_used"])
             self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["flurry_of_blows"]["remaining_attacks"], 1)
+
+    def test_execute_flurry_of_blows_follow_up_attack_does_not_spend_focus_again(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "bonus_action_used": True, "reaction_used": False}
+            actor.class_features = {
+                "monk": {
+                    "level": 5,
+                    "focus_points": {"max": 5, "remaining": 4},
+                    "martial_arts_die": "1d8",
+                    "flurry_of_blows": {
+                        "enabled": True,
+                        "active": True,
+                        "base_attack_count": 2,
+                        "remaining_attacks": 1,
+                    },
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                attack_mode="flurry_of_blows",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertTrue(result["resolution"]["hit"])
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 4)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["flurry_of_blows"]["remaining_attacks"], 0)
+            self.assertFalse(updated.entities[actor.entity_id].class_features["monk"]["flurry_of_blows"]["active"])
+
+    def test_execute_flurry_of_blows_heightened_focus_arms_three_attacks_total(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.action_economy = {"action_used": False, "bonus_action_used": False, "reaction_used": False}
+            actor.class_features = {
+                "monk": {
+                    "level": 10,
+                    "focus_points": {"max": 10, "remaining": 10},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                attack_mode="flurry_of_blows",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+            )
+
+            updated = encounter_repo.get("enc_execute_attack_test")
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["focus_points"]["remaining"], 9)
+            self.assertEqual(updated.entities[actor.entity_id].class_features["monk"]["flurry_of_blows"]["remaining_attacks"], 2)
+
+    def test_execute_level_6_monk_unarmed_strike_uses_force_damage_by_default(self) -> None:
+        with make_repositories() as (encounter_repo, event_repo):
+            actor = build_actor()
+            actor.class_features = {
+                "monk": {
+                    "level": 6,
+                    "focus_points": {"max": 6, "remaining": 6},
+                    "martial_arts_die": "1d8",
+                }
+            }
+            target = build_target()
+            target.hp = {"current": 30, "max": 30, "temp": 0}
+            encounter_repo.save(build_encounter(actor=actor, target=target))
+
+            append_event = AppendEvent(event_repo)
+            service = ExecuteAttack(
+                AttackRollRequest(encounter_repo),
+                AttackRollResult(
+                    encounter_repo,
+                    append_event,
+                    UpdateHp(encounter_repo, append_event),
+                ),
+            )
+
+            result = service.execute(
+                encounter_id="enc_execute_attack_test",
+                target_id=target.entity_id,
+                weapon_id="unarmed_strike",
+                final_total=17,
+                dice_rolls={"base_rolls": [12], "modifier": 5},
+                damage_rolls=[{"source": "weapon:unarmed_strike:part_0", "rolls": [6]}],
+            )
+
+            self.assertEqual(result["request"]["context"]["primary_damage_type"], "force")
+            self.assertEqual(result["resolution"]["damage_resolution"]["parts"][0]["damage_type"], "force")
 
     def test_execute_stunning_strike_failed_save_applies_stunned_and_consumes_focus(self) -> None:
         with make_repositories() as (encounter_repo, event_repo):
