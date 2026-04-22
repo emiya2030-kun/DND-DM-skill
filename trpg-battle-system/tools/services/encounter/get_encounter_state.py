@@ -2996,6 +2996,16 @@ class GetEncounterState:
     ) -> dict[str, Any] | None:
         if target is None:
             return None
+        multiattack = self._find_action_metadata(actor, "multiattack")
+        if multiattack is not None:
+            multiattack_availability = evaluate_monster_action_availability(
+                encounter,
+                actor,
+                multiattack,
+                target=target,
+            )
+            if not bool(multiattack_availability.get("available", True)):
+                return None
         candidates: list[dict[str, Any]] = []
         for sequence in self._get_multiattack_sequences(actor, mode=mode):
             if not self._multiattack_sequence_can_target(
@@ -3111,6 +3121,14 @@ class GetEncounterState:
                 action_id = str(step.get("action_id") or "").strip()
                 action = self._find_action_metadata(actor, action_id)
                 if action is None:
+                    return False
+                availability = evaluate_monster_action_availability(
+                    encounter,
+                    actor,
+                    action,
+                    target=target,
+                )
+                if not bool(availability.get("available", True)):
                     return False
                 range_feet = int(action.get("range_feet", 0) or 0)
                 if range_feet > 0 and self._distance_feet(actor, target) > range_feet:
@@ -3936,6 +3954,7 @@ class GetEncounterState:
                     "action_id": action_id,
                     "range_feet": range_feet,
                     "save_ability": save_ability,
+                    "definition": raw_item,
                 }
             )
         return items
@@ -3959,6 +3978,14 @@ class GetEncounterState:
             ]
             lowest_ac = min((target.ac for target in in_range_targets), default=None)
             for target in in_range_targets:
+                availability = evaluate_monster_action_availability(
+                    encounter,
+                    actor,
+                    action.get("definition", {}),
+                    target=target,
+                )
+                if not bool(availability.get("available", True)):
+                    continue
                 score = self._score_enemy_tactical_target(target, lowest_ac)
                 choice = {
                     "action_id": action["action_id"],

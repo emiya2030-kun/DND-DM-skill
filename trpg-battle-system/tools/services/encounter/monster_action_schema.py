@@ -13,6 +13,8 @@ def evaluate_monster_action_availability(
     encounter: Encounter,
     actor: EncounterEntity,
     action_definition: dict[str, Any],
+    *,
+    target: EncounterEntity | None = None,
 ) -> dict[str, Any]:
     blocked_reasons: list[str] = []
 
@@ -26,7 +28,7 @@ def evaluate_monster_action_availability(
 
     targeting = action_definition.get("targeting")
     if isinstance(targeting, dict) and targeting.get("target_filters"):
-        if not _has_valid_target(encounter, actor, targeting):
+        if not _has_valid_target(encounter, actor, targeting, target=target):
             blocked_reasons.append("no_valid_target")
 
     deduped: list[str] = []
@@ -105,20 +107,23 @@ def _has_valid_target(
     encounter: Encounter,
     actor: EncounterEntity,
     targeting: dict[str, Any],
+    *,
+    target: EncounterEntity | None = None,
 ) -> bool:
     filters = [str(item).strip() for item in targeting.get("target_filters", []) if str(item).strip()]
     if not filters:
         return True
     allow_any = bool(targeting.get("allow_any_of_filters"))
     range_feet = int(targeting.get("range_feet", 0) or 0)
-    for target in encounter.entities.values():
-        if target.entity_id == actor.entity_id or target.side == actor.side:
+    target_pool = [target] if target is not None else list(encounter.entities.values())
+    for candidate in target_pool:
+        if candidate.entity_id == actor.entity_id or candidate.side == actor.side:
             continue
-        if int(target.hp.get("current", 0) or 0) <= 0 or bool(target.combat_flags.get("is_dead")):
+        if int(candidate.hp.get("current", 0) or 0) <= 0 or bool(candidate.combat_flags.get("is_dead")):
             continue
-        if range_feet > 0 and _distance_feet(actor, target) > range_feet:
+        if range_feet > 0 and _distance_feet(actor, candidate) > range_feet:
             continue
-        matched = [_target_matches_filter(actor, target, filter_name) for filter_name in filters]
+        matched = [_target_matches_filter(actor, candidate, filter_name) for filter_name in filters]
         if (allow_any and any(matched)) or (not allow_any and all(matched)):
             return True
     return False

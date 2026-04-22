@@ -3996,6 +3996,56 @@ class GetEncounterStateTests(unittest.TestCase):
             ["execute_attack", "execute_attack"],
         )
 
+    def test_execute_projects_top_level_enemy_turn_recommendation_skips_unavailable_multiattack(self) -> None:
+        encounter = build_enemy_turn_encounter_with_weapon(
+            build_test_weapon(
+                weapon_id="claw",
+                name="Claw",
+                damage_formula="1d6+2",
+                damage_type="slashing",
+                normal_range=5,
+                long_range=5,
+                kind="melee",
+            ),
+            source_ref={
+                "combat_profile": {
+                    "forms": ["vampire", "mist"],
+                    "current_form": "mist",
+                },
+                "actions_metadata": [
+                    {
+                        "action_id": "multiattack",
+                        "name_zh": "多重攻击",
+                        "name_en": "Multiattack",
+                        "summary": "进行两次爪击。",
+                        "availability": {"forms_any_of": ["vampire"]},
+                        "multiattack_sequences": [
+                            {
+                                "sequence_id": "double_claw",
+                                "mode": "melee",
+                                "steps": [
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+        state = execute_get_encounter_state(encounter)
+        recommendation = state["current_turn_context"]["recommended_tactic"]
+
+        self.assertEqual(recommendation["source"], "enemy_tactical_brief")
+        self.assertEqual(recommendation["action"], "attack")
+        self.assertEqual(recommendation["target_entity_id"], "ent_ally_player_001")
+        self.assertEqual(recommendation["reason"], "已经贴住目标，直接近战施压")
+        self.assertEqual(
+            [step["command"] for step in recommendation["execution_plan"]],
+            ["execute_attack"],
+        )
+
     def test_execute_projects_top_level_enemy_turn_recommendation_for_ranged_multiattack_actor(self) -> None:
         encounter = build_enemy_turn_encounter_with_weapon(
             build_test_weapon(
@@ -4062,6 +4112,37 @@ class GetEncounterStateTests(unittest.TestCase):
         self.assertEqual(recommendation["selected_weapon_id"], "necrotic_sword")
         self.assertEqual(recommendation["reason"], "目标甲高，先用吸取生命压制再补一击")
         self.assertEqual(contingencies["alternate_modes"], ["melee_attack", "ranged_attack", "save_action"])
+
+    def test_execute_projects_enemy_hybrid_tactical_brief_skips_invalid_special_action_sequence(self) -> None:
+        encounter = build_enemy_hybrid_brief_encounter(
+            enemy_position={"x": 5, "y": 5},
+            player_position={"x": 6, "y": 5},
+            player_ac=19,
+            melee_attack_bonus=3,
+            ranged_attack_bonus=4,
+            save_action_range_feet=5,
+        )
+        enemy = encounter.entities["ent_enemy_hybrid_001"]
+        enemy.source_ref["actions_metadata"][1]["targeting"] = {
+            "range_feet": 5,
+            "target_filters": ["grappled_by_self"],
+        }
+
+        state = execute_get_encounter_state(encounter)
+
+        brief = state["current_turn_context"]["enemy_hybrid_tactical_brief"]
+        recommendation = state["current_turn_context"]["recommended_tactic"]
+
+        self.assertEqual(brief["recommended_mode"], "multiattack")
+        self.assertEqual(brief["selected_weapon_id"], "necrotic_sword")
+        self.assertIsNone(brief["selected_action_id"])
+        self.assertEqual(brief["reason"], "已贴近目标，优先用多重攻击施压")
+        self.assertEqual(
+            [step["command"] for step in brief["recommended_tactic"]["execution_plan"]],
+            ["execute_attack", "execute_attack"],
+        )
+        self.assertEqual(recommendation["action"], "multiattack")
+        self.assertIsNone(recommendation["selected_action_id"])
 
     def test_execute_enemy_ranged_tactical_brief_prioritizes_concentration_over_low_ac(self) -> None:
         enemy = EncounterEntity(
