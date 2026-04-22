@@ -1008,7 +1008,17 @@ class GetEncounterState:
             enemy_hybrid_tactical_brief=enemy_hybrid_tactical_brief,
         )
         if unified_recommendation is not None:
-            current_turn_context["recommended_tactic"] = unified_recommendation["recommended_tactic"]
+            augmented_recommendation = self._augment_recommended_tactic_with_bonus_action(
+                encounter=encounter,
+                actor=entity,
+                recommended_tactic=unified_recommendation["recommended_tactic"],
+                enemy_tactical_brief=enemy_tactical_brief,
+                enemy_ranged_tactical_brief=enemy_ranged_tactical_brief,
+                enemy_hybrid_tactical_brief=enemy_hybrid_tactical_brief,
+            )
+            current_turn_context["recommended_tactic"] = augmented_recommendation
+            if isinstance(augmented_recommendation.get("bonus_action"), dict):
+                current_turn_context["recommended_bonus_action"] = augmented_recommendation["bonus_action"]
             current_turn_context["contingencies"] = unified_recommendation["contingencies"]
         return current_turn_context
 
@@ -1201,6 +1211,180 @@ class GetEncounterState:
             "ranged_range": weapon_ranges.get("max_ranged_range", "0 尺"),
             "melee_targets": weapon_ranges.get("targets_within_melee_range", []),
             "ranged_targets": weapon_ranges.get("targets_within_ranged_range", []),
+        }
+
+    def _augment_recommended_tactic_with_bonus_action(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        recommended_tactic: dict[str, Any],
+        enemy_tactical_brief: dict[str, Any] | None,
+        enemy_ranged_tactical_brief: dict[str, Any] | None,
+        enemy_hybrid_tactical_brief: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload = dict(recommended_tactic)
+        source = str(payload.get("source") or "")
+        candidate_targets: list[dict[str, Any]] = []
+        threatened_in_melee = False
+        bloodied = self._is_bloodied(actor)
+
+        if source == "enemy_ranged_tactical_brief" and isinstance(enemy_ranged_tactical_brief, dict):
+            candidate_targets = list(enemy_ranged_tactical_brief.get("candidate_targets", []))
+            pressure_state = enemy_ranged_tactical_brief.get("pressure_state")
+            if isinstance(pressure_state, dict):
+                threatened_in_melee = bool(pressure_state.get("threatened_in_melee"))
+                bloodied = bool(pressure_state.get("bloodied", bloodied))
+        elif source == "enemy_tactical_brief" and isinstance(enemy_tactical_brief, dict):
+            candidate_targets = list(enemy_tactical_brief.get("candidate_targets", []))
+        elif source == "enemy_hybrid_tactical_brief" and isinstance(enemy_hybrid_tactical_brief, dict):
+            target_entity_id = str(payload.get("target_entity_id") or "")
+            if target_entity_id:
+                candidate_targets = [{"entity_id": target_entity_id}]
+
+        bonus_action = self._select_recommended_bonus_action(
+            encounter=encounter,
+            actor=actor,
+            primary_target_id=str(payload.get("target_entity_id") or ""),
+            candidate_targets=candidate_targets,
+            main_action=str(payload.get("action") or ""),
+            threatened_in_melee=threatened_in_melee,
+            bloodied=bloodied,
+        )
+        if bonus_action is None:
+            return payload
+
+        action_execution_plan = payload.get("execution_plan")
+        merged_execution_plan = list(bonus_action.get("execution_plan", []))
+        if isinstance(action_execution_plan, list):
+            merged_execution_plan.extend(action_execution_plan)
+        payload["bonus_action"] = bonus_action
+        payload["execution_plan"] = merged_execution_plan
+        return payload
+
+    def _select_recommended_bonus_action(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        primary_target_id: str,
+        candidate_targets: list[dict[str, Any]],
+        main_action: str,
+        threatened_in_melee: bool,
+        bloodied: bool,
+    ) -> dict[str, Any] | None:
+        source_ref = actor.source_ref if isinstance(actor.source_ref, dict) else {}
+        raw_items = source_ref.get("bonus_actions_metadata")
+        if not isinstance(raw_items, list):
+            return None
+
+        primary_target = encounter.entities.get(primary_target_id) if primary_target_id else None
+        candidate_pool: list[EncounterEntity] = []
+        if primary_target is not None:
+            candidate_pool.append(primary_target)
+        for item in candidate_targets:
+            if not isinstance(item, dict):
+                continue
+            candidate_id = str(item.get("entity_id") or "")
+            candidate = encounter.entities.get(candidate_id)
+            if candidate is None or any(existing.entity_id == candidate.entity_id for existing in candidate_pool):
+                continue
+            candidate_pool.append(candidate)
+
+        best_choice: dict[str, Any] | None = None
+        best_score: float | None = None
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            bonus_action_id = str(raw_item.get("bonus_action_id") or "").strip()
+            if not bonus_action_id:
+                continue
+            ai_hints = raw_item.get("ai_hints") if isinstance(raw_item.get("ai_hints"), dict) else {}
+            role = str(ai_hints.get("role") or "").strip()
+
+            if role == "control":
+                for target in candidate_pool:
+                    availability = evaluate_monster_action_availability(
+                        encounter,
+                        actor,
+                        raw_item,
+                        target=target,
+                    )
+                    if not bool(availability.get("available", True)):
+                        continue
+                    score = 10.0 if target.entity_id == primary_target_id else 6.0
+                    if self._has_active_concentration(target):
+                        score += 2.0
+                    choice = {
+                        "bonus_action_id": bonus_action_id,
+                        "target_entity_id": target.entity_id,
+                        "reason": "附赠动作可先控制主要目标，再衔接本回合进攻。",
+                        "execution_plan": [
+                            self._build_special_bonus_action_execution_step(
+                                encounter=encounter,
+                                actor=actor,
+                                bonus_action_id=bonus_action_id,
+                                target_entity_id=target.entity_id,
+                            )
+                        ],
+                    }
+                    if best_score is None or score > best_score:
+                        best_choice = choice
+                        best_score = score
+                continue
+
+            if role == "escape_or_infiltration":
+                if not (bloodied or threatened_in_melee or main_action in {"disengage_and_fallback", "hold_position"}):
+                    continue
+                availability = evaluate_monster_action_availability(encounter, actor, raw_item)
+                if not bool(availability.get("available", True)):
+                    continue
+                score = 5.0
+                choice = {
+                    "bonus_action_id": bonus_action_id,
+                    "target_entity_id": None,
+                    "reason": "附赠动作可辅助脱离或调整形态，提升存活率。",
+                    "execution_plan": [
+                        self._build_special_bonus_action_execution_step(
+                            encounter=encounter,
+                            actor=actor,
+                            bonus_action_id=bonus_action_id,
+                            target_entity_id=None,
+                        )
+                    ],
+                }
+                if best_score is None or score > best_score:
+                    best_choice = choice
+                    best_score = score
+
+        return best_choice
+
+    def _build_special_bonus_action_execution_step(
+        self,
+        *,
+        encounter: Encounter,
+        actor: EncounterEntity,
+        bonus_action_id: str,
+        target_entity_id: str | None,
+    ) -> dict[str, Any]:
+        hint = self._build_action_execution_hint(
+            encounter=encounter,
+            entity=actor,
+            action_id=bonus_action_id,
+            bucket="bonus_actions_metadata",
+        ) or {}
+        command = hint.get("command")
+        if isinstance(command, str) and command:
+            args = dict(hint.get("preset_args", {})) if isinstance(hint.get("preset_args"), dict) else {}
+            if "target_id" in hint.get("required_args", []) and target_entity_id is not None:
+                args["target_id"] = target_entity_id
+            return {"command": command, "args": args}
+        return {
+            "command": None,
+            "mode": hint.get("mode"),
+            "action_id": bonus_action_id,
+            "target_id": target_entity_id,
+            "note": hint.get("note"),
         }
 
     def _build_battlemap_payload(

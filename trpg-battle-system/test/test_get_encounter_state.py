@@ -4091,6 +4091,118 @@ class GetEncounterStateTests(unittest.TestCase):
             ["execute_attack", "execute_attack"],
         )
 
+    def test_execute_projects_top_level_enemy_turn_recommendation_includes_bonus_action_when_available(self) -> None:
+        encounter = build_enemy_turn_encounter_with_weapon(
+            build_test_weapon(
+                weapon_id="claw",
+                name="Claw",
+                damage_formula="1d6+2",
+                damage_type="slashing",
+                normal_range=5,
+                long_range=5,
+                kind="melee",
+            ),
+            source_ref={
+                "actions_metadata": [
+                    {
+                        "action_id": "multiattack",
+                        "name_zh": "多重攻击",
+                        "name_en": "Multiattack",
+                        "summary": "进行两次爪击。",
+                        "multiattack_sequences": [
+                            {
+                                "sequence_id": "double_claw",
+                                "mode": "melee",
+                                "steps": [
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                "bonus_actions_metadata": [
+                    {
+                        "bonus_action_id": "charm",
+                        "name_zh": "魅惑",
+                        "summary": "附赠动作魅惑目标。",
+                        "availability": {"requires_bonus_action_available": True},
+                        "targeting": {"range_feet": 30, "target_filters": ["humanoid"]},
+                        "ai_hints": {"role": "control"},
+                    }
+                ],
+            },
+        )
+        encounter.entities["ent_ally_player_001"].source_ref = {"creature_type": "humanoid"}
+
+        state = execute_get_encounter_state(encounter)
+        recommendation = state["current_turn_context"]["recommended_tactic"]
+
+        self.assertEqual(recommendation["action"], "multiattack")
+        self.assertEqual(recommendation["bonus_action"]["bonus_action_id"], "charm")
+        self.assertEqual(recommendation["bonus_action"]["target_entity_id"], "ent_ally_player_001")
+        self.assertEqual(recommendation["execution_plan"][0]["command"], None)
+        self.assertEqual(recommendation["execution_plan"][0]["mode"], "special_bonus_action")
+        self.assertEqual(recommendation["execution_plan"][0]["action_id"], "charm")
+        self.assertEqual(
+            [step["command"] for step in recommendation["execution_plan"][1:]],
+            ["execute_attack", "execute_attack"],
+        )
+
+    def test_execute_projects_top_level_enemy_turn_recommendation_skips_bonus_action_when_spent(self) -> None:
+        encounter = build_enemy_turn_encounter_with_weapon(
+            build_test_weapon(
+                weapon_id="claw",
+                name="Claw",
+                damage_formula="1d6+2",
+                damage_type="slashing",
+                normal_range=5,
+                long_range=5,
+                kind="melee",
+            ),
+            source_ref={
+                "actions_metadata": [
+                    {
+                        "action_id": "multiattack",
+                        "name_zh": "多重攻击",
+                        "name_en": "Multiattack",
+                        "summary": "进行两次爪击。",
+                        "multiattack_sequences": [
+                            {
+                                "sequence_id": "double_claw",
+                                "mode": "melee",
+                                "steps": [
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                    {"type": "weapon", "weapon_id": "claw"},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                "bonus_actions_metadata": [
+                    {
+                        "bonus_action_id": "charm",
+                        "name_zh": "魅惑",
+                        "summary": "附赠动作魅惑目标。",
+                        "availability": {"requires_bonus_action_available": True},
+                        "targeting": {"range_feet": 30, "target_filters": ["humanoid"]},
+                        "ai_hints": {"role": "control"},
+                    }
+                ],
+            },
+        )
+        encounter.entities["ent_ally_player_001"].source_ref = {"creature_type": "humanoid"}
+        encounter.entities["ent_enemy_brute_001"].action_economy = {"bonus_action_used": True}
+
+        state = execute_get_encounter_state(encounter)
+        recommendation = state["current_turn_context"]["recommended_tactic"]
+
+        self.assertNotIn("bonus_action", recommendation)
+        self.assertEqual(
+            [step["command"] for step in recommendation["execution_plan"]],
+            ["execute_attack", "execute_attack"],
+        )
+
     def test_execute_projects_top_level_enemy_turn_recommendation_for_hybrid_actor(self) -> None:
         encounter = build_enemy_hybrid_brief_encounter(
             enemy_position={"x": 5, "y": 5},

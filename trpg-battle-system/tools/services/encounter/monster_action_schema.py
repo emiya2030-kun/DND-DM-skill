@@ -47,6 +47,8 @@ def _resolve_availability_blocks(
 ) -> list[str]:
     blocked: list[str] = []
     combat_profile = actor.source_ref.get("combat_profile") if isinstance(actor.source_ref, dict) else {}
+    if not isinstance(combat_profile, dict):
+        combat_profile = {}
     current_form = str(combat_profile.get("current_form") or "").strip()
     forms_any_of = availability.get("forms_any_of")
     if isinstance(forms_any_of, list) and forms_any_of:
