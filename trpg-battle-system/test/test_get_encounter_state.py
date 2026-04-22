@@ -2344,6 +2344,84 @@ class GetEncounterStateTests(unittest.TestCase):
             )
             repo.close()
 
+    def test_execute_projects_monster_action_availability_from_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = build_encounter()
+            enemy = encounter.entities["ent_enemy_goblin_001"]
+            enemy.source_ref = {
+                "combat_profile": {
+                    "forms": ["vampire", "bat", "mist"],
+                    "current_form": "mist",
+                    "resources": {
+                        "legendary_actions": {"max": 3, "remaining": 0, "recharge": "turn_start"},
+                    },
+                },
+                "actions_metadata": [
+                    {
+                        "action_id": "multiattack",
+                        "name_zh": "多重攻击",
+                        "summary": "仅吸血鬼形态可用。",
+                        "availability": {"forms_any_of": ["vampire"]},
+                    },
+                    {
+                        "action_id": "bite",
+                        "name_zh": "啃咬",
+                        "summary": "只能对被自己擒抱或失能目标使用。",
+                        "targeting": {
+                            "range_feet": 5,
+                            "target_filters": ["grappled_by_self", "incapacitated"],
+                            "allow_any_of_filters": True
+                        },
+                    },
+                ],
+                "bonus_actions_metadata": [
+                    {
+                        "bonus_action_id": "shape_shift",
+                        "name_zh": "变形",
+                        "summary": "附赠动作。",
+                        "availability": {"requires_bonus_action_available": True},
+                    }
+                ],
+                "legendary_actions_metadata": [
+                    {
+                        "legendary_action_id": "deathless_strike",
+                        "name_zh": "不死者打击",
+                        "summary": "传奇动作。",
+                        "resource_cost": {"legendary_actions": 1},
+                    }
+                ],
+                "reactions_metadata": [],
+            }
+            enemy.action_economy = {"bonus_action_used": True}
+            encounter.current_entity_id = enemy.entity_id
+            encounter.turn_order = [enemy.entity_id, "ent_ally_eric_001", "ent_enemy_archer_001"]
+            repo.save(encounter)
+
+            state = GetEncounterState(repo).execute("enc_view_test")
+
+            actor_options = state["current_turn_context"]["actor_options"]
+
+            self.assertEqual(actor_options["actions"][0]["action_id"], "multiattack")
+            self.assertFalse(actor_options["actions"][0]["available"])
+            self.assertIn("wrong_form", actor_options["actions"][0]["blocked_reasons"])
+
+            self.assertEqual(actor_options["actions"][1]["action_id"], "bite")
+            self.assertFalse(actor_options["actions"][1]["available"])
+            self.assertIn("no_valid_target", actor_options["actions"][1]["blocked_reasons"])
+
+            self.assertEqual(actor_options["bonus_actions"][0]["bonus_action_id"], "shape_shift")
+            self.assertFalse(actor_options["bonus_actions"][0]["available"])
+            self.assertIn("bonus_action_used", actor_options["bonus_actions"][0]["blocked_reasons"])
+
+            self.assertEqual(actor_options["legendary_actions"][0]["legendary_action_id"], "deathless_strike")
+            self.assertFalse(actor_options["legendary_actions"][0]["available"])
+            self.assertIn(
+                "legendary_actions_depleted",
+                actor_options["legendary_actions"][0]["blocked_reasons"],
+            )
+            repo.close()
+
     def test_execute_projects_compact_current_turn_context_spell_options(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")

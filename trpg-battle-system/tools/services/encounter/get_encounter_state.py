@@ -34,6 +34,7 @@ from tools.services.class_features.shared import (
     resolve_entity_save_proficiencies,
 )
 from tools.services.class_features.shared.warlock_invocations import resolve_gaze_of_two_minds_origin
+from tools.services.encounter.monster_action_schema import evaluate_monster_action_availability
 from tools.services.shared_turns import list_current_turn_group_members
 from tools.services.encounter.enemy_tactical_engagement import build_enemy_reachable_targets
 from tools.services.encounter.movement_rules import validate_movement_path
@@ -1165,6 +1166,8 @@ class GetEncounterState:
                 "name_zh": item.get("name_zh"),
                 "summary": item.get("summary"),
                 "execution": item.get("execution"),
+                "available": item.get("available", True),
+                "blocked_reasons": item.get("blocked_reasons", []),
             }
             for key in (
                 "action_type",
@@ -1489,6 +1492,7 @@ class GetEncounterState:
             if not isinstance(raw_item, dict):
                 continue
             item_id = str(raw_item.get(id_key) or "").strip()
+            availability_projection = evaluate_monster_action_availability(encounter, entity, raw_item)
             payload = {
                 id_key: item_id or None,
                 "name_zh": raw_item.get("name_zh"),
@@ -1500,6 +1504,8 @@ class GetEncounterState:
                     action_id=item_id,
                     bucket=source_key,
                 ),
+                "available": availability_projection.get("available", True),
+                "blocked_reasons": availability_projection.get("blocked_reasons", []),
             }
             payload.update(self._build_action_metadata_passthrough(raw_item))
             items.append(payload)
