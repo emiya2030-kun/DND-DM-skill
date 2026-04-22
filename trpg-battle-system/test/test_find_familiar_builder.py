@@ -55,6 +55,19 @@ def test_build_find_familiar_entity_pseudodragon_has_expected_stats() -> None:
     assert familiar.source_ref["special_senses"]["darkvision"] == 60
     assert "bite" in weapon_ids
     assert "sting" in weapon_ids
+    multiattack = next(
+        action for action in familiar.source_ref["actions_metadata"] if action["action_id"] == "multiattack"
+    )
+    assert multiattack["multiattack_sequences"] == [
+        {
+            "sequence_id": "double_bite",
+            "mode": "melee",
+            "steps": [
+                {"type": "weapon", "weapon_id": "bite"},
+                {"type": "weapon", "weapon_id": "bite"},
+            ],
+        }
+    ]
 
 
 def test_build_find_familiar_entity_owl_has_expected_stats() -> None:

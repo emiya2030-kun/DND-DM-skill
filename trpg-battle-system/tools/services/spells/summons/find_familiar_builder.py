@@ -63,6 +63,16 @@ _FAMILIAR_FORMS: dict[str, dict[str, object]] = {
                 "name_en": "Multiattack",
                 "name_zh": "多重攻击",
                 "summary": "Makes two Bite attacks.",
+                "multiattack_sequences": [
+                    {
+                        "sequence_id": "double_bite",
+                        "mode": "melee",
+                        "steps": [
+                            {"type": "weapon", "weapon_id": "bite"},
+                            {"type": "weapon", "weapon_id": "bite"},
+                        ],
+                    }
+                ],
             },
             {
                 "action_id": "sting",

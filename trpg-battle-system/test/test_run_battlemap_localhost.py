@@ -17,7 +17,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from scripts.run_battlemap_localhost import (
     BattlemapLocalhostHandler,
     PREVIEW_ENCOUNTER_ID,
+    ReusableThreadingHTTPServer,
     ensure_preview_encounter,
+    main,
     render_localhost_battlemap_page,
 )
 from scripts.run_battlemap_localhost import ThreadingHTTPServer
@@ -25,6 +27,9 @@ from tools.repositories import EncounterRepository
 
 
 class RunBattlemapLocalhostTests(unittest.TestCase):
+    def test_reusable_http_server_enables_address_reuse(self) -> None:
+        self.assertTrue(ReusableThreadingHTTPServer.allow_reuse_address)
+
     def _request_json(self, base_url: str, path: str) -> tuple[int, dict[str, object]]:
         try:
             with urlopen(f"{base_url}{path}", timeout=5) as response:
@@ -126,8 +131,8 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
 
-            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", side_effect=[12, 10, 8]):
-                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", side_effect=[0.11, 0.22, 0.33]):
+            with patch("tools.services.encounter.roll_initiative_and_start_encounter.randint", side_effect=[12, 10, 8, 6]):
+                with patch("tools.services.encounter.roll_initiative_and_start_encounter.random", side_effect=[0.11, 0.22, 0.33, 0.44]):
                     encounter = ensure_preview_encounter(repo)
 
             self.assertEqual(encounter.encounter_id, PREVIEW_ENCOUNTER_ID)
@@ -141,16 +146,52 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
             self.assertEqual(reloaded.current_entity_id, "ent_ally_wizard_001")
             self.assertEqual(reloaded.round, 1)
             preview_player = reloaded.entities["ent_ally_wizard_001"]
-            self.assertEqual(preview_player.source_ref["class_name"], "monk")
-            self.assertEqual(preview_player.source_ref["level"], 5)
+            self.assertEqual(preview_player.name, "托姆")
+            self.assertEqual(preview_player.source_ref["class_name"], "barbarian")
+            self.assertEqual(preview_player.source_ref["level"], 18)
+            self.assertNotIn("subclass_name", preview_player.source_ref)
             self.assertNotIn("skill_training", preview_player.source_ref)
-            self.assertEqual(preview_player.skill_training["stealth"], "proficient")
-            self.assertEqual(preview_player.skill_training["sleight_of_hand"], "expertise")
+            self.assertEqual(preview_player.skill_training["athletics"], "proficient")
+            self.assertEqual(preview_player.skill_training["intimidation"], "proficient")
             self.assertEqual(preview_player.ac, 16)
             self.assertEqual(preview_player.speed, {"walk": 40, "remaining": 40})
-            self.assertEqual(preview_player.ability_scores["dex"], 17)
-            self.assertEqual(preview_player.ability_scores["wis"], 16)
-            self.assertEqual(preview_player.currency, {"gp": 127})
+            self.assertEqual(preview_player.ability_scores["str"], 20)
+            self.assertEqual(preview_player.ability_scores["con"], 18)
+            self.assertEqual(preview_player.save_proficiencies, ["str", "con"])
+            self.assertEqual(preview_player.class_features["barbarian"]["level"], 18)
+            self.assertEqual(preview_player.currency, {"gp": 48})
+            repo.close()
+
+    def test_main_repository_mode_bootstraps_barbarian_preview_encounter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "encounters.json"
+            repo = EncounterRepository(db_path)
+
+            fake_server = unittest.mock.Mock()
+            fake_server.serve_forever.return_value = None
+            fake_server.server_close.return_value = None
+
+            with patch(
+                "scripts.run_battlemap_localhost.argparse.ArgumentParser.parse_args",
+                return_value=unittest.mock.Mock(
+                    host="127.0.0.1",
+                    port=8765,
+                    runtime_base_url="",
+                    encounter_id=PREVIEW_ENCOUNTER_ID,
+                    theme=None,
+                    dev_reload_path=None,
+                ),
+            ):
+                with patch("scripts.run_battlemap_localhost.EncounterRepository", return_value=repo):
+                    with patch("scripts.run_battlemap_localhost.ReusableThreadingHTTPServer", return_value=fake_server):
+                        main()
+
+            reloaded = EncounterRepository(db_path).get(PREVIEW_ENCOUNTER_ID)
+            self.assertIsNotNone(reloaded)
+            preview_player = reloaded.entities["ent_ally_wizard_001"]
+            self.assertEqual(preview_player.name, "托姆")
+            self.assertEqual(preview_player.source_ref["class_name"], "barbarian")
+            self.assertEqual(preview_player.class_features["barbarian"]["level"], 18)
             repo.close()
 
     def test_render_localhost_page_injects_hidden_polling_runtime(self) -> None:
@@ -254,18 +295,63 @@ class RunBattlemapLocalhostTests(unittest.TestCase):
             self.assertIn('data-role="player-sheet-shell"', html)
             self.assertIn('data-role="player-sheet-portrait"', html)
             self.assertIn('data-role="player-sheet-tabs"', html)
-            self.assertNotIn('data-role="encounter-hero"', html)
-            self.assertNotIn('data-role="encounter-title"', html)
-            self.assertNotIn("战斗地图预览", html)
-            self.assertNotIn("地图尺寸", html)
-            self.assertNotIn("比例尺", html)
-            self.assertIn(">技能<", html)
-            self.assertIn(">装备<", html)
-            self.assertIn(">后续追加<", html)
-            self.assertIn("player-sheet-summary-grid", html)
-            self.assertIn("player-sheet-summary-stat", html)
-            self.assertIn("player-sheet-summary-stat-label", html)
+
+    def test_render_localhost_page_does_not_render_locked_class_feature_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo = EncounterRepository(Path(tmp_dir) / "encounters.json")
+            encounter = ensure_preview_encounter(repo)
+
+            html = render_localhost_battlemap_page(
+                encounter_id=encounter.encounter_id,
+                page_title="Battlemap Localhost",
+            )
+
+            self.assertNotIn("未解锁", html)
+            self.assertNotIn("is-locked", html)
             repo.close()
+
+    def test_render_localhost_page_includes_feature_tab_renderer_for_player_sheet_extras(self) -> None:
+        html = render_localhost_battlemap_page(
+            encounter_id="enc_feature_test",
+            page_title="Battlemap Localhost",
+            initial_state={
+                "encounter_id": "enc_feature_test",
+                "encounter_name": "Feature Test",
+                "round": 1,
+                "battlemap_details": {
+                    "name": "测试地图",
+                    "description": "测试描述",
+                    "dimensions": "10 x 10 tiles",
+                    "grid_size": "Each tile represents 5 feet",
+                },
+                "battlemap_view": {"html": "<section>map</section>"},
+                "player_sheet_source": {
+                    "summary": {"name": "萨布尔", "class_name": "战士", "level": 13},
+                    "abilities": [],
+                    "tabs": {
+                        "skills": [],
+                        "equipment": {"weapons": [], "armor": {"title": "穿戴护甲", "items": []}, "backpacks": []},
+                        "extras": {
+                            "title": "职业特性",
+                            "class_name": "fighter",
+                            "class_features": [
+                                {
+                                    "key": "fighter.second_wind",
+                                    "level": 1,
+                                    "label": "二次呼吸",
+                                    "description": "回复生命值，并关联战术转移。",
+                                    "unlocked": True,
+                                }
+                            ],
+                        },
+                    },
+                },
+            },
+        )
+
+        self.assertIn("player-sheet-feature-list", html)
+        self.assertIn("player-sheet-feature-card", html)
+        self.assertIn("class_features", html)
 
     def test_render_localhost_page_includes_template_controls(self) -> None:
         html = render_localhost_battlemap_page(

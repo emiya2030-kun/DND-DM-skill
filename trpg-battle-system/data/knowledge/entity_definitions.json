@@ -19,8 +19,6 @@
       "initiative": 0,
       "size": "medium",
       "source_ref": {
-        "class_name": "wizard",
-        "spellcasting_ability": "int",
         "entity_type": "humanoid"
       },
       "ability_scores": {
@@ -31,40 +29,12 @@
         "wis": 12,
         "cha": 10
       },
-      "ability_mods": {
-        "str": -1,
-        "dex": 3,
-        "con": 2,
-        "int": 4,
-        "wis": 1,
-        "cha": 0
-      },
-      "proficiency_bonus": 3,
-      "save_proficiencies": [
-        "int",
-        "wis"
-      ],
-      "skill_modifiers": {
-        "arcana": 7,
-        "investigation": 7
+      "skill_training": {
+        "arcana": "proficient",
+        "investigation": "proficient"
       },
       "conditions": [],
-      "resources": {
-        "spell_slots": {
-          "1": {
-            "max": 4,
-            "remaining": 4
-          },
-          "2": {
-            "max": 3,
-            "remaining": 3
-          },
-          "3": {
-            "max": 2,
-            "remaining": 2
-          }
-        }
-      },
+      "resources": {},
       "action_economy": {},
       "combat_flags": {},
       "turn_effects": [],
@@ -78,17 +48,28 @@
       "spells": [
         {
           "spell_id": "fireball",
-          "name": "火球术"
+          "name": "火球术",
+          "level": 3
         },
         {
           "spell_id": "hold_person",
-          "name": "定身类人"
+          "name": "定身类人",
+          "level": 2
         }
       ],
       "resistances": [],
       "immunities": [],
       "vulnerabilities": [],
-      "notes": []
+      "notes": [],
+      "character_build": {
+        "classes": [
+          {
+            "class_id": "wizard",
+            "level": 5
+          }
+        ],
+        "initial_class_name": "wizard"
+      }
     },
     "pc_sabur": {
       "entity_def_id": "pc_sabur",
@@ -109,7 +90,7 @@
       "initiative": 0,
       "size": "medium",
       "source_ref": {
-        "class_name": "ranger"
+        "entity_type": "humanoid"
       },
       "ability_scores": {
         "str": 14,
@@ -119,22 +100,9 @@
         "wis": 14,
         "cha": 10
       },
-      "ability_mods": {
-        "str": 2,
-        "dex": 4,
-        "con": 2,
-        "int": 0,
-        "wis": 2,
-        "cha": 0
-      },
-      "proficiency_bonus": 3,
-      "save_proficiencies": [
-        "str",
-        "dex"
-      ],
-      "skill_modifiers": {
-        "perception": 5,
-        "survival": 5
+      "skill_training": {
+        "perception": "proficient",
+        "survival": "proficient"
       },
       "conditions": [],
       "resources": {},
@@ -157,7 +125,16 @@
       "resistances": [],
       "immunities": [],
       "vulnerabilities": [],
-      "notes": []
+      "notes": [],
+      "character_build": {
+        "classes": [
+          {
+            "class_id": "ranger",
+            "level": 5
+          }
+        ],
+        "initial_class_name": "ranger"
+      }
     },
     "monster_sabur": {
       "entity_def_id": "monster_sabur",
@@ -214,6 +191,527 @@
       ],
       "spells": [],
       "resistances": [],
+      "immunities": [],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "monster_wight": {
+      "entity_def_id": "monster_wight",
+      "name": "尸妖",
+      "side": "enemy",
+      "category": "monster",
+      "controller": "gm",
+      "ac": 14,
+      "speed": {
+        "walk": 30,
+        "remaining": 30
+      },
+      "hp": {
+        "current": 82,
+        "max": 82,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "entity_type": "undead",
+        "creature_type": "undead",
+        "monster_type": "undead",
+        "alignment": "neutral_evil",
+        "initiative_bonus": 4,
+        "reference_initiative": 14,
+        "equipment": ["镶钉皮甲"],
+        "special_senses": {
+          "darkvision": 60,
+          "passive_perception": 13
+        },
+        "languages": ["common", "other"],
+        "challenge_rating": 3,
+        "xp": 700,
+        "traits_metadata": [
+          {
+            "trait_id": "sunlight_sensitivity",
+            "name_en": "Sunlight Sensitivity",
+            "name_zh": "日照敏感",
+            "summary": "处于阳光下时，尸妖的属性检定和攻击检定具有劣势。"
+          }
+        ],
+        "actions_metadata": [
+          {
+            "action_id": "multiattack",
+            "name_en": "Multiattack",
+            "name_zh": "多重攻击",
+            "summary": "用死灵剑或死灵弓攻击两次；其中一次可替换为吸取生命。",
+            "multiattack_sequences": [
+              {
+                "sequence_id": "double_sword",
+                "mode": "melee",
+                "steps": [
+                  {
+                    "type": "weapon",
+                    "weapon_id": "necrotic_sword"
+                  },
+                  {
+                    "type": "weapon",
+                    "weapon_id": "necrotic_sword"
+                  }
+                ]
+              },
+              {
+                "sequence_id": "double_bow",
+                "mode": "ranged",
+                "steps": [
+                  {
+                    "type": "weapon",
+                    "weapon_id": "necrotic_bow"
+                  },
+                  {
+                    "type": "weapon",
+                    "weapon_id": "necrotic_bow"
+                  }
+                ]
+              },
+              {
+                "sequence_id": "life_drain_plus_sword",
+                "mode": "melee",
+                "tags": [
+                  "prefer_high_ac"
+                ],
+                "steps": [
+                  {
+                    "type": "special_action",
+                    "action_id": "life_drain"
+                  },
+                  {
+                    "type": "weapon",
+                    "weapon_id": "necrotic_sword"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "action_id": "necrotic_sword",
+            "name_en": "Necrotic Sword",
+            "name_zh": "死灵剑",
+            "summary": "近战攻击检定 +4，触及 5 尺；命中造成 1d8+2 挥砍伤害，外加 1d8 暗蚀伤害。"
+          },
+          {
+            "action_id": "necrotic_bow",
+            "name_en": "Necrotic Bow",
+            "name_zh": "死灵弓",
+            "summary": "远程攻击检定 +4，射程 150/600 尺；命中造成 1d8+2 穿刺伤害，外加 1d8 暗蚀伤害。"
+          },
+          {
+            "action_id": "life_drain",
+            "name_en": "Life Drain",
+            "name_zh": "吸取生命",
+            "summary": "5 尺内单体体质豁免 DC13；失败受 1d8+2 暗蚀伤害且生命值上限等量减少。若因此杀死类人生物，其会在 24 小时后化为受尸妖控制的丧尸；同时控制上限为 12。"
+          }
+        ],
+        "bonus_actions_metadata": [],
+        "reactions_metadata": [],
+        "condition_immunities": ["exhaustion", "poisoned"]
+      },
+      "ability_scores": {
+        "str": 15,
+        "dex": 14,
+        "con": 16,
+        "int": 10,
+        "wis": 13,
+        "cha": 15
+      },
+      "ability_mods": {
+        "str": 2,
+        "dex": 2,
+        "con": 3,
+        "int": 0,
+        "wis": 1,
+        "cha": 2
+      },
+      "proficiency_bonus": 2,
+      "save_proficiencies": [],
+      "skill_modifiers": {
+        "perception": 3,
+        "stealth": 4
+      },
+      "conditions": [],
+      "resources": {},
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "necrotic_sword",
+          "name": "死灵剑",
+          "attack_bonus": 4,
+          "damage": [
+            {
+              "formula": "1d8+2",
+              "type": "slashing"
+            },
+            {
+              "formula": "1d8",
+              "type": "necrotic"
+            }
+          ],
+          "range": {
+            "normal": 5,
+            "long": 5
+          },
+          "kind": "melee",
+          "equipped": true
+        },
+        {
+          "weapon_id": "necrotic_bow",
+          "name": "死灵弓",
+          "attack_bonus": 4,
+          "damage": [
+            {
+              "formula": "1d8+2",
+              "type": "piercing"
+            },
+            {
+              "formula": "1d8",
+              "type": "necrotic"
+            }
+          ],
+          "range": {
+            "normal": 150,
+            "long": 600
+          },
+          "kind": "ranged",
+          "equipped": true
+        }
+      ],
+      "spells": [],
+      "resistances": ["necrotic"],
+      "immunities": ["poison"],
+      "vulnerabilities": [],
+      "notes": []
+    },
+    "monster_vampire": {
+      "entity_def_id": "monster_vampire",
+      "name": "吸血鬼",
+      "side": "enemy",
+      "category": "monster",
+      "controller": "gm",
+      "ac": 16,
+      "speed": {
+        "walk": 40,
+        "climb": 40,
+        "remaining": 40
+      },
+      "hp": {
+        "current": 195,
+        "max": 195,
+        "temp": 0
+      },
+      "initiative": 0,
+      "size": "medium",
+      "source_ref": {
+        "entity_type": "undead",
+        "creature_type": "undead",
+        "monster_type": "undead",
+        "alignment": "lawful_evil",
+        "initiative_bonus": 14,
+        "reference_initiative": 24,
+        "special_senses": {
+          "darkvision": 120,
+          "passive_perception": 17
+        },
+        "languages": ["common", "other", "other"],
+        "challenge_rating": 13,
+        "xp": 10000,
+        "combat_profile": {
+          "forms": ["vampire", "bat", "mist"],
+          "current_form": "vampire",
+          "passive_rules": [
+            "misty_escape",
+            "forbiddance",
+            "running_water_harm",
+            "sunlight_hypersensitivity"
+          ],
+          "resources": {
+            "legendary_resistance": {
+              "max": 3,
+              "remaining": 3,
+              "recharge": "long_rest"
+            },
+            "legendary_actions": {
+              "max": 3,
+              "remaining": 3,
+              "recharge": "turn_start"
+            }
+          }
+        },
+        "traits_metadata": [
+          {
+            "trait_id": "legendary_resistance",
+            "name_en": "Legendary Resistance",
+            "name_zh": "传奇抗性",
+            "summary": "豁免失败时可以改为成功。"
+          },
+          {
+            "trait_id": "misty_escape",
+            "name_en": "Misty Escape",
+            "name_zh": "雾隐遁行",
+            "summary": "在休眠地之外生命值降至 0 时会被迫化为迷雾并尝试返回休眠地。"
+          },
+          {
+            "trait_id": "vampire_weakness",
+            "name_en": "Vampire Weakness",
+            "name_zh": "吸血鬼弱点",
+            "summary": "受禁入、流水、穿心木桩与日照等弱点影响。"
+          }
+        ],
+        "actions_metadata": [
+          {
+            "action_id": "multiattack",
+            "name_en": "Multiattack",
+            "name_zh": "多重攻击",
+            "summary": "仅吸血鬼形态。发动两次葬送打击并使用啃咬。",
+            "action_type": "action",
+            "category": "composite",
+            "availability": {
+              "forms_any_of": ["vampire"],
+              "requires_action_available": true
+            },
+            "targeting": {
+              "mode": "single_primary_target"
+            },
+            "execution_steps": [
+              {
+                "type": "weapon",
+                "weapon_id": "grave_strike",
+                "repeat": 2
+              },
+              {
+                "type": "special_action",
+                "action_id": "bite"
+              }
+            ],
+            "ai_hints": {
+              "role": "melee_finisher",
+              "prefer_when_adjacent": true
+            },
+            "multiattack_sequences": [
+              {
+                "sequence_id": "grave_strike_double_plus_bite",
+                "mode": "melee",
+                "steps": [
+                  {
+                    "type": "weapon",
+                    "weapon_id": "grave_strike"
+                  },
+                  {
+                    "type": "weapon",
+                    "weapon_id": "grave_strike"
+                  },
+                  {
+                    "type": "special_action",
+                    "action_id": "bite"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "action_id": "grave_strike",
+            "name_en": "Grave Strike",
+            "name_zh": "葬送打击",
+            "summary": "仅吸血鬼形态。近战攻击，命中后可擒抱中型及以下目标。",
+            "action_type": "action_step",
+            "category": "weapon_attack",
+            "availability": {
+              "forms_any_of": ["vampire"]
+            },
+            "targeting": {
+              "range_feet": 5
+            },
+            "resolution": {
+              "kind": "attack_roll"
+            },
+            "ai_hints": {
+              "role": "grapple_setup"
+            }
+          },
+          {
+            "action_id": "bite",
+            "name_en": "Bite",
+            "name_zh": "啃咬",
+            "summary": "仅蝙蝠或吸血鬼形态。针对自愿、受擒、失能或束缚目标的体质豁免动作。",
+            "action_type": "action_step",
+            "category": "special_action",
+            "availability": {
+              "forms_any_of": ["vampire", "bat"]
+            },
+            "targeting": {
+              "range_feet": 5,
+              "target_filters": ["willing", "grappled_by_self", "incapacitated", "restrained"],
+              "allow_any_of_filters": true
+            },
+            "resolution": {
+              "kind": "save",
+              "save_ability": "con",
+              "save_dc": 17
+            },
+            "ai_hints": {
+              "prefer_when_target_grappled_by_self": true,
+              "life_steal": true
+            }
+          }
+        ],
+        "bonus_actions_metadata": [
+          {
+            "bonus_action_id": "charm",
+            "name_en": "Charm",
+            "name_zh": "魅惑",
+            "summary": "充能 5~6。施展魅惑类人并以魅力作为施法属性。",
+            "action_type": "bonus_action",
+            "category": "special_bonus_action",
+            "resource_cost": {
+              "recharge": "5_6"
+            },
+            "availability": {
+              "requires_bonus_action_available": true
+            },
+            "targeting": {
+              "range_feet": 30,
+              "target_filters": ["humanoid"]
+            },
+            "ai_hints": {
+              "role": "control"
+            }
+          },
+          {
+            "bonus_action_id": "shape_shift",
+            "name_en": "Shape-Shift",
+            "name_zh": "变形",
+            "summary": "未处于阳光或流水时，可变成蝙蝠、迷雾或恢复吸血鬼形态。",
+            "action_type": "bonus_action",
+            "category": "form_change",
+            "availability": {
+              "requires_bonus_action_available": true,
+              "not_in_sunlight": true,
+              "not_in_running_water": true
+            },
+            "ai_hints": {
+              "role": "escape_or_infiltration"
+            }
+          }
+        ],
+        "legendary_actions_metadata": [
+          {
+            "legendary_action_id": "beguile",
+            "name_en": "Beguile",
+            "name_zh": "诱骗",
+            "summary": "消耗 1 次传奇动作，施展命令术。",
+            "action_type": "legendary_action",
+            "category": "spell_like",
+            "resource_cost": {
+              "legendary_actions": 1
+            },
+            "availability": {
+              "cooldown_until_turn_start": true
+            },
+            "targeting": {
+              "range_feet": 60
+            },
+            "ai_hints": {
+              "role": "control"
+            }
+          },
+          {
+            "legendary_action_id": "deathless_strike",
+            "name_en": "Deathless Strike",
+            "name_zh": "不死者打击",
+            "summary": "消耗 1 次传奇动作，移动至多半速并发动一次葬送打击。",
+            "action_type": "legendary_action",
+            "category": "move_and_attack",
+            "resource_cost": {
+              "legendary_actions": 1
+            },
+            "execution_steps": [
+              {
+                "type": "move",
+                "distance_mode": "half_speed"
+              },
+              {
+                "type": "weapon",
+                "weapon_id": "grave_strike"
+              }
+            ],
+            "ai_hints": {
+              "role": "pressure"
+            }
+          }
+        ],
+        "reactions_metadata": []
+      },
+      "ability_scores": {
+        "str": 18,
+        "dex": 18,
+        "con": 18,
+        "int": 17,
+        "wis": 15,
+        "cha": 18
+      },
+      "ability_mods": {
+        "str": 4,
+        "dex": 4,
+        "con": 4,
+        "int": 3,
+        "wis": 2,
+        "cha": 4
+      },
+      "proficiency_bonus": 5,
+      "save_proficiencies": ["dex", "con", "wis", "cha"],
+      "skill_modifiers": {
+        "perception": 7,
+        "stealth": 9
+      },
+      "conditions": [],
+      "resources": {
+        "legendary_resistance": {
+          "max": 3,
+          "remaining": 3,
+          "recharge": "long_rest"
+        },
+        "legendary_actions": {
+          "max": 3,
+          "remaining": 3,
+          "recharge": "turn_start"
+        }
+      },
+      "action_economy": {},
+      "combat_flags": {},
+      "turn_effects": [],
+      "weapons": [
+        {
+          "weapon_id": "grave_strike",
+          "name": "葬送打击",
+          "attack_bonus": 9,
+          "damage": [
+            {
+              "formula": "1d8+4",
+              "type": "bludgeoning"
+            },
+            {
+              "formula": "2d6",
+              "type": "necrotic"
+            }
+          ],
+          "range": {
+            "normal": 5,
+            "long": 5
+          },
+          "kind": "melee",
+          "equipped": true
+        }
+      ],
+      "spells": [],
+      "resistances": ["necrotic"],
       "immunities": [],
       "vulnerabilities": [],
       "notes": []

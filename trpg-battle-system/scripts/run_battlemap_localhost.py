@@ -34,6 +34,10 @@ from tools.services.encounter.manage_encounter_entities import EncounterService
 PREVIEW_ENCOUNTER_ID = "enc_preview_demo"
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
 def build_preview_map_setup() -> dict[str, object]:
     encounter = build_preview_encounter()
     return {
@@ -57,80 +61,79 @@ def build_preview_entity_setups() -> list[dict[str, object]]:
             "entity_instance_id": "ent_ally_wizard_001",
             "template_ref": {"source_type": "pc", "template_id": "pc_miren"},
             "runtime_overrides": {
-                "name": "米伦",
+                "name": "托姆",
                 "position": {"x": 5, "y": 5},
-                "hp": {"current": 22, "max": 27, "temp": 0},
+                "hp": {"current": 176, "max": 176, "temp": 0},
                 "ac": 16,
                 "speed": {"walk": 30, "remaining": 30},
                 "source_ref": {
-                    "class_name": "monk",
-                    "level": 5,
+                    "class_name": "barbarian",
+                    "level": 18,
                 },
-                "class_features": {"monk": {"level": 5}},
-                "ability_scores": {"str": 8, "dex": 17, "con": 14, "int": 8, "wis": 16, "cha": 10},
-                "ability_mods": {"str": -1, "dex": 3, "con": 2, "int": -1, "wis": 3, "cha": 0},
-                "proficiency_bonus": 3,
-                "save_proficiencies": ["str", "dex"],
+                "class_features": {"barbarian": {"level": 18}},
+                "ability_scores": {"str": 20, "dex": 14, "con": 18, "int": 8, "wis": 12, "cha": 10},
+                "ability_mods": {"str": 5, "dex": 2, "con": 4, "int": -1, "wis": 1, "cha": 0},
+                "proficiency_bonus": 6,
+                "save_proficiencies": ["str", "con"],
                 "skill_training": {
-                    "athletics": "none",
+                    "athletics": "proficient",
                     "acrobatics": "none",
-                    "sleight_of_hand": "expertise",
-                    "stealth": "proficient",
-                    "investigation": "expertise",
-                    "arcana": "proficient",
+                    "sleight_of_hand": "none",
+                    "stealth": "none",
+                    "investigation": "none",
+                    "arcana": "none",
                     "history": "none",
                     "nature": "none",
                     "religion": "none",
-                    "perception": "expertise",
-                    "insight": "expertise",
+                    "perception": "proficient",
+                    "insight": "none",
                     "animal_handling": "none",
                     "medicine": "none",
-                    "survival": "none",
-                    "persuasion": "expertise",
+                    "survival": "proficient",
+                    "persuasion": "none",
                     "deception": "none",
-                    "intimidation": "none",
+                    "intimidation": "proficient",
                     "performance": "none",
                 },
                 "skill_modifiers": {
-                    "athletics": -1,
-                    "acrobatics": 3,
-                    "sleight_of_hand": 5,
-                    "stealth": 5,
-                    "investigation": 1,
-                    "arcana": 1,
+                    "athletics": 11,
+                    "acrobatics": 2,
+                    "sleight_of_hand": 2,
+                    "stealth": 2,
+                    "investigation": -1,
+                    "arcana": -1,
                     "history": -1,
                     "nature": -1,
                     "religion": -1,
-                    "perception": 5,
-                    "insight": 5,
-                    "animal_handling": 3,
-                    "medicine": 3,
-                    "survival": 3,
-                    "persuasion": 2,
+                    "perception": 7,
+                    "insight": 1,
+                    "animal_handling": 1,
+                    "medicine": 1,
+                    "survival": 7,
+                    "persuasion": 0,
                     "deception": 0,
-                    "intimidation": 0,
+                    "intimidation": 6,
                     "performance": 0,
                 },
                 "weapons": [
                     {
-                        "weapon_id": "dagger",
-                        "name": "匕首",
-                        "category": "simple",
+                        "weapon_id": "greataxe",
+                        "name": "巨斧",
+                        "category": "martial",
                         "kind": "melee",
-                        "damage": [{"formula": "1d4", "type": "piercing"}],
-                        "properties": ["finesse", "light", "thrown"],
+                        "damage": [{"formula": "1d12", "type": "slashing"}],
+                        "properties": ["heavy", "two_handed"],
                         "range": {"normal": 5, "long": 5},
-                        "thrown_range": {"normal": 20, "long": 60},
-                        "mastery": "迅击",
+                        "mastery": "顺劈",
                     }
                 ],
                 "inventory": [
                     {"name": "链条", "quantity": 1},
                     {"name": "绳索", "quantity": 1},
-                    {"name": "铁钉", "quantity": 10},
                     {"name": "火绒盒", "quantity": 1},
+                    {"name": "治疗药水", "quantity": 2},
                 ],
-                "currency": {"gp": 127},
+                "currency": {"gp": 48},
             },
         },
         {
@@ -165,51 +168,54 @@ def ensure_preview_encounter(repository: EncounterRepository) -> object:
         if preview_entity is not None:
             changed = False
             desired_source_ref = {
-                "class_name": "monk",
-                "level": 5,
+                "class_name": "barbarian",
+                "level": 18,
             }
             desired_skill_training = {
-                "athletics": "none",
+                "athletics": "proficient",
                 "acrobatics": "none",
-                "sleight_of_hand": "expertise",
-                "stealth": "proficient",
-                "investigation": "expertise",
-                "arcana": "proficient",
+                "sleight_of_hand": "none",
+                "stealth": "none",
+                "investigation": "none",
+                "arcana": "none",
                 "history": "none",
                 "nature": "none",
                 "religion": "none",
-                "perception": "expertise",
-                "insight": "expertise",
+                "perception": "proficient",
+                "insight": "none",
                 "animal_handling": "none",
                 "medicine": "none",
-                "survival": "none",
-                "persuasion": "expertise",
+                "survival": "proficient",
+                "persuasion": "none",
                 "deception": "none",
-                "intimidation": "none",
+                "intimidation": "proficient",
                 "performance": "none",
             }
             desired_skill_modifiers = {
-                "athletics": -1,
-                "acrobatics": 3,
-                "sleight_of_hand": 5,
-                "stealth": 5,
-                "investigation": 1,
-                "arcana": 1,
+                "athletics": 11,
+                "acrobatics": 2,
+                "sleight_of_hand": 2,
+                "stealth": 2,
+                "investigation": -1,
+                "arcana": -1,
                 "history": -1,
                 "nature": -1,
                 "religion": -1,
-                "perception": 5,
-                "insight": 5,
-                "animal_handling": 3,
-                "medicine": 3,
-                "survival": 3,
-                "persuasion": 2,
+                "perception": 7,
+                "insight": 1,
+                "animal_handling": 1,
+                "medicine": 1,
+                "survival": 7,
+                "persuasion": 0,
                 "deception": 0,
-                "intimidation": 0,
+                "intimidation": 6,
                 "performance": 0,
             }
-            desired_abilities = {"str": 8, "dex": 17, "con": 14, "int": 8, "wis": 16, "cha": 10}
-            desired_mods = {"str": -1, "dex": 3, "con": 2, "int": -1, "wis": 3, "cha": 0}
+            desired_abilities = {"str": 20, "dex": 14, "con": 18, "int": 8, "wis": 12, "cha": 10}
+            desired_mods = {"str": 5, "dex": 2, "con": 4, "int": -1, "wis": 1, "cha": 0}
+            if preview_entity.name != "托姆":
+                preview_entity.name = "托姆"
+                changed = True
             if preview_entity.source_ref != desired_source_ref:
                 preview_entity.source_ref = desired_source_ref
                 changed = True
@@ -219,6 +225,10 @@ def ensure_preview_encounter(repository: EncounterRepository) -> object:
             if preview_entity.ac != 16:
                 preview_entity.ac = 16
                 changed = True
+            desired_hp = {"current": 176, "max": 176, "temp": 0}
+            if preview_entity.hp != desired_hp:
+                preview_entity.hp = desired_hp
+                changed = True
             desired_speed = {"walk": 40, "remaining": 40}
             if preview_entity.speed != desired_speed:
                 preview_entity.speed = desired_speed
@@ -226,18 +236,18 @@ def ensure_preview_encounter(repository: EncounterRepository) -> object:
             if preview_entity.ability_scores != desired_abilities:
                 preview_entity.ability_scores = desired_abilities
                 changed = True
-            desired_class_features = {"monk": {"level": 5}}
+            desired_class_features = {"barbarian": {"level": 18}}
             if preview_entity.class_features != desired_class_features:
                 preview_entity.class_features = desired_class_features
                 changed = True
             if preview_entity.ability_mods != desired_mods:
                 preview_entity.ability_mods = desired_mods
                 changed = True
-            if preview_entity.proficiency_bonus != 3:
-                preview_entity.proficiency_bonus = 3
+            if preview_entity.proficiency_bonus != 6:
+                preview_entity.proficiency_bonus = 6
                 changed = True
-            if preview_entity.save_proficiencies != ["str", "dex"]:
-                preview_entity.save_proficiencies = ["str", "dex"]
+            if preview_entity.save_proficiencies != ["str", "con"]:
+                preview_entity.save_proficiencies = ["str", "con"]
                 changed = True
             if preview_entity.skill_modifiers != desired_skill_modifiers:
                 preview_entity.skill_modifiers = desired_skill_modifiers
@@ -250,30 +260,42 @@ def ensure_preview_encounter(repository: EncounterRepository) -> object:
                 changed = True
             desired_weapons = [
                 {
-                    "weapon_id": "dagger",
-                    "name": "匕首",
-                    "category": "simple",
+                    "weapon_id": "greataxe",
+                    "name": "巨斧",
+                    "category": "martial",
                     "kind": "melee",
-                    "damage": [{"formula": "1d4", "type": "piercing"}],
-                    "properties": ["finesse", "light", "thrown"],
+                    "damage": [{"formula": "1d12", "type": "slashing"}],
+                    "properties": ["heavy", "two_handed"],
                     "range": {"normal": 5, "long": 5},
-                    "thrown_range": {"normal": 20, "long": 60},
-                    "mastery": "迅击",
+                    "mastery": "顺劈",
                 }
             ]
             if preview_entity.weapons != desired_weapons:
                 preview_entity.weapons = desired_weapons
                 changed = True
-            if not getattr(preview_entity, "inventory", []):
+            desired_inventory = [
+                {"name": "链条", "quantity": 1},
+                {"name": "绳索", "quantity": 1},
+                {"name": "火绒盒", "quantity": 1},
+                {"name": "治疗药水", "quantity": 2},
+            ]
+            if preview_entity.inventory != desired_inventory:
                 preview_entity.inventory = [
                     {"name": "链条", "quantity": 1},
                     {"name": "绳索", "quantity": 1},
-                    {"name": "铁钉", "quantity": 10},
                     {"name": "火绒盒", "quantity": 1},
+                    {"name": "治疗药水", "quantity": 2},
                 ]
                 changed = True
-            if not isinstance(getattr(preview_entity, "currency", None), dict) or not preview_entity.currency:
-                preview_entity.currency = {"gp": 127}
+            if preview_entity.currency != {"gp": 48}:
+                preview_entity.currency = {"gp": 48}
+                changed = True
+            desired_turn_order = ["ent_ally_wizard_001", "ent_ally_ranger_001", "ent_enemy_brute_001"]
+            if encounter.turn_order != desired_turn_order:
+                encounter.turn_order = desired_turn_order
+                changed = True
+            if encounter.current_entity_id != "ent_ally_wizard_001":
+                encounter.current_entity_id = "ent_ally_wizard_001"
                 changed = True
             if changed:
                 repository.save(encounter)
@@ -298,6 +320,11 @@ def ensure_preview_encounter(repository: EncounterRepository) -> object:
         entity_setups=build_preview_entity_setups(),
     )
     RollInitiativeAndStartEncounter(repository).execute(PREVIEW_ENCOUNTER_ID)
+    initialized = repository.get(PREVIEW_ENCOUNTER_ID)
+    if initialized is not None:
+        initialized.turn_order = ["ent_ally_wizard_001", "ent_ally_ranger_001", "ent_enemy_brute_001"]
+        initialized.current_entity_id = "ent_ally_wizard_001"
+        repository.save(initialized)
     return repository.get(PREVIEW_ENCOUNTER_ID)
 
 
@@ -353,6 +380,11 @@ def build_empty_player_sheet() -> dict[str, object]:
                 "backpacks": [],
             },
             "extras": {
+                "title": "后续追加",
+                "class_name": "",
+                "class_label": "",
+                "current_level": None,
+                "class_features": [],
                 "placeholder_title": "后续追加",
                 "placeholder_body": "后续会加入特性、状态、资源与法术相关信息.",
             },
@@ -616,6 +648,19 @@ def build_player_sheet_styles() -> str:
         ".player-sheet-pack-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;"
         "background:rgba(255,255,255,.03);border:1px solid rgba(214,176,112,.08);color:#eee2c8;}"
         ".player-sheet-pack-gold{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:rgba(216,179,106,.12);border:1px solid rgba(216,179,106,.2);color:#f0d48b;font-weight:800;}"
+        ".player-sheet-feature-list{grid-column:1 / -1;display:grid;gap:12px;}"
+        ".player-sheet-feature-summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:0 4px;}"
+        ".player-sheet-feature-summary strong{font-size:15px;letter-spacing:.16em;text-transform:uppercase;color:#f0dfbc;}"
+        ".player-sheet-feature-summary span{font-size:12px;color:#9f8d70;}"
+        ".player-sheet-feature-card{padding:14px 16px;border-radius:16px;background:linear-gradient(180deg,rgba(36,28,20,.9),rgba(12,12,14,.94));"
+        "border:1px solid rgba(214,176,112,.12);display:grid;gap:10px;box-shadow:inset 0 1px 0 rgba(255,242,214,.04);}"
+        ".player-sheet-feature-card.is-locked{opacity:.6;filter:saturate(.7);}"
+        ".player-sheet-feature-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}"
+        ".player-sheet-feature-name{font-size:18px;font-weight:800;color:#f7ead1;letter-spacing:.01em;}"
+        ".player-sheet-feature-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}"
+        ".player-sheet-feature-badge{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:rgba(216,179,106,.12);"
+        "border:1px solid rgba(216,179,106,.18);font-size:11px;color:#e4c489;letter-spacing:.12em;text-transform:uppercase;}"
+        ".player-sheet-feature-description{color:#cdbb9d;font-size:13px;line-height:1.65;}"
         ".player-sheet-empty{grid-column:1 / -1;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);"
         "border:1px solid rgba(214,176,112,.08);color:#d8c8aa;}"
         ".player-sheet-empty p{margin:8px 0 0;color:#a8997f;}"
@@ -715,6 +760,24 @@ def build_player_sheet_runtime_script(player_sheet: dict[str, object]) -> str:
         "packsHtml + "
         "'</div>';"
         "};"
+        "window.renderPlayerSheetFeatureExtras = function(extras){"
+        "var featureList=(extras&&Array.isArray(extras.class_features))?extras.class_features.filter(function(item){return item&&item.unlocked!==false;}):[];"
+        "if(!featureList.length){"
+        "return '<div class=\"player-sheet-empty\"><strong>' + (extras.placeholder_title||'后续追加') + '</strong><p>' + (extras.placeholder_body||'后续会加入更多角色信息.') + '</p></div>';"
+        "}"
+        "var summaryHtml='<div class=\"player-sheet-feature-summary\"><strong>' + (extras.title||'职业特性') + '</strong><span>' + ((extras.class_label||extras.class_name||'职业') + ' · ' + ((extras.current_level ?? '--') + '级')) + '</span></div>';"
+        "var cardsHtml=featureList.map(function(item){"
+        "return '<article class=\"player-sheet-feature-card\">' + "
+        "'<div class=\"player-sheet-feature-top\">' + "
+        "'<strong class=\"player-sheet-feature-name\">' + (item.label||'未命名特性') + '</strong>' + "
+        "'<div class=\"player-sheet-feature-meta\">' + "
+        "'<span class=\"player-sheet-feature-badge\">Lv ' + (item.level ?? '--') + '</span>' + "
+        "'</div></div>' + "
+        "'<div class=\"player-sheet-feature-description\">' + (item.description||'') + '</div>' + "
+        "'</article>';"
+        "}).join('');"
+        "return '<div class=\"player-sheet-feature-list\">' + summaryHtml + cardsHtml + '</div>';"
+        "};"
         "window.renderPlayerSheet = function(playerSheet){"
         "if(!window.mountPlayerSheet()){return playerSheet;}"
         "var summary=(playerSheet&&playerSheet.summary)||{};"
@@ -753,7 +816,7 @@ def build_player_sheet_runtime_script(player_sheet: dict[str, object]) -> str:
         "if(activeTab==='equipment'){var equipment=(playerSheet&&playerSheet.tabs&&playerSheet.tabs.equipment)||[];"
         "panelRoot.innerHTML=Array.isArray(equipment)?window.renderPlayerSheetLegacyEquipment(equipment):window.renderPlayerSheetStructuredEquipment(equipment);return;}"
         "if(activeTab==='extras'){var extras=(playerSheet&&playerSheet.tabs&&playerSheet.tabs.extras)||{};"
-        "panelRoot.innerHTML='<div class=\"player-sheet-empty\"><strong>' + (extras.placeholder_title||'后续追加') + '</strong><p>' + (extras.placeholder_body||'后续会加入更多角色信息.') + '</p></div>';return;}"
+        "panelRoot.innerHTML=window.renderPlayerSheetFeatureExtras(extras);return;}"
         "var skills=((playerSheet&&playerSheet.tabs&&playerSheet.tabs.skills)||[]);"
         "panelRoot.innerHTML='<div class=\"player-sheet-skill-table\">' + "
         "'<div class=\"player-sheet-skill-header\"><span>熟练</span><span>技能</span><span>检定能力</span><span>总值</span></div>' + "
@@ -1370,7 +1433,7 @@ def main() -> None:
             )
     else:
         repository = EncounterRepository()
-        repository.save(build_preview_encounter())
+        ensure_preview_encounter(repository)
 
     BattlemapLocalhostHandler.repository = repository
     BattlemapLocalhostHandler.template_repository = (
@@ -1383,7 +1446,7 @@ def main() -> None:
     BattlemapLocalhostHandler.dev_reload_path = args.dev_reload_path
     BattlemapLocalhostHandler.encounter_id = encounter_id
 
-    server = ThreadingHTTPServer((args.host, args.port), BattlemapLocalhostHandler)
+    server = ReusableThreadingHTTPServer((args.host, args.port), BattlemapLocalhostHandler)
     try:
         print(f"http://{args.host}:{args.port}")
         server.serve_forever()
