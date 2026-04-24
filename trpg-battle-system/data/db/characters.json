@@ -1,1 +1,414 @@
-{}
+{
+  "_default": {
+    "1": {
+      "schema_version": 1,
+      "character_id": "char_miren_001",
+      "name": "米伦",
+      "source": {
+        "kind": "entity_definition_template",
+        "template_id": "pc_miren",
+        "entity_def_id": "pc_miren",
+        "entity_id": "ent_pc_miren_library_001"
+      },
+      "summary": {
+        "name": "米伦",
+        "class_name": "法师",
+        "subclass_name": null,
+        "level": 5,
+        "hp_current": 22,
+        "hp_max": 22,
+        "ac": 14,
+        "speed": 30,
+        "spell_save_dc": 15,
+        "spell_attack_bonus": 7,
+        "portrait_url": null
+      },
+      "character_entity": {
+        "entity_id": "ent_pc_miren_library_001",
+        "entity_def_id": "pc_miren",
+        "source_ref": {
+          "entity_type": "humanoid",
+          "class_name": "wizard",
+          "level": 5,
+          "spellcasting_ability": "int",
+          "character_id": "char_miren_001"
+        },
+        "initial_class_name": "wizard",
+        "name": "米伦",
+        "side": "ally",
+        "category": "pc",
+        "controller": "player",
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "hp": {
+          "current": 22,
+          "max": 22,
+          "temp": 0
+        },
+        "ac": 14,
+        "speed": {
+          "walk": 30,
+          "remaining": 30
+        },
+        "initiative": 0,
+        "size": "medium",
+        "ability_scores": {
+          "str": 8,
+          "dex": 16,
+          "con": 14,
+          "int": 18,
+          "wis": 12,
+          "cha": 10
+        },
+        "ability_mods": {
+          "str": -1,
+          "dex": 3,
+          "con": 2,
+          "int": 4,
+          "wis": 1,
+          "cha": 0
+        },
+        "proficiency_bonus": 3,
+        "save_proficiencies": [
+          "int",
+          "wis"
+        ],
+        "skill_training": {
+          "arcana": "proficient",
+          "investigation": "proficient"
+        },
+        "skill_modifiers": {
+          "arcana": 7,
+          "investigation": 7
+        },
+        "conditions": [],
+        "resources": {
+          "spell_slots": {
+            "1": {
+              "max": 4,
+              "remaining": 4
+            },
+            "2": {
+              "max": 3,
+              "remaining": 3
+            },
+            "3": {
+              "max": 2,
+              "remaining": 2
+            }
+          },
+          "pact_magic_slots": {}
+        },
+        "action_economy": {},
+        "combat_flags": {},
+        "turn_effects": [],
+        "equipped_armor": null,
+        "equipped_shield": null,
+        "inventory": [],
+        "currency": {},
+        "weapons": [
+          {
+            "weapon_id": "dagger",
+            "name": "匕首",
+            "equipped": true
+          }
+        ],
+        "spells": [
+          {
+            "spell_id": "fireball",
+            "name": "火球术",
+            "level": 3,
+            "casting_class": "wizard"
+          },
+          {
+            "spell_id": "hold_person",
+            "name": "定身类人",
+            "level": 2,
+            "casting_class": "wizard"
+          }
+        ],
+        "resistances": [],
+        "immunities": [],
+        "vulnerabilities": [],
+        "notes": [],
+        "class_features": {
+          "wizard": {
+            "level": 5,
+            "spell_preparation_mode": "long_rest_any",
+            "always_prepared_spells": [],
+            "prepared_spells": [
+              "fireball",
+              "hold_person"
+            ]
+          },
+          "rogue": {
+            "expertise": {
+              "skills": []
+            },
+            "sneak_attack": {
+              "damage_dice": "1d6",
+              "used_this_turn": false
+            },
+            "steady_aim": {
+              "enabled": false,
+              "used_this_turn": false,
+              "grants_advantage_on_next_attack": false
+            },
+            "cunning_strike": {
+              "enabled": false,
+              "max_effects_per_hit": 1
+            },
+            "uncanny_dodge": {
+              "enabled": false
+            },
+            "reliable_talent": {
+              "enabled": false
+            },
+            "slippery_mind": {
+              "enabled": false
+            },
+            "elusive": {
+              "enabled": false
+            }
+          }
+        }
+      },
+      "player_sheet": {
+        "summary": {
+          "name": "米伦",
+          "class_name": "法师",
+          "subclass_name": null,
+          "level": 5,
+          "hp_current": 22,
+          "hp_max": 22,
+          "ac": 14,
+          "speed": 30,
+          "spell_save_dc": 15,
+          "spell_attack_bonus": 7,
+          "portrait_url": null
+        },
+        "abilities": [
+          {
+            "key": "str",
+            "label": "力量",
+            "score": 8,
+            "save_bonus": -1
+          },
+          {
+            "key": "dex",
+            "label": "敏捷",
+            "score": 16,
+            "save_bonus": 3
+          },
+          {
+            "key": "con",
+            "label": "体魄",
+            "score": 14,
+            "save_bonus": 2
+          },
+          {
+            "key": "int",
+            "label": "智力",
+            "score": 18,
+            "save_bonus": 7
+          },
+          {
+            "key": "wis",
+            "label": "感知",
+            "score": 12,
+            "save_bonus": 4
+          },
+          {
+            "key": "cha",
+            "label": "魅力",
+            "score": 10,
+            "save_bonus": 0
+          }
+        ],
+        "tabs": {
+          "skills": [
+            {
+              "key": "athletics",
+              "label": "运动",
+              "modifier": -1,
+              "ability_label": "力量",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "acrobatics",
+              "label": "特技",
+              "modifier": 3,
+              "ability_label": "敏捷",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "sleight_of_hand",
+              "label": "巧手",
+              "modifier": 3,
+              "ability_label": "敏捷",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "stealth",
+              "label": "隐匿",
+              "modifier": 3,
+              "ability_label": "敏捷",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "arcana",
+              "label": "奥秘",
+              "modifier": 7,
+              "ability_label": "智力",
+              "training_state": "proficient",
+              "training_indicator": "O"
+            },
+            {
+              "key": "history",
+              "label": "历史",
+              "modifier": 4,
+              "ability_label": "智力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "investigation",
+              "label": "调查",
+              "modifier": 7,
+              "ability_label": "智力",
+              "training_state": "proficient",
+              "training_indicator": "O"
+            },
+            {
+              "key": "nature",
+              "label": "自然",
+              "modifier": 4,
+              "ability_label": "智力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "religion",
+              "label": "宗教",
+              "modifier": 4,
+              "ability_label": "智力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "animal_handling",
+              "label": "驯兽",
+              "modifier": 1,
+              "ability_label": "感知",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "insight",
+              "label": "洞悉",
+              "modifier": 1,
+              "ability_label": "感知",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "medicine",
+              "label": "医药",
+              "modifier": 1,
+              "ability_label": "感知",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "perception",
+              "label": "察觉",
+              "modifier": 1,
+              "ability_label": "感知",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "survival",
+              "label": "求生",
+              "modifier": 1,
+              "ability_label": "感知",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "deception",
+              "label": "欺瞒",
+              "modifier": 0,
+              "ability_label": "魅力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "intimidation",
+              "label": "威吓",
+              "modifier": 0,
+              "ability_label": "魅力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "performance",
+              "label": "表演",
+              "modifier": 0,
+              "ability_label": "魅力",
+              "training_state": "none",
+              "training_indicator": "X"
+            },
+            {
+              "key": "persuasion",
+              "label": "游说",
+              "modifier": 0,
+              "ability_label": "魅力",
+              "training_state": "none",
+              "training_indicator": "X"
+            }
+          ],
+          "equipment": {
+            "weapons": [
+              {
+                "name": "匕首",
+                "properties": "无",
+                "proficient": "X",
+                "attack_display": "D20-1",
+                "damage_display": "--",
+                "damage_type": "--",
+                "mastery": "--"
+              }
+            ],
+            "armor": {
+              "title": "穿戴护甲",
+              "items": []
+            },
+            "backpacks": [
+              {
+                "name": "背包1",
+                "gold": 0,
+                "items": []
+              }
+            ]
+          },
+          "extras": {
+            "placeholder_title": "后续追加",
+            "placeholder_body": "后续会加入特性、状态、资源与法术相关信息。"
+          }
+        }
+      },
+      "meta": {
+        "saved_at": "2026-04-24T00:00:00+09:00",
+        "saved_from": "template_import",
+        "notes": []
+      }
+    }
+  }
+}
